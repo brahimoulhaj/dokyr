@@ -24,7 +24,36 @@ type Config struct {
 	// never become unreachable through the proxy.
 	PanelDomainOnly bool
 	ACMEEmail       string  // optional; the account email for the certificate authority
-	Routes          []Route // one per app (or built-in service) that has domains
+	Routes          []Route // built-in services on hostnames of their own (the registry)
+	Sites           []Site  // project domains, each with its path routes to apps
+}
+
+// Site is a project domain: one hostname whose paths go to apps. Paths are matched longest
+// first; a request no path matches answers 404.
+type Site struct {
+	Host     string
+	HTTPOnly bool // plain HTTP only, no certificate or redirect (a CDN terminates TLS)
+	Paths    []Path
+}
+
+// Path sends a path prefix ("/" or "/api", matching /api and /api/...) to an app.
+type Path struct {
+	ID        string   // stable id (the route's), addresses it in the admin API
+	AppID     string   // SetUpstreams switches every path of an app at once
+	Prefix    string   // "/" or "/api"
+	Strip     bool     // drop the prefix before proxying: /api/users arrives as /users
+	Upstreams []string // empty answers 503
+}
+
+func pathKey(id string) string { return "path-" + id }
+
+// proxyIndex is the position of the reverse_proxy handler in a path's handle list: after
+// the prefix rewrite when there is one.
+func (p Path) proxyIndex() int {
+	if p.Strip && p.Prefix != "/" {
+		return 1
+	}
+	return 0
 }
 
 // Route sends requests for a set of hostnames to a set of upstreams. By default a host is
@@ -185,6 +214,64 @@ func Build(c Config) ([]byte, error) {
 				"terminal": true,
 			})
 		}
+	}
+
+	for _, site := range c.Sites {
+		if err := ValidHost(site.Host); err != nil {
+			return nil, fmt.Errorf("proxy config: site: %w", err)
+		}
+		if other, dup := seenHost[site.Host]; dup {
+			return nil, fmt.Errorf("proxy config: hostname %s is used by %s and a project domain", site.Host, other)
+		}
+		seenHost[site.Host] = "site"
+		paths := append([]Path(nil), site.Paths...)
+		sort.SliceStable(paths, func(i, j int) bool { return len(paths[i].Prefix) > len(paths[j].Prefix) })
+		var sub []object
+		catchAll := false
+		for _, p := range paths {
+			ups := make([]object, 0, len(p.Upstreams))
+			for _, u := range p.Upstreams {
+				if err := validUpstream(u); err != nil {
+					return nil, fmt.Errorf("proxy config: %s%s: %w", site.Host, p.Prefix, err)
+				}
+				ups = append(ups, object{"dial": u})
+			}
+			var handle []object
+			if p.proxyIndex() == 1 {
+				handle = append(handle, object{"handler": "rewrite", "strip_path_prefix": p.Prefix})
+			}
+			handle = append(handle, object{"handler": "reverse_proxy", "upstreams": ups})
+			route := object{"@id": pathKey(p.ID), "handle": handle, "terminal": true}
+			if p.Prefix == "/" {
+				catchAll = true
+			} else {
+				route["match"] = []object{{"path": []string{p.Prefix, p.Prefix + "/*"}}}
+			}
+			sub = append(sub, route)
+		}
+		if !catchAll {
+			sub = append(sub, object{"handle": []object{{"handler": "static_response", "status_code": 404}}})
+		}
+		siteRoute := object{
+			"match":    []object{{"host": []string{site.Host}}},
+			"handle":   []object{{"handler": "subroute", "routes": sub}},
+			"terminal": true,
+		}
+		if site.HTTPOnly {
+			httpRoutes = append(httpRoutes, siteRoute)
+			continue
+		}
+		allHosts = append(allHosts, site.Host)
+		httpsRoutes = append(httpsRoutes, siteRoute)
+		httpRoutes = append(httpRoutes, object{
+			"match": []object{{"host": []string{site.Host}}},
+			"handle": []object{{
+				"handler":     "static_response",
+				"status_code": 308,
+				"headers":     object{"Location": []string{"https://{http.request.host}{http.request.uri}"}},
+			}},
+			"terminal": true,
+		})
 	}
 
 	// Last on the HTTP server: anything that is not a known hostname reaches the panel, or,

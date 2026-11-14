@@ -156,13 +156,16 @@ func (m *Manager) Apply(ctx context.Context) error {
 	return nil
 }
 
-// SetUpstreams switches one route to new upstreams atomically, without reloading anything
-// else. The caller must store the new upstreams in the database too, so the next Apply
-// produces the same result.
+// SetUpstreams switches an app to new upstreams atomically on every path that serves it,
+// without reloading anything else (or a built-in route, by its id). The caller must store
+// the new upstreams in the database too, so the next Apply produces the same result.
 func (m *Manager) SetUpstreams(ctx context.Context, routeID string, upstreams []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if switched, err := m.setAppUpstreams(ctx, routeID, upstreams); switched || err != nil {
+		return err
+	}
 	idx := -1
 	for i, r := range m.last.Routes {
 		if r.ID == routeID {
@@ -188,6 +191,37 @@ func (m *Manager) SetUpstreams(ctx context.Context, routeID string, upstreams []
 		return err
 	}
 	return m.writeBootConfig(raw)
+}
+
+// setAppUpstreams patches every path of the running configuration that goes to appID. It
+// reports false when the app has no path there.
+func (m *Manager) setAppUpstreams(ctx context.Context, appID string, upstreams []string) (bool, error) {
+	next := m.last
+	next.Sites = make([]Site, len(m.last.Sites))
+	found := false
+	for i, site := range m.last.Sites {
+		next.Sites[i] = site
+		next.Sites[i].Paths = append([]Path(nil), site.Paths...)
+		for j, p := range site.Paths {
+			if p.AppID != appID {
+				continue
+			}
+			found = true
+			if err := m.admin.setUpstreamsAt(ctx, pathKey(p.ID), p.proxyIndex(), upstreams); err != nil {
+				return true, err
+			}
+			next.Sites[i].Paths[j].Upstreams = append([]string(nil), upstreams...)
+		}
+	}
+	if !found {
+		return false, nil
+	}
+	m.last = next
+	raw, err := Build(next)
+	if err != nil {
+		return true, err
+	}
+	return true, m.writeBootConfig(raw)
 }
 
 // Supervise checks the proxy every interval and brings it back when the container is gone,

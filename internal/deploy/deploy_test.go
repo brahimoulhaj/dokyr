@@ -132,7 +132,7 @@ func (e *env) setImage(image string) {
 
 func TestDeployReplacesContainer(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,7 +194,7 @@ func TestDeployReplacesContainer(t *testing.T) {
 
 func TestDeployFailureKeepsOldContainer(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -282,7 +282,7 @@ func TestOneOperationPerApp(t *testing.T) {
 
 func TestStopStartRestart(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1092,7 +1092,7 @@ func TestDeployFromPrivateRegistry(t *testing.T) {
 // the container: the dialer sends every health check connection there.
 func TestHealthCheck(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1234,7 +1234,7 @@ func TestHealthCheckOutsideNetwork(t *testing.T) {
 
 func TestRollbackGit(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1349,7 +1349,7 @@ func phaseNames(d store.Deployment) []string {
 
 func TestDeployPhases(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1511,7 +1511,7 @@ func TestStrategy(t *testing.T) {
 
 func TestDeployRecreate(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1543,7 +1543,7 @@ func TestDeployRecreate(t *testing.T) {
 
 func TestDeployRecreateRollsBack(t *testing.T) {
 	e, ctx := newEnv(t), context.Background()
-	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+	if _, err := e.addRoute(ctx, "shop.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.router.known[e.app.ID] = true
@@ -1696,4 +1696,13 @@ func TestBuildCache(t *testing.T) {
 	if len(b.tags) != 2 {
 		t.Errorf("built %v: the rollback must pull, not build", b.tags)
 	}
+}
+
+// addRoute gives the app host: a project domain with a "/" route to the app.
+func (e *env) addRoute(ctx context.Context, host string) (store.Route, error) {
+	d, err := e.st.CreateDomain(ctx, e.app.ProjectID, host, "")
+	if err != nil {
+		return store.Route{}, err
+	}
+	return e.st.CreateRoute(ctx, d.ID, "/", e.app.ID, false)
 }

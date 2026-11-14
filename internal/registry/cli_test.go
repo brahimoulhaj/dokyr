@@ -66,13 +66,16 @@ func TestDockerCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := host + "/shop/web:1"
+	// The refused push goes to another repository: the daemon caches tokens per repository
+	// for a while, and would otherwise reuse the pull-only one for the real push.
+	denied := host + "/shop/denied:1"
 	t.Cleanup(func() {
 		list, _ := d.ListContainers(ctx)
 		for _, c := range list {
 			_ = d.RemoveContainer(ctx, c.ID, true)
 		}
 		exec.Command("docker", "logout", host).Run()
-		exec.Command("docker", "rmi", image).Run()
+		exec.Command("docker", "rmi", image, denied).Run()
 		exec.Command("docker", "network", "rm", name).Run()
 		exec.Command("docker", "volume", "rm", name+"-data").Run()
 		d.Close()
@@ -95,8 +98,10 @@ func TestDockerCLI(t *testing.T) {
 	if out, err := docker("", "pull", "busybox:1.37"); err != nil {
 		t.Fatalf("pull busybox: %v\n%s", err, out)
 	}
-	if out, err := docker("", "tag", "busybox:1.37", image); err != nil {
-		t.Fatalf("tag: %v\n%s", err, out)
+	for _, ref := range []string{image, denied} {
+		if out, err := docker("", "tag", "busybox:1.37", ref); err != nil {
+			t.Fatalf("tag: %v\n%s", err, out)
+		}
 	}
 	if out, err := docker("wrong", "login", host, "-u", "ci", "--password-stdin"); err == nil {
 		t.Errorf("login with a wrong token worked:\n%s", out)
@@ -104,7 +109,7 @@ func TestDockerCLI(t *testing.T) {
 	if out, err := docker("pull-secret", "login", host, "-u", "reader", "--password-stdin"); err != nil {
 		t.Fatalf("login reader: %v\n%s", err, out)
 	}
-	if out, err := docker("", "push", image); err == nil {
+	if out, err := docker("", "push", denied); err == nil {
 		t.Errorf("a pull token pushed:\n%s", out)
 	}
 	if out, err := docker("push-secret", "login", host, "-u", "ci", "--password-stdin"); err != nil {

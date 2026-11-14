@@ -156,17 +156,46 @@ func toDeploymentJSON(d store.Deployment) deploymentJSON {
 	return out
 }
 
-type domainJSON struct {
-	ID        string    `json:"id"`
-	AppID     string    `json:"app_id"`
-	Hostname  string    `json:"hostname"`
-	TLSMode   string    `json:"tls_mode"`
-	IsPrimary bool      `json:"is_primary"`
-	CreatedAt time.Time `json:"created_at"`
+type routeJSON struct {
+	ID          string `json:"id"`
+	DomainID    string `json:"domain_id"`
+	Hostname    string `json:"hostname"`
+	Path        string `json:"path"`
+	AppID       string `json:"app_id"`
+	AppName     string `json:"app_name"`
+	StripPrefix bool   `json:"strip_prefix"`
+	URL         string `json:"url"` // what a browser opens: https:// (or http:// for an HTTP-only domain), host, path
 }
 
-func toDomainJSON(d store.Domain) domainJSON {
-	return domainJSON{d.ID, d.AppID, d.Hostname, d.TLSMode, d.IsPrimary, d.CreatedAt}
+func toRouteJSON(r store.Route) routeJSON {
+	scheme := "https://"
+	if r.TLSMode == store.TLSHTTPOnly {
+		scheme = "http://"
+	}
+	url := scheme + r.Hostname
+	if r.Path != "/" {
+		url += r.Path
+	}
+	return routeJSON{ID: r.ID, DomainID: r.DomainID, Hostname: r.Hostname, Path: r.Path, AppID: r.AppID, AppName: r.AppName, StripPrefix: r.StripPrefix, URL: url}
+}
+
+type domainJSON struct {
+	ID        string      `json:"id"`
+	ProjectID string      `json:"project_id"`
+	Hostname  string      `json:"hostname"`
+	TLSMode   string      `json:"tls_mode"`
+	Routes    []routeJSON `json:"routes"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+func toDomainJSON(d store.Domain, routes []store.Route) domainJSON {
+	out := domainJSON{ID: d.ID, ProjectID: d.ProjectID, Hostname: d.Hostname, TLSMode: d.TLSMode, Routes: []routeJSON{}, CreatedAt: d.CreatedAt}
+	for _, r := range routes {
+		if r.DomainID == d.ID {
+			out.Routes = append(out.Routes, toRouteJSON(r))
+		}
+	}
+	return out
 }
 
 type eventJSON struct {
@@ -239,6 +268,43 @@ func invalid(w http.ResponseWriter, msg string) {
 }
 
 // ---- projects ----
+
+type projectEnvJSON struct {
+	Environment map[string]string `json:"environment"`
+	Inherit     bool              `json:"inherit"` // every app gets them all, its own values winning
+}
+
+func (s *Server) handleGetProjectEnv(w http.ResponseWriter, r *http.Request) {
+	env, inherit, err := s.store.ProjectEnvironment(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "project environment", err, "") {
+		return
+	}
+	writeJSON(w, http.StatusOK, projectEnvJSON{Environment: env, Inherit: inherit})
+}
+
+// handlePutProjectEnv replaces a project's shared variables. Running apps keep what they
+// started with until they are deployed again.
+func (s *Server) handlePutProjectEnv(w http.ResponseWriter, r *http.Request) {
+	var in projectEnvJSON
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Environment == nil {
+		in.Environment = map[string]string{}
+	}
+	if !validEnvironment(w, in.Environment) {
+		return
+	}
+	p, err := s.store.GetProject(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get project", err, "") {
+		return
+	}
+	if err := s.store.SetProjectEnvironment(r.Context(), p.ID, in.Environment, in.Inherit); s.storeError(w, "project environment", err, "") {
+		return
+	}
+	s.audit(r, "project.environment", "project", p.ID, p.Name, "")
+	writeJSON(w, http.StatusOK, in)
+}
 
 func validProject(w http.ResponseWriter, name, description string) bool {
 	if name == "" || len(name) > 64 {
@@ -436,17 +502,14 @@ func validGitURL(raw string) bool {
 
 var environmentNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func validApp(w http.ResponseWriter, in store.AppInput) bool {
-	if err := store.ValidateAppMounts(in.Mounts); err != nil {
-		invalid(w, err.Error())
-		return false
-	}
-	if len(in.Environment) > 500 {
+// validEnvironment checks variable names and sizes, for apps and projects alike.
+func validEnvironment(w http.ResponseWriter, env map[string]string) bool {
+	if len(env) > 500 {
 		invalid(w, "at most 500 environment variables are allowed")
 		return false
 	}
 	total := 0
-	for key, value := range in.Environment {
+	for key, value := range env {
 		total += len(key) + len(value)
 		if !environmentNameRe.MatchString(key) || len(key) > 256 || strings.ContainsRune(value, 0) {
 			invalid(w, "environment variable names must contain letters, digits or underscores and cannot start with a digit; values cannot contain NUL")
@@ -455,6 +518,17 @@ func validApp(w http.ResponseWriter, in store.AppInput) bool {
 	}
 	if total > 128*1024 {
 		invalid(w, "environment variables must total at most 128 KiB")
+		return false
+	}
+	return true
+}
+
+func validApp(w http.ResponseWriter, in store.AppInput) bool {
+	if err := store.ValidateAppMounts(in.Mounts); err != nil {
+		invalid(w, err.Error())
+		return false
+	}
+	if !validEnvironment(w, in.Environment) {
 		return false
 	}
 	g := in.Git
@@ -803,19 +877,42 @@ func (s *Server) handleDeploymentLog(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// ---- domains ----
+// ---- domains and routes ----
 
 func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
-	a, err := s.store.GetApp(r.Context(), r.PathValue("id"))
-	if s.storeError(w, "get app", err, "") {
+	p, err := s.store.GetProject(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get project", err, "") {
 		return
 	}
-	list, err := s.store.ListDomains(r.Context(), a.ID)
+	list, err := s.store.ListDomains(r.Context(), p.ID)
 	if err != nil {
 		s.internal(w, "list domains", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, mapSlice(list, toDomainJSON))
+	routes, err := s.store.ProjectRoutes(r.Context(), p.ID)
+	if err != nil {
+		s.internal(w, "list routes", err)
+		return
+	}
+	out := make([]domainJSON, 0, len(list))
+	for _, d := range list {
+		out = append(out, toDomainJSON(d, routes))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// proxyApplied answers with v, or 503 when the change is saved but the proxy is down.
+func (s *Server) proxyApplied(w http.ResponseWriter, r *http.Request, status int, v any) {
+	if !s.applyProxy(r.Context()) {
+		writeError(w, http.StatusServiceUnavailable, "proxy_unavailable",
+			"saved, but the proxy could not be updated; it is applied when the proxy is back")
+		return
+	}
+	if v == nil {
+		w.WriteHeader(status)
+		return
+	}
+	writeJSON(w, status, v)
 }
 
 func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
@@ -835,11 +932,11 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	host := strings.ToLower(strings.TrimSpace(in.Hostname))
 	if err := proxy.ValidHost(host); err != nil {
-		invalid(w, "hostname must be a domain name like app.example.com (no scheme, port, path or wildcard)")
+		invalid(w, "hostname must be a domain name like shop.example.com (no scheme, port, path or wildcard)")
 		return
 	}
-	a, err := s.store.GetApp(r.Context(), r.PathValue("id"))
-	if s.storeError(w, "get app", err, "") {
+	p, err := s.store.GetProject(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get project", err, "") {
 		return
 	}
 	panelDomain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
@@ -855,76 +952,39 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
 		return
 	}
-	d, err := s.store.CreateDomain(r.Context(), a.ID, host, in.TLSMode)
-	if s.storeError(w, "create domain", err, "this hostname is already used by an app") {
+	d, err := s.store.CreateDomain(r.Context(), p.ID, host, in.TLSMode)
+	if s.storeError(w, "create domain", err, "this hostname is already used by a project") {
 		return
 	}
-	s.audit(r, "domain.add", "app", a.ID, a.Name, host)
-	if !s.applyProxy(r.Context()) {
-		writeError(w, http.StatusServiceUnavailable, "proxy_unavailable",
-			"saved, but the proxy could not be updated; it is applied when the proxy is back")
-		return
-	}
-	writeJSON(w, http.StatusCreated, toDomainJSON(d))
+	s.audit(r, "domain.add", "project", p.ID, p.Name, host)
+	s.proxyApplied(w, r, http.StatusCreated, toDomainJSON(d, nil))
 }
 
-// handleUpdateDomain changes a domain's TLS mode or the app's primary domain.
+// handleUpdateDomain changes a domain's TLS mode.
 func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		TLSMode   *string `json:"tls_mode"`
-		IsPrimary *bool   `json:"is_primary"`
+		TLSMode string `json:"tls_mode"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if in.TLSMode != nil && !store.ValidTLSMode(*in.TLSMode) {
+	if !store.ValidTLSMode(in.TLSMode) {
 		invalid(w, `tls_mode must be "auto" or "http_only"`)
-		return
-	}
-	if in.IsPrimary != nil && !*in.IsPrimary {
-		invalid(w, "choose another primary domain instead of unsetting the current one")
-		return
-	}
-	if in.TLSMode == nil && in.IsPrimary == nil {
-		invalid(w, "provide tls_mode or is_primary")
 		return
 	}
 	d, err := s.store.GetDomain(r.Context(), r.PathValue("id"))
 	if s.storeError(w, "get domain", err, "") {
 		return
 	}
-	tlsMode := d.TLSMode
-	if in.TLSMode != nil {
-		tlsMode = *in.TLSMode
+	if d.TLSMode == in.TLSMode {
+		writeJSON(w, http.StatusOK, toDomainJSON(d, nil))
+		return
 	}
-	tlsChanged := d.TLSMode != tlsMode
-	primaryChanged := in.IsPrimary != nil && !d.IsPrimary
-	if tlsChanged || primaryChanged {
-		tlsUpdate := ""
-		if in.TLSMode != nil {
-			tlsUpdate = *in.TLSMode
-		}
-		d, err = s.store.UpdateDomain(r.Context(), d.ID, tlsUpdate, primaryChanged)
-		if s.storeError(w, "update domain", err, "") {
-			return
-		}
-		appName := ""
-		if a, err := s.store.GetApp(r.Context(), d.AppID); err == nil {
-			appName = a.Name
-		}
-		if primaryChanged {
-			s.audit(r, "domain.primary", "app", d.AppID, appName, d.Hostname)
-		}
-		if tlsChanged {
-			s.audit(r, "domain.tls", "app", d.AppID, appName, d.Hostname+": "+tlsMode)
-		}
-		if tlsChanged && !s.applyProxy(r.Context()) {
-			writeError(w, http.StatusServiceUnavailable, "proxy_unavailable",
-				"saved, but the proxy could not be updated; it is applied when the proxy is back")
-			return
-		}
+	if d, err = s.store.SetDomainTLS(r.Context(), d.ID, in.TLSMode); s.storeError(w, "update domain", err, "") {
+		return
 	}
-	writeJSON(w, http.StatusOK, toDomainJSON(d))
+	s.audit(r, "domain.tls", "project", d.ProjectID, s.projectName(r.Context(), d.ProjectID), d.Hostname+": "+in.TLSMode)
+	s.proxyApplied(w, r, http.StatusOK, toDomainJSON(d, nil))
 }
 
 func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
@@ -935,13 +995,116 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "delete domain", s.store.DeleteDomain(r.Context(), d.ID), "") {
 		return
 	}
-	appName := ""
-	if a, err := s.store.GetApp(r.Context(), d.AppID); err == nil {
-		appName = a.Name
-	}
-	s.audit(r, "domain.remove", "app", d.AppID, appName, d.Hostname)
+	s.audit(r, "domain.remove", "project", d.ProjectID, s.projectName(r.Context(), d.ProjectID), d.Hostname)
 	s.applyProxy(r.Context())
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) projectName(ctx context.Context, projectID string) string {
+	if p, err := s.store.GetProject(ctx, projectID); err == nil {
+		return p.Name
+	}
+	return ""
+}
+
+type routeInput struct {
+	Path        string `json:"path"`
+	AppID       string `json:"app_id"`
+	StripPrefix bool   `json:"strip_prefix"`
+}
+
+// validRoute normalizes the path and checks that the app is in the domain's project.
+func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Domain, in *routeInput) bool {
+	path, ok := store.NormalizePath(in.Path)
+	if !ok {
+		invalid(w, "path must be / or a prefix like /api (letters, digits, - . _ ~ between slashes)")
+		return false
+	}
+	in.Path = path
+	if in.Path == "/" {
+		in.StripPrefix = false
+	}
+	a, err := s.store.GetApp(r.Context(), in.AppID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && a.ProjectID != d.ProjectID) {
+		invalid(w, "app_id must be an app of the domain's project")
+		return false
+	}
+	if err != nil {
+		s.internal(w, "get app", err)
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
+	var in routeInput
+	if !readJSON(w, r, &in) {
+		return
+	}
+	d, err := s.store.GetDomain(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get domain", err, "") {
+		return
+	}
+	if !s.validRoute(w, r, d, &in) {
+		return
+	}
+	rt, err := s.store.CreateRoute(r.Context(), d.ID, in.Path, in.AppID, in.StripPrefix)
+	if s.storeError(w, "create route", err, "this domain already routes "+in.Path) {
+		return
+	}
+	s.audit(r, "route.add", "app", rt.AppID, rt.AppName, d.Hostname+rt.Path)
+	s.proxyApplied(w, r, http.StatusCreated, toRouteJSON(rt))
+}
+
+func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
+	var in routeInput
+	if !readJSON(w, r, &in) {
+		return
+	}
+	rt, err := s.store.GetRoute(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get route", err, "") {
+		return
+	}
+	d, err := s.store.GetDomain(r.Context(), rt.DomainID)
+	if s.storeError(w, "get domain", err, "") {
+		return
+	}
+	if !s.validRoute(w, r, d, &in) {
+		return
+	}
+	rt, err = s.store.UpdateRoute(r.Context(), rt.ID, in.Path, in.AppID, in.StripPrefix)
+	if s.storeError(w, "update route", err, "this domain already routes "+in.Path) {
+		return
+	}
+	s.audit(r, "route.update", "app", rt.AppID, rt.AppName, d.Hostname+rt.Path)
+	s.proxyApplied(w, r, http.StatusOK, toRouteJSON(rt))
+}
+
+func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
+	rt, err := s.store.GetRoute(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get route", err, "") {
+		return
+	}
+	if s.storeError(w, "delete route", s.store.DeleteRoute(r.Context(), rt.ID), "") {
+		return
+	}
+	s.audit(r, "route.remove", "app", rt.AppID, rt.AppName, rt.Hostname+rt.Path)
+	s.applyProxy(r.Context())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAppRoutes lists where an app is reachable.
+func (s *Server) handleAppRoutes(w http.ResponseWriter, r *http.Request) {
+	a, err := s.store.GetApp(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "get app", err, "") {
+		return
+	}
+	routes, err := s.store.AppRoutes(r.Context(), a.ID)
+	if err != nil {
+		s.internal(w, "list routes", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mapSlice(routes, toRouteJSON))
 }
 
 // handleDomainDNS is a hint, not a gate: it shows what the hostname resolves to and, when

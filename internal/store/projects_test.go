@@ -32,7 +32,7 @@ func TestProjectsAppsDomains(t *testing.T) {
 		t.Fatalf("app in missing project = %v", err)
 	}
 	p2, _ := s.CreateProject(ctx, "Blog", "")
-	b, err := s.CreateApp(ctx, p2.ID, in) // same name, other project
+	_, err = s.CreateApp(ctx, p2.ID, in) // same name, other project
 	if err != nil {
 		t.Fatalf("same app name in another project: %v", err)
 	}
@@ -51,25 +51,37 @@ func TestProjectsAppsDomains(t *testing.T) {
 		t.Fatalf("update app = %+v, %v", a, err)
 	}
 
-	// Domains: unique panel-wide.
-	d, err := s.CreateDomain(ctx, a.ID, "shop.example.com", "")
-	if err != nil || d.TLSMode != "auto" {
+	// Domains belong to the project, unique panel-wide; routes send paths to apps.
+	d, err := s.CreateDomain(ctx, p.ID, "shop.example.com", "")
+	if err != nil || d.TLSMode != "auto" || d.ProjectID != p.ID {
 		t.Fatalf("create domain = %+v, %v", d, err)
 	}
-	if _, err := s.CreateDomain(ctx, b.ID, "shop.example.com", ""); !errors.Is(err, ErrConflict) {
-		t.Fatalf("hostname reuse across apps = %v", err)
+	if _, err := s.CreateDomain(ctx, p.ID, "shop.example.com", ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("hostname reuse = %v", err)
 	}
-	if _, err := s.CreateDomain(ctx, a.ID, "www.shop.example.com", ""); err != nil {
+	if _, err := s.CreateDomain(ctx, p.ID, "www.shop.example.com", ""); err != nil {
 		t.Fatal(err)
 	}
 	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
 		t.Error("DomainExists = false")
 	}
+	if _, err := s.CreateRoute(ctx, d.ID, "/", a.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateRoute(ctx, d.ID, "/", a.ID, false); !errors.Is(err, ErrConflict) {
+		t.Fatalf("the same path twice = %v", err)
+	}
+	upstream := func() string {
+		sites, err := s.ProxySites(ctx)
+		if err != nil || len(sites) != 2 || sites[0].Host != "shop.example.com" || len(sites[0].Paths) != 1 || len(sites[1].Paths) != 0 {
+			t.Fatalf("sites = %+v, %v", sites, err)
+		}
+		return sites[0].Paths[0].Upstream
+	}
 
-	// Routes: no upstream until a deployment is current and the app is running.
-	routes, err := s.ProxyRoutes(ctx)
-	if err != nil || len(routes) != 1 || len(routes[0].Hosts) != 2 || routes[0].Upstream != "" {
-		t.Fatalf("routes before deploy = %+v, %v", routes, err)
+	// No upstream until a deployment is current and the app is running.
+	if got := upstream(); got != "" {
+		t.Fatalf("upstream before deploy = %q", got)
 	}
 	dep, err := s.CreateDeployment(ctx, a.ID, "manual", a.Image, a.Port, func(id string) string { return "deployments/" + id + ".log" })
 	if err != nil || dep.Status != DeployQueued || dep.LogPath != "deployments/"+dep.ID+".log" || !dep.StartedAt.IsZero() {
@@ -84,22 +96,22 @@ func TestProjectsAppsDomains(t *testing.T) {
 	if err := s.SetAppCurrentDeployment(ctx, a.ID, dep.ID, StateRunning); err != nil {
 		t.Fatal(err)
 	}
-	if routes, _ = s.ProxyRoutes(ctx); routes[0].Upstream != "app-web-1:8080" {
-		t.Fatalf("route upstream = %q", routes[0].Upstream)
+	if got := upstream(); got != "app-web-1:8080" {
+		t.Fatalf("route upstream = %q", got)
 	}
 	// The route keeps dialling the deployed port even after the setting changes.
 	in.Port = 9090
 	if _, err := s.UpdateApp(ctx, a.ID, in); err != nil {
 		t.Fatal(err)
 	}
-	if routes, _ = s.ProxyRoutes(ctx); routes[0].Upstream != "app-web-1:8080" {
-		t.Fatalf("route followed an undeployed port change: %q", routes[0].Upstream)
+	if got := upstream(); got != "app-web-1:8080" {
+		t.Fatalf("route followed an undeployed port change: %q", got)
 	}
 	if err := s.SetAppDesiredState(ctx, a.ID, StateStopped); err != nil {
 		t.Fatal(err)
 	}
-	if routes, _ = s.ProxyRoutes(ctx); routes[0].Upstream != "" {
-		t.Fatalf("stopped app still has upstream %q", routes[0].Upstream)
+	if got := upstream(); got != "" {
+		t.Fatalf("stopped app still has upstream %q", got)
 	}
 
 	if err := s.FinishDeployment(ctx, dep.ID, DeploySucceeded, ""); err != nil {
@@ -145,11 +157,17 @@ func TestProjectsAppsDomains(t *testing.T) {
 	if _, err := s.GetDeployment(ctx, dep.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("deployment survived its app: %v", err)
 	}
-	if ok, _ := s.DomainExists(ctx, "shop.example.com"); ok {
-		t.Error("domain survived its app")
+	if routes, _ := s.AppRoutes(ctx, a.ID); len(routes) != 0 {
+		t.Error("a route survived its app")
+	}
+	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
+		t.Error("the project's domain went with an app")
 	}
 	if err := s.DeleteProject(ctx, p.ID); err != nil {
 		t.Fatalf("delete empty project: %v", err)
+	}
+	if ok, _ := s.DomainExists(ctx, "shop.example.com"); ok {
+		t.Error("domain survived its project")
 	}
 	if err := s.DeleteProject(ctx, p.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete project twice = %v", err)

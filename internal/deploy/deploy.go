@@ -616,6 +616,12 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail("", err)
 		return
 	}
+	// The project's shared variables, before anything stops: a bad reference costs no gap.
+	withEnv := app
+	if withEnv.Environment, err = s.environment(final, app, logw); err != nil {
+		fail("", err)
+		return
+	}
 	recreate := app.Strategy() == store.StrategyRecreate
 	if recreate {
 		phase(store.PhaseStopping)
@@ -641,7 +647,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		Labels:     map[string]string{"deployment": dep.ID},
 		CPUs:       app.CPULimit,
 		MemoryMB:   app.MemoryMB,
-		Env:        containerEnv(app, dep.Port),
+		Env:        containerEnv(withEnv, dep.Port),
 		Entrypoint: entrypoint,
 		Command:    command,
 		Mounts:     mounts,
@@ -997,6 +1003,19 @@ func (s *Service) build(ctx, final context.Context, app store.App, dep store.Dep
 	return tag, nil
 }
 
+// environment is the app's variables with the project's: inherited when the project says
+// so, and every ${project.NAME} replaced.
+func (s *Service) environment(ctx context.Context, app store.App, logw *logWriter) (map[string]string, error) {
+	project, inherit, err := s.opts.Store.ProjectEnvironment(ctx, app.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("project variables: %w", err)
+	}
+	if inherit && len(project) > 0 {
+		logw.printf("Inheriting %d project variables (the app's own values win)", len(project))
+	}
+	return resolveEnvironment(app.Environment, project, inherit)
+}
+
 // containerEnv is the app's environment, plus PORT set to port (the deployment's) for a
 // Git app that does not set it: images built by Railpack (and many others) listen on $PORT.
 func containerEnv(app store.App, port int) map[string]string {
@@ -1277,11 +1296,11 @@ func (s *Service) route(ctx context.Context, appID string, upstreams []string) e
 	if s.opts.Router == nil {
 		return nil
 	}
-	domains, err := s.opts.Store.ListDomains(ctx, appID)
+	routes, err := s.opts.Store.AppRoutes(ctx, appID)
 	if err != nil {
 		return err
 	}
-	if len(domains) == 0 {
+	if len(routes) == 0 {
 		return nil
 	}
 	if err := s.opts.Router.SetUpstreams(ctx, appID, upstreams); err == nil {

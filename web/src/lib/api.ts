@@ -202,7 +202,11 @@ export type Deployment = {
   created_at: string
 }
 
-export type Domain = { id: string; app_id: string; hostname: string; tls_mode: string; is_primary: boolean; created_at: string }
+/** A path of a project domain sent to an app. */
+export type Route = { id: string; domain_id: string; hostname: string; path: string; app_id: string; app_name: string; strip_prefix: boolean; url: string }
+
+/** A hostname of a project, with the routes that send its paths to apps. */
+export type Domain = { id: string; project_id: string; hostname: string; tls_mode: string; routes: Route[]; created_at: string }
 
 export type DnsHint = {
   hostname: string
@@ -294,9 +298,15 @@ export const activeDeploymentsQuery = {
   queryFn: () => api<ActiveDeployment[]>('/deployments/active'),
 }
 
-export const domainsQuery = (appId: string) => ({
-  queryKey: ['apps', appId, 'domains'] as const,
-  queryFn: () => api<Domain[]>(`/apps/${appId}/domains`),
+export const domainsQuery = (projectId: string) => ({
+  queryKey: ['projects', projectId, 'domains'] as const,
+  queryFn: () => api<Domain[]>(`/projects/${projectId}/domains`),
+})
+
+/** Where an app is reachable: its routes, with their URLs. */
+export const appRoutesQuery = (appId: string) => ({
+  queryKey: ['apps', appId, 'routes'] as const,
+  queryFn: () => api<Route[]>(`/apps/${appId}/routes`),
 })
 
 export const dnsQuery = (domainId: string) => ({

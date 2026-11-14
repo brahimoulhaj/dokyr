@@ -16,7 +16,7 @@ export const en = {
   mountAdd: "Add mount",
 
   environment: "Environment variables",
-  environmentHint: "Runtime variables apply on the next deployment.",
+  environmentHint: "Runtime variables apply on the next deployment. Use a project variable with ${project.NAME} in a value.",
   environmentFields: "Individual fields",
   environmentBulk: "Bulk editor",
   environmentFormat: "One KEY=value per line. Blank lines and # comments are ignored. Double-quoted values use JSON escapes. No variable expansion.",
@@ -85,6 +85,7 @@ export const en = {
   container: 'Container',
   runningVersion: 'Running version',
   deployedAgo: (version: string, ago: string) => `${version} · deployed ${ago}`,
+  manageDomains: 'Domains are set in the project →',
   noDomains: 'None. Without a domain the app is not reachable from outside.',
 
   deployStatus: {
@@ -184,7 +185,7 @@ export const fr: typeof en = {
   mountAdd: "Ajouter un montage",
 
   environment: "Variables d’environnement",
-  environmentHint: "Les variables sont appliquées au prochain déploiement.",
+  environmentHint: "Les variables sont appliquées au prochain déploiement. Utilisez une variable du projet avec ${project.NOM} dans une valeur.",
   environmentFields: "Champs individuels",
   environmentBulk: "Éditeur en bloc",
   environmentFormat: "Une entrée CLÉ=valeur par ligne. Lignes vides et commentaires # ignorés. Les guillemets doubles utilisent les échappements JSON. Aucune interpolation.",
@@ -253,6 +254,7 @@ export const fr: typeof en = {
   container: 'Conteneur',
   runningVersion: 'Version en cours d’exécution',
   deployedAgo: (version, ago) => `${version} · déployée ${ago}`,
+  manageDomains: 'Les domaines se règlent dans le projet →',
   noDomains: 'Aucun. Sans domaine, l’application n’est pas accessible de l’extérieur.',
 
   deployStatus: {
@@ -354,7 +356,7 @@ export const ar: typeof en = {
   mountAdd: "إضافة ربط",
 
   environment: "متغيرات البيئة",
-  environmentHint: "تُطبّق المتغيرات عند النشر التالي.",
+  environmentHint: "تُطبّق المتغيرات عند النشر التالي. استخدم متغير المشروع بكتابة ${project.NAME} في قيمة.",
   environmentFields: "حقول منفردة",
   environmentBulk: "محرر جماعي",
   environmentFormat: "متغير KEY=value في كل سطر. تُتجاهل الأسطر الفارغة وتعليقات #. القيم بين علامتي اقتباس تستخدم صيغة JSON. لا يتم توسيع المتغيرات.",
@@ -423,6 +425,7 @@ export const ar: typeof en = {
   container: 'الحاوية',
   runningVersion: 'النسخة العاملة',
   deployedAgo: (version, ago) => `⁦${version}⁩ · نُشرت ${ago}`,
+  manageDomains: 'تُضبط النطاقات في المشروع ←',
   noDomains: 'لا يوجد. بدون نطاق لا يمكن الوصول إلى التطبيق من الخارج.',
 
   deployStatus: {
@@ -522,7 +525,7 @@ export const es: typeof en = {
   mountAdd: "Añadir montaje",
 
   environment: "Variables de entorno",
-  environmentHint: "Las variables se aplican en el próximo despliegue.",
+  environmentHint: "Las variables se aplican en el próximo despliegue. Usa una variable del proyecto con ${project.NOMBRE} en un valor.",
   environmentFields: "Campos individuales",
   environmentBulk: "Editor en bloque",
   environmentFormat: "Una entrada CLAVE=valor por línea. Se ignoran líneas vacías y comentarios #. Las comillas dobles usan escapes JSON. Sin expansión de variables.",
@@ -591,6 +594,7 @@ export const es: typeof en = {
   container: 'Contenedor',
   runningVersion: 'Versión en ejecución',
   deployedAgo: (version, ago) => `${version} · desplegada ${ago}`,
+  manageDomains: 'Los dominios se configuran en el proyecto →',
   noDomains: 'Ninguno. Sin un dominio, la aplicación no es accesible desde fuera.',
 
   deployStatus: {

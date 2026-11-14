@@ -3,6 +3,7 @@
 
 export const en = {
   close: 'Close',
+  edit: 'Edit',
   cancel: 'Cancel',
   save: 'Save',
   saving: 'Saving…',
@@ -34,6 +35,7 @@ export const en = {
 
 export const fr: typeof en = {
   close: 'Fermer',
+  edit: 'Modifier',
   cancel: 'Annuler',
   save: 'Enregistrer',
   saving: 'Enregistrement…',
@@ -65,6 +67,7 @@ export const fr: typeof en = {
 
 export const ar: typeof en = {
   close: 'إغلاق',
+  edit: 'تعديل',
   cancel: 'إلغاء',
   save: 'حفظ',
   saving: 'جارٍ الحفظ…',
@@ -96,6 +99,7 @@ export const ar: typeof en = {
 
 export const es: typeof en = {
   close: 'Cerrar',
+  edit: 'Editar',
   cancel: 'Cancelar',
   save: 'Guardar',
   saving: 'Guardando…',

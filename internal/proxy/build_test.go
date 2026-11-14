@@ -284,3 +284,29 @@ func TestBuildPanelPaths(t *testing.T) {
 		t.Errorf("the rest goes to %v, want the registry", got)
 	}
 }
+
+func TestBuildSites(t *testing.T) {
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Sites: []Site{{Host: "shop.example.com", Paths: []Path{
+		{ID: "r1", AppID: "front", Prefix: "/", Upstreams: []string{"front:80"}},
+		{ID: "r2", AppID: "back", Prefix: "/api", Strip: true, Upstreams: []string{"back:8080"}},
+	}}}})
+	sub := dig(t, cfg, "apps", "http", "servers", "https", "routes", 0, "handle", 0, "routes")
+	if got := dig(t, sub, 0, "@id"); got != "path-r2" {
+		t.Errorf("first path = %v, want the longest (/api)", got)
+	}
+	if got := dig(t, sub, 0, "match", 0, "path", 1); got != "/api/*" {
+		t.Errorf("/api matcher = %v", got)
+	}
+	if got := dig(t, sub, 0, "handle", 0, "strip_path_prefix"); got != "/api" {
+		t.Errorf("strip = %v", got)
+	}
+	if _, has := dig(t, sub, 1).(map[string]any)["match"]; has {
+		t.Error("the / route has a matcher")
+	}
+	// A hostname both a project domain and a built-in route is refused.
+	if _, err := Build(Config{AdminListen: ":2019", PanelUpstream: "berth:8080",
+		Routes: []Route{{ID: "registry", Hosts: []string{"shop.example.com"}, Upstreams: []string{"r:5000"}}},
+		Sites:  []Site{{Host: "shop.example.com"}}}); err == nil {
+		t.Error("duplicate hostname accepted")
+	}
+}

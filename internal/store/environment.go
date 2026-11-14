@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,4 +93,33 @@ func (s *Store) openEnvironment(stored string) (map[string]string, error) {
 		env = map[string]string{}
 	}
 	return env, nil
+}
+
+// ProjectEnvironment returns a project's shared variables and whether its apps inherit
+// them all.
+func (s *Store) ProjectEnvironment(ctx context.Context, projectID string) (map[string]string, bool, error) {
+	var stored string
+	var inherit bool
+	err := s.db.QueryRowContext(ctx, `SELECT environment, env_inherit FROM projects WHERE id = ?`, projectID).Scan(&stored, &inherit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, ErrNotFound
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	env, err := s.openEnvironment(stored)
+	if err != nil {
+		return nil, false, fmt.Errorf("project %s environment: %w", projectID, err)
+	}
+	return env, inherit, nil
+}
+
+// SetProjectEnvironment replaces a project's shared variables, stored encrypted.
+func (s *Store) SetProjectEnvironment(ctx context.Context, projectID string, env map[string]string, inherit bool) error {
+	sealed, err := s.sealEnvironment(env)
+	if err != nil {
+		return err
+	}
+	return affected(s.db.ExecContext(ctx, `UPDATE projects SET environment = ?, env_inherit = ?, updated_at = ? WHERE id = ?`,
+		sealed, inherit, now(), projectID))
 }

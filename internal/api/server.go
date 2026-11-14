@@ -129,6 +129,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}", s.requireAuth(s.handleGetProject))
 	mux.HandleFunc("PATCH /api/projects/{id}", s.requireAuth(s.handleUpdateProject))
 	mux.HandleFunc("DELETE /api/projects/{id}", s.requireAuth(s.handleDeleteProject))
+	mux.HandleFunc("GET /api/projects/{id}/environment", s.requireAuth(s.handleGetProjectEnv))
+	mux.HandleFunc("PUT /api/projects/{id}/environment", s.requireAuth(s.handlePutProjectEnv))
 	mux.HandleFunc("GET /api/projects/{id}/apps", s.requireAuth(s.handleListApps))
 	mux.HandleFunc("POST /api/projects/{id}/apps", s.requireAuth(s.handleCreateApp))
 
@@ -142,8 +144,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/apps/{id}/deployments", s.requireAuth(s.handleListDeployments))
 	mux.HandleFunc("GET /api/apps/{id}/logs/stream", s.requireAuth(s.handleAppLogStream))
 	mux.HandleFunc("GET /api/apps/{id}/terminal", s.requireAuth(sessionOnly(s.handleTerminal)))
-	mux.HandleFunc("GET /api/apps/{id}/domains", s.requireAuth(s.handleListDomains))
-	mux.HandleFunc("POST /api/apps/{id}/domains", s.requireAuth(s.handleCreateDomain))
+	mux.HandleFunc("GET /api/apps/{id}/routes", s.requireAuth(s.handleAppRoutes))
+	mux.HandleFunc("GET /api/projects/{id}/domains", s.requireAuth(s.handleListDomains))
+	mux.HandleFunc("POST /api/projects/{id}/domains", s.requireAuth(s.handleCreateDomain))
+	mux.HandleFunc("POST /api/domains/{id}/routes", s.requireAuth(s.handleCreateRoute))
+	mux.HandleFunc("PATCH /api/routes/{id}", s.requireAuth(s.handleUpdateRoute))
+	mux.HandleFunc("DELETE /api/routes/{id}", s.requireAuth(s.handleDeleteRoute))
 
 	mux.HandleFunc("GET /api/apps/{id}/health-check", s.requireAuth(s.handleGetHealthCheck))
 	mux.HandleFunc("PUT /api/apps/{id}/health-check", s.requireAuth(s.handleSetHealthCheck))

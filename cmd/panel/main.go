@@ -352,7 +352,7 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 }
 
 // proxySource reads the routing state from the database: the panel's own domain and one
-// route per app that has domains.
+// site per project domain with its path routes, and the built-in registry when on.
 func proxySource(st *store.Store, registryUpstream string) func(context.Context) (proxy.Config, error) {
 	return func(ctx context.Context) (proxy.Config, error) {
 		domain, _, err := st.GetSetting(ctx, store.SettingPanelDomain)
@@ -363,7 +363,7 @@ func proxySource(st *store.Store, registryUpstream string) func(context.Context)
 		if err != nil {
 			return proxy.Config{}, err
 		}
-		routes, err := st.ProxyRoutes(ctx)
+		sites, err := st.ProxySites(ctx)
 		if err != nil {
 			return proxy.Config{}, err
 		}
@@ -381,12 +381,16 @@ func proxySource(st *store.Store, registryUpstream string) func(context.Context)
 			PanelDomainOnly: ipOff == "true",
 			ACMEEmail:       email,
 		}
-		for _, r := range routes {
-			route := proxy.Route{ID: r.AppID, Hosts: r.Hosts, HTTPOnly: r.HTTPOnly}
-			if r.Upstream != "" {
-				route.Upstreams = []string{r.Upstream}
+		for _, site := range sites {
+			ps := proxy.Site{Host: site.Host, HTTPOnly: site.HTTPOnly}
+			for _, p := range site.Paths {
+				path := proxy.Path{ID: p.RouteID, AppID: p.AppID, Prefix: p.Path, Strip: p.Strip}
+				if p.Upstream != "" {
+					path.Upstreams = []string{p.Upstream}
+				}
+				ps.Paths = append(ps.Paths, path)
 			}
-			cfg.Routes = append(cfg.Routes, route)
+			cfg.Sites = append(cfg.Sites, ps)
 		}
 		// The built-in registry, on its own domain; its token endpoint is the panel's.
 		if rs, err := st.GetRegistrySettings(ctx); err != nil {

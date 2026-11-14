@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,6 +63,12 @@ func (a *Admin) SetUpstreams(ctx context.Context, routeID string, upstreams []st
 
 // setUpstreams patches the upstreams of the Caddy route with this @id.
 func (a *Admin) setUpstreams(ctx context.Context, key string, upstreams []string) error {
+	return a.setUpstreamsAt(ctx, key, 0, upstreams)
+}
+
+// setUpstreamsAt replaces the upstreams of the reverse_proxy handler at index idx of the
+// route with @id key.
+func (a *Admin) setUpstreamsAt(ctx context.Context, key string, idx int, upstreams []string) error {
 	list := make([]object, 0, len(upstreams))
 	for _, u := range upstreams {
 		if err := validUpstream(u); err != nil {
@@ -73,7 +80,7 @@ func (a *Admin) setUpstreams(ctx context.Context, key string, upstreams []string
 	if err != nil {
 		return err
 	}
-	return a.do(ctx, http.MethodPatch, "/id/"+url.PathEscape(key)+"/handle/0/upstreams", body)
+	return a.do(ctx, http.MethodPatch, "/id/"+url.PathEscape(key)+"/handle/"+strconv.Itoa(idx)+"/upstreams", body)
 }
 
 func (a *Admin) do(ctx context.Context, method, path string, body []byte) error {

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, appQuery, appsQuery, type App } from '../lib/api'
 import { environmentMap, parseEnvironment, serializeEnvironment, type EnvironmentRow } from '../lib/environment'
@@ -9,19 +9,45 @@ const inputClass = 'block h-9 w-full border border-line bg-bg px-3 text-sm text-
 
 export function EnvironmentSettings({ app }: { app: App }) {
   const t = useT().app
-  const common = useT().common
   const client = useQueryClient()
-  const [rows, setRows] = useState<EnvironmentRow[]>(() => Object.entries(app.environment ?? {}).map(([key, value]) => ({ key, value })))
+  return (
+    <EnvironmentEditor
+      title={t.environment}
+      hint={t.environmentHint}
+      initial={app.environment}
+      save={(environment) => api<App>(`/apps/${app.id}`, { method: 'PATCH', body: { environment } })}
+      onSaved={() => {
+        client.invalidateQueries({ queryKey: appQuery(app.id).queryKey, exact: true })
+        client.invalidateQueries({ queryKey: appsQuery(app.project_id).queryKey })
+      }}
+    />
+  )
+}
+
+/** Edits a set of variables, as fields or as .env text. extra goes above the save button
+ * (the project's inherit switch); extraDirty says it changed. */
+export function EnvironmentEditor(props: {
+  title: string
+  hint: ReactNode
+  initial: Record<string, string> | undefined
+  save: (environment: Record<string, string>) => Promise<unknown>
+  onSaved?: () => void
+  extra?: ReactNode
+  extraDirty?: boolean
+}) {
+  const t = useT().app
+  const common = useT().common
+  const [rows, setRows] = useState<EnvironmentRow[]>(() => Object.entries(props.initial ?? {}).map(([key, value]) => ({ key, value })))
   const [bulk, setBulk] = useState(false)
   const [text, setText] = useState('')
   const [error, setError] = useState('')
-  const [changed, setChanged] = useState(false)
+  const [edited, setChanged] = useState(false)
+  const changed = edited || !!props.extraDirty
   const save = useMutation({
-    mutationFn: (environment: Record<string, string>) => api<App>(`/apps/${app.id}`, { method: 'PATCH', body: { environment } }),
+    mutationFn: props.save,
     onSuccess: () => {
       setChanged(false)
-      client.invalidateQueries({ queryKey: appQuery(app.id).queryKey, exact: true })
-      client.invalidateQueries({ queryKey: appsQuery(app.project_id).queryKey })
+      props.onSaved?.()
     },
   })
   function switchMode() {
@@ -36,7 +62,7 @@ export function EnvironmentSettings({ app }: { app: App }) {
     try { const next = bulk ? parseEnvironment(text) : rows; const values = environmentMap(next); setRows(next); setError(''); save.mutate(values) }
     catch { setError(t.environmentInvalid) }
   }
-  return <Panel title={t.environment} actions={<HelpTip label={t.environment}>{t.environmentHint}</HelpTip>}>
+  return <Panel title={props.title} actions={<HelpTip label={props.title}>{props.hint}</HelpTip>}>
     <form onSubmit={submit} className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button type="button" variant="ghost" disabled={save.isPending} onClick={switchMode}>{bulk ? t.environmentFields : t.environmentBulk}</Button>
@@ -60,6 +86,7 @@ export function EnvironmentSettings({ app }: { app: App }) {
           <Button type="button" variant="ghost" onClick={() => { setRows([...rows, { key: '', value: '' }]); setChanged(true) }}>{t.environmentAdd}</Button>
         </>}
       </fieldset>
+      {props.extra}
       {error && <ErrorNote>{error}</ErrorNote>}
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
       {save.isSuccess && !changed && <p className="text-xs text-accent">{common.saved}</p>}

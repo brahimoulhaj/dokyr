@@ -340,3 +340,66 @@ func TestNewValidation(t *testing.T) {
 		t.Error("missing executor accepted")
 	}
 }
+
+// getPath requests path on host over HTTPS through the proxy.
+func (s *stack) getPath(host, path string) (int, string) {
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: host}, DisableKeepAlives: true,
+	}}
+	req, _ := http.NewRequest("GET", fmt.Sprintf("https://127.0.0.1:%d%s", s.httpsPort, path), nil)
+	req.Host = host
+	res, err := client.Do(req)
+	if err != nil {
+		return 0, err.Error()
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(body)
+}
+
+// TestSitesWithRealCaddy routes paths of one project domain to different apps: the
+// longest prefix wins, a stripped prefix is removed, a kept one is passed on, and an app's
+// upstreams switch on every path that serves it.
+func TestSitesWithRealCaddy(t *testing.T) {
+	s := newStack(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	m := s.manager(s.httpPort)
+	s.set(Config{Sites: []Site{{Host: "shop.test", Paths: []Path{
+		{ID: "r1", AppID: "front", Prefix: "/", Upstreams: []string{s.upstream("A")}},
+		{ID: "r2", AppID: "back", Prefix: "/api", Strip: true, Upstreams: []string{s.upstream("B")}},
+		{ID: "r3", AppID: "back", Prefix: "/keep", Upstreams: []string{s.upstream("B")}},
+	}}}})
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	s.eventually("https shop.test/", func() (bool, string) {
+		code, body := s.getPath("shop.test", "/index.html")
+		return code == 200 && body == "A", fmt.Sprintf("got %d %q", code, body)
+	})
+	if code, body := s.getPath("shop.test", "/api/index.html"); code != 200 || body != "B" {
+		t.Errorf("/api (stripped) = %d %q, want B", code, body)
+	}
+	if code, _ := s.getPath("shop.test", "/keep/index.html"); code != 404 {
+		t.Errorf("/keep (prefix kept, B has no /keep) = %d, want 404 from B", code)
+	}
+	// The app behind /api and /keep switches on both at once.
+	if err := m.SetUpstreams(ctx, "back", []string{s.upstream("A")}); err != nil {
+		t.Fatalf("SetUpstreams: %v", err)
+	}
+	if code, body := s.getPath("shop.test", "/api/index.html"); code != 200 || body != "A" {
+		t.Errorf("/api after switch = %d %q, want A", code, body)
+	}
+	if code, body := s.getPath("shop.test", "/index.html"); code != 200 || body != "A" {
+		t.Errorf("/ after switching another app = %d %q", code, body)
+	}
+
+	// A domain with no "/" route answers 404 outside its paths.
+	s.set(Config{Sites: []Site{{Host: "shop.test", Paths: []Path{{ID: "r2", AppID: "back", Prefix: "/api", Strip: true, Upstreams: []string{s.upstream("B")}}}}}})
+	if err := m.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := s.getPath("shop.test", "/index.html"); code != 404 {
+		t.Errorf("no / route = %d, want 404", code)
+	}
+}

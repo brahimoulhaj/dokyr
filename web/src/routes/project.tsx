@@ -2,13 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { SourceFields, sourceForm, sourceInput } from '../components/source'
-import { Badge, Button, ConfirmButton, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
-import { api, appQuery, appsQuery, projectQuery, projectsQuery, type App, type Project } from '../lib/api'
+import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, HttpOnlyChoice, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
+import { api, appQuery, appsQuery, dnsQuery, domainsQuery, projectQuery, projectsQuery, type App, type Domain, type Project, type Route } from '../lib/api'
 import { appSource, appStatus } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet } from '../components/sheet'
+import { EnvironmentEditor } from '../components/environment'
+import { DnsHintText } from '../components/dns'
 
-export const projectTabs = ['apps', 'settings'] as const
+export const projectTabs = ['apps', 'domains', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
 
 export function ProjectPage() {
@@ -49,7 +51,7 @@ export function ProjectPage() {
             className={cx('border-b-2 px-3 py-1.5 text-sm whitespace-nowrap', name === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg')}
             aria-current={name === tab ? 'page' : undefined}
           >
-            {name === 'apps' ? t.project.apps : t.common.settings}
+            {{ apps: t.project.apps, domains: t.project.domainsTab, environment: t.project.envTab, settings: t.common.settings }[name]}
             {name === 'apps' && apps.data && <span className="ms-1.5 text-xs text-muted">{apps.data.length}</span>}
           </Link>
         ))}
@@ -70,6 +72,8 @@ export function ProjectPage() {
             ))}
         </Panel>
       )}
+      {tab === 'domains' && <ProjectDomains projectId={p.id} apps={apps.data ?? []} />}
+      {tab === 'environment' && <ProjectEnvironment projectId={p.id} />}
       {tab === 'settings' && (
         <Panel title={t.project.settingsTitle}>
           <ProjectSettings key={p.updated_at} project={p} />
@@ -224,5 +228,203 @@ function ProjectSettings({ project }: { project: Project }) {
         {remove.error && <ErrorNote>{remove.error.message}</ErrorNote>}
       </section>
     </>
+  )
+}
+
+type ProjectEnv = { environment: Record<string, string>; inherit: boolean }
+
+/** The project's shared variables, and whether every app inherits them. */
+function ProjectEnvironment({ projectId }: { projectId: string }) {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const key = ['projects', projectId, 'environment']
+  const env = useQuery({ queryKey: key, queryFn: () => api<ProjectEnv>(`/projects/${projectId}/environment`) })
+  const [inherit, setInherit] = useState<boolean | null>(null)
+  if (!env.data) return <QueryState loading={env.isPending} error={env.error} what={t.project.envTitle} />
+  const on = inherit ?? env.data.inherit
+  return (
+    <EnvironmentEditor
+      key={JSON.stringify(env.data)}
+      title={t.project.envTitle}
+      hint={t.project.envHint}
+      initial={env.data.environment}
+      save={(environment) => api<ProjectEnv>(`/projects/${projectId}/environment`, { method: 'PUT', body: { environment, inherit: on } })}
+      onSaved={() => {
+        setInherit(null)
+        queryClient.invalidateQueries({ queryKey: key })
+      }}
+      extraDirty={on !== env.data.inherit}
+      extra={<CheckOption checked={on} onChange={setInherit} label={t.project.envInherit} hint={t.project.envInheritHint} />}
+    />
+  )
+}
+
+// ---- domains ----
+
+type RouteSheet = { domain: Domain; route?: Route } | null
+
+/** The project's domains, each with the routes that send its paths to apps. */
+function ProjectDomains({ projectId, apps }: { projectId: string; apps: App[] }) {
+  const t = useT()
+  const domains = useQuery(domainsQuery(projectId))
+  const [adding, setAdding] = useState(false)
+  const [routing, setRouting] = useState<RouteSheet>(null)
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-sm text-muted">{t.project.domainsIntro}</p>
+        <Button variant="ghost" onClick={() => setAdding(true)}>{t.project.addDomain}</Button>
+      </div>
+      <QueryState loading={domains.isPending} error={domains.error} what={t.project.domainsTab} />
+      {domains.data?.length === 0 && (
+        <Panel>
+          <Empty title={t.project.noDomains}>{t.project.noDomainsHint}</Empty>
+        </Panel>
+      )}
+      {domains.data?.map((d) => <DomainCard key={d.id} domain={d} projectId={projectId} onRoute={(route) => setRouting({ domain: d, route })} />)}
+
+      <Sheet open={adding} onOpenChange={setAdding} title={t.project.addDomain} description={t.app.noDomainsYetHint}>
+        {adding && <AddDomain projectId={projectId} onDone={() => setAdding(false)} />}
+      </Sheet>
+      <Sheet open={routing !== null} onOpenChange={(o) => !o && setRouting(null)} title={routing?.route ? t.project.editRoute : t.project.addRoute}
+        description={routing?.domain.hostname}>
+        {routing && <RouteForm projectId={projectId} apps={apps} domain={routing.domain} route={routing.route} onDone={() => setRouting(null)} />}
+      </Sheet>
+    </div>
+  )
+}
+
+function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId: string; onRoute: (r?: Route) => void }) {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const dns = useQuery(dnsQuery(domain.id))
+  const refresh = () => queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
+  const httpOnly = domain.tls_mode === 'http_only'
+  const remove = useMutation({ mutationFn: () => api<void>(`/domains/${domain.id}`, { method: 'DELETE' }), onSettled: refresh })
+  const setMode = useMutation({
+    mutationFn: (tls_mode: string) => api<Domain>(`/domains/${domain.id}`, { method: 'PATCH', body: { tls_mode } }),
+    onSettled: refresh,
+  })
+  const busy = remove.isPending || setMode.isPending
+  const scheme = httpOnly ? 'http://' : 'https://'
+  return (
+    <Panel>
+      {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2">
+            <a href={scheme + domain.hostname} target="_blank" rel="noreferrer" className="text-sm text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
+              {domain.hostname}
+            </a>
+            {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
+          </p>
+          <p className="mt-1 text-xs text-muted"><DnsHintText dns={dns} /></p>
+        </div>
+        <span className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" type="button" disabled={busy} title={httpOnly ? t.app.toHttpsTitle : t.app.toHttpTitle}
+            onClick={() => setMode.mutate(httpOnly ? 'auto' : 'http_only')}>
+            {setMode.isPending ? t.common.saving : httpOnly ? t.app.useHttps : t.common.httpOnly}
+          </Button>
+          <ConfirmButton label={t.project.removeDomain} confirm={t.common.yesRemove} disabled={busy} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+        </span>
+      </div>
+      {(remove.error || setMode.error) && <p className="px-4 pt-2 text-xs text-danger">{(remove.error ?? setMode.error)?.message}</p>}
+      {domain.routes.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted">{t.project.noRoutes}</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {domain.routes.map((r) => <RouteRow key={r.id} route={r} onEdit={() => onRoute(r)} onChanged={refresh} />)}
+        </ul>
+      )}
+      <div className="border-t border-line px-4 py-3">
+        <Button variant="ghost" onClick={() => onRoute()}>{t.project.addRoute}</Button>
+      </div>
+    </Panel>
+  )
+}
+
+function RouteRow({ route, onEdit, onChanged }: { route: Route; onEdit: () => void; onChanged: () => void }) {
+  const t = useT()
+  const remove = useMutation({ mutationFn: () => api<void>(`/routes/${route.id}`, { method: 'DELETE' }), onSettled: onChanged })
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
+        <code dir="ltr" className="min-w-16 text-fg">{route.path}</code>
+        <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
+        <span>{route.app_name}</span>
+        {route.strip_prefix && <Badge tone="muted">{t.project.stripped}</Badge>}
+      </div>
+      <span className="flex items-center gap-2">
+        <Button variant="ghost" onClick={onEdit}>{t.common.edit}</Button>
+        <ConfirmButton label={t.project.removeRoute} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+      </span>
+      {remove.error && <p className="w-full text-xs text-danger">{remove.error.message}</p>}
+    </li>
+  )
+}
+
+function AddDomain({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const [hostname, setHostname] = useState('')
+  const [httpOnly, setHttpOnly] = useState(false)
+  const add = useMutation({
+    mutationFn: () => api<Domain>(`/projects/${projectId}/domains`, { method: 'POST', body: { hostname, tls_mode: httpOnly ? 'http_only' : 'auto' } }),
+    onSuccess: onDone,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey }), // a 503 still saved it
+  })
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); add.mutate() }} className="space-y-5 p-5">
+      <Field label={t.app.hostname} name="hostname" required autoFocus placeholder="shop.example.com" dir="ltr"
+        hint={httpOnly ? t.app.hostnameHintHttp : t.app.hostnameHintHttps}
+        value={hostname} onChange={(e) => setHostname(e.target.value.trim().toLowerCase())} />
+      <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />
+      {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={add.isPending || !hostname}>{add.isPending ? t.app.adding : t.project.addDomain}</Button>
+        <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
+      </div>
+    </form>
+  )
+}
+
+function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: string; apps: App[]; domain: Domain; route?: Route; onDone: () => void }) {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const [path, setPath] = useState(route?.path ?? (domain.routes.some((r) => r.path === '/') ? '/api' : '/'))
+  const [appId, setAppId] = useState(route?.app_id ?? apps[0]?.id ?? '')
+  const [strip, setStrip] = useState(route?.strip_prefix ?? false)
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { path, app_id: appId, strip_prefix: strip }
+      return route
+        ? api<Route>(`/routes/${route.id}`, { method: 'PATCH', body })
+        : api<Route>(`/domains/${domain.id}/routes`, { method: 'POST', body })
+    },
+    onSuccess: onDone,
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
+      queryClient.invalidateQueries({ queryKey: ['apps'] })
+    },
+  })
+  if (apps.length === 0) return <p className="p-5 text-sm text-muted">{t.project.noApps}</p>
+  const root = path.trim() === '/' || path.trim() === ''
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
+      <Field label={t.project.routePath} name="route-path" required dir="ltr" placeholder="/api" hint={t.project.routePathHint}
+        value={path} onChange={(e) => setPath(e.target.value)} autoComplete="off" spellCheck={false} />
+      <label className="block space-y-1.5 text-xs text-muted">
+        {t.project.routeApp}
+        <select value={appId} onChange={(e) => setAppId(e.target.value)} className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
+          {apps.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </label>
+      {!root && <CheckOption checked={strip} onChange={setStrip} label={t.project.strip} hint={t.project.stripHint} />}
+      {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={save.isPending || !appId}>{save.isPending ? t.common.saving : route ? t.common.save : t.project.addRoute}</Button>
+        <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
+      </div>
+    </form>
   )
 }

@@ -4,12 +4,11 @@ import { EnvironmentSettings } from '../components/environment'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { DnsHintText } from '../components/dns'
 import { DeployHookPanel } from '../components/deploy-hook'
 import { DeploymentTimeline } from '../components/deployment-timeline'
 import { HealthCheckPanel } from '../components/health-check'
 import { LogViewer } from '../components/logviewer'
-import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
+import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, HelpTip, PageHeader, Panel, QueryState } from '../components/ui'
 import {
   addDeployment,
   api,
@@ -18,15 +17,13 @@ import {
   deploymentsKey,
   deploymentsPerPage,
   deploymentsQuery,
-  dnsQuery,
-  domainsQuery,
+  appRoutesQuery,
   isActive,
   projectQuery,
   registrySettingsQuery,
   type App,
   type AppInput,
   type Deployment,
-  type Domain,
   type Page,
 } from '../lib/api'
 import { SourceFields, sourceChanged, sourceForm, sourceInput } from '../components/source'
@@ -35,7 +32,7 @@ import { withToast } from '../lib/toasts'
 import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, duration, repoName, timeAgo, type Tone } from '../lib/format'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
-export const appTabs = ['overview', 'deployments', 'logs', 'terminal', 'domains', 'settings'] as const
+export const appTabs = ['overview', 'deployments', 'logs', 'terminal', 'settings'] as const
 export type AppTab = (typeof appTabs)[number]
 
 export function AppPage() {
@@ -47,8 +44,8 @@ export function AppPage() {
   const navigate = useNavigate()
 
   const project = useQuery(projectQuery(projectId))
-  const domains = useQuery(domainsQuery(appId))
-  const primaryDomain = domains.data?.find((d) => d.is_primary)
+  const routes = useQuery(appRoutesQuery(appId))
+  const mainUrl = routes.data?.[0]?.url
   const deployments = useQuery({
     ...deploymentsQuery(appId),
     refetchInterval: (q) => (q.state.data?.items.some(isActive) ? 1500 : false),
@@ -127,16 +124,16 @@ export function AppPage() {
         subtitle={
           <>
             <span className="block">{appSource(a)}</span>
-            {primaryDomain && (
+            {mainUrl && (
               <a
-                href={`https://${primaryDomain.hostname}`}
+                href={mainUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 title={t.app.primaryDomain}
                 className="mt-1 inline-flex max-w-full items-center gap-1.5 text-accent hover:underline"
                 dir="ltr"
               >
-                <span className="[overflow-wrap:anywhere]">{primaryDomain.hostname}</span>
+                <span className="[overflow-wrap:anywhere]">{mainUrl.replace(/^https?:\/\//, '')}</span>
                 <span aria-hidden="true">↗</span>
               </a>
             )}
@@ -211,7 +208,6 @@ export function AppPage() {
           </Suspense>
         </div>
       )}
-      {tab === 'domains' && <Domains app={a} />}
       {tab === 'settings' && <Settings app={a} />}
     </div>
   )
@@ -221,7 +217,7 @@ export function AppPage() {
 
 function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deployment; onOpenDeployments: () => void }) {
   const t = useT()
-  const domains = useQuery(domainsQuery(app.id))
+  const routes = useQuery(appRoutesQuery(app.id))
   const current = useQuery({
     queryKey: ['deployments', app.current_deployment_id] as const,
     queryFn: () => api<Deployment>(`/deployments/${app.current_deployment_id}`),
@@ -327,20 +323,20 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
             )}
           </Fact>
           <Fact label={t.app.tabs.domains}>
-            {domains.data?.length ? (
+            {routes.data?.length ? (
               <span className="flex flex-col items-start">
-                {domains.data.map((d) => (
-                  <span key={d.id} className="flex flex-wrap items-center gap-2">
-                    <a href={`https://${d.hostname}`} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline" dir="ltr">
-                      {d.hostname}
-                    </a>
-                    {d.is_primary && <Badge tone="muted">{t.app.primary}</Badge>}
-                  </span>
+                {routes.data.map((r) => (
+                  <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline [overflow-wrap:anywhere]" dir="ltr">
+                    {r.url.replace(/^https?:\/\//, '')}
+                  </a>
                 ))}
               </span>
             ) : (
               <span className="text-muted">{t.app.noDomains}</span>
             )}
+            <Link to="/projects/$projectId" params={{ projectId: app.project_id }} search={{ tab: 'domains' }} className="mt-1 block text-xs text-muted hover:text-fg">
+              {t.app.manageDomains}
+            </Link>
           </Fact>
         </dl>
       </Panel>
@@ -574,125 +570,6 @@ function RuntimeLogs({ app }: { app: App }) {
         refused={t.app.containerGone}
       />
     </Panel>
-  )
-}
-
-// ---- domains ----
-
-function Domains({ app }: { app: App }) {
-  const t = useT()
-  const queryClient = useQueryClient()
-  const domains = useQuery(domainsQuery(app.id))
-  const [hostname, setHostname] = useState('')
-  const [httpOnly, setHttpOnly] = useState(false)
-  const refresh = () => queryClient.invalidateQueries({ queryKey: domainsQuery(app.id).queryKey })
-
-  const add = useMutation({
-    mutationFn: () =>
-      api<Domain>(`/apps/${app.id}/domains`, { method: 'POST', body: { hostname, tls_mode: httpOnly ? 'http_only' : 'auto' } }),
-    onSuccess: () => {
-      setHostname('')
-      setHttpOnly(false)
-    },
-    onSettled: refresh, // a 503 "saved, proxy not updated" still added the domain
-  })
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    add.mutate()
-  }
-
-  return (
-    <div className="space-y-6">
-      <Panel title={t.app.tabs.domains}>
-        <QueryState loading={domains.isPending} error={domains.error} what={t.app.whatDomains} />
-        {domains.data &&
-          (domains.data.length === 0 ? (
-            <Empty title={t.app.noDomainsYet}>{t.app.noDomainsYetHint}</Empty>
-          ) : (
-            <ul className="divide-y divide-line">
-              {domains.data.map((d) => (
-                <DomainRow key={d.id} domain={d} onChanged={refresh} />
-              ))}
-            </ul>
-          ))}
-      </Panel>
-      <Panel title={t.app.addDomainTitle}>
-        <form onSubmit={submit} className="space-y-4 p-4">
-          <Field
-            label={t.app.hostname}
-            name="hostname"
-            required
-            placeholder="app.example.com"
-            dir="ltr"
-            hint={httpOnly ? t.app.hostnameHintHttp : t.app.hostnameHintHttps}
-            value={hostname}
-            onChange={(e) => setHostname(e.target.value.trim().toLowerCase())}
-          />
-          <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />
-          {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
-          <Button type="submit" disabled={add.isPending}>
-            {add.isPending ? t.app.adding : t.app.addDomain}
-          </Button>
-        </form>
-      </Panel>
-    </div>
-  )
-}
-
-function DomainRow({ domain, onChanged }: { domain: Domain; onChanged: () => void }) {
-  const t = useT()
-  const dns = useQuery(dnsQuery(domain.id))
-  const remove = useMutation({
-    mutationFn: () => api<void>(`/domains/${domain.id}`, { method: 'DELETE' }),
-    onSuccess: onChanged,
-  })
-  const httpOnly = domain.tls_mode === 'http_only'
-  const setMode = useMutation({
-    mutationFn: (tls_mode: string) => api<Domain>(`/domains/${domain.id}`, { method: 'PATCH', body: { tls_mode } }),
-    onSettled: onChanged, // refreshes the list
-  })
-  const setPrimary = useMutation({
-    mutationFn: () => api<Domain>(`/domains/${domain.id}`, { method: 'PATCH', body: { is_primary: true } }),
-    onSuccess: onChanged,
-  })
-  const busy = remove.isPending || setMode.isPending || setPrimary.isPending
-
-  return (
-    <li className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-      <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-2">
-          <a href={`https://${domain.hostname}`} target="_blank" rel="noreferrer" className="text-sm [overflow-wrap:anywhere] text-accent hover:underline" dir="ltr">
-            {domain.hostname}
-          </a>
-          {domain.is_primary && <Badge tone="accent">{t.app.primary}</Badge>}
-          {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
-        </p>
-        <p className="text-xs text-muted">
-          <DnsHintText dns={dns} />
-        </p>
-        {remove.error && <p className="text-xs text-danger">{remove.error.message}</p>}
-        {setMode.error && <p className="text-xs text-danger">{setMode.error.message}</p>}
-        {setPrimary.error && <p className="text-xs text-danger">{setPrimary.error.message}</p>}
-      </div>
-      <span className="flex flex-wrap items-center gap-2">
-        {!domain.is_primary && (
-          <Button variant="ghost" type="button" disabled={busy} onClick={() => setPrimary.mutate()}>
-            {setPrimary.isPending ? t.common.saving : t.app.makePrimary}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={busy}
-          title={httpOnly ? t.app.toHttpsTitle : t.app.toHttpTitle}
-          onClick={() => setMode.mutate(httpOnly ? 'auto' : 'http_only')}
-        >
-          {setMode.isPending ? t.common.saving : httpOnly ? t.app.useHttps : t.common.httpOnly}
-        </Button>
-        <ConfirmButton label={t.common.remove} confirm={t.common.yesRemove} disabled={busy} pending={remove.isPending} onConfirm={() => remove.mutate()} />
-      </span>
-    </li>
   )
 }
 

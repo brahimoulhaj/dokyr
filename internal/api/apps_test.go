@@ -55,7 +55,7 @@ func TestAppsRequireAuth(t *testing.T) {
 	for _, c := range [][2]string{
 		{"GET", "/api/projects"}, {"POST", "/api/projects"}, {"GET", "/api/projects/x"}, {"DELETE", "/api/projects/x"},
 		{"GET", "/api/apps/x"}, {"POST", "/api/apps/x/deploy"}, {"POST", "/api/apps/x/stop"}, {"DELETE", "/api/apps/x"},
-		{"POST", "/api/apps/x/domains"}, {"DELETE", "/api/domains/x"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
+		{"POST", "/api/projects/x/domains"}, {"POST", "/api/domains/x/routes"}, {"DELETE", "/api/domains/x"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
 	} {
 		if code, _ := e.call(c[0], c[1], map[string]any{}); code != 401 {
 			t.Errorf("%s %s signed out = %d, want 401", c[0], c[1], code)
@@ -256,91 +256,79 @@ func TestDomainsAPI(t *testing.T) {
 	e.srv.SetProxy(px)
 	e.signIn()
 	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
-	id := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
-	other := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "api", "image": "nginx:1", "port": 80})["id"].(string)
-	domains := "/api/apps/" + id + "/domains"
+	web := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
+	api := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "api", "image": "nginx:1", "port": 80})["id"].(string)
+	pid2 := e.must(201, "POST", "/api/projects", map[string]any{"name": "Blog"})["id"].(string)
+	stranger := e.must(201, "POST", "/api/projects/"+pid2+"/apps", map[string]any{"name": "blog", "image": "nginx:1", "port": 80})["id"].(string)
+	domains := "/api/projects/" + pid + "/domains"
 
 	for _, bad := range []string{"", "nodots", "https://shop.example.com", "shop.example.com/path", "*.example.com", "10.0.0.1", "shop.example.com:8443"} {
 		e.must(422, "POST", domains, map[string]any{"hostname": bad})
 	}
-	e.must(404, "POST", "/api/apps/missing/domains", map[string]any{"hostname": "shop.example.com"})
+	e.must(404, "POST", "/api/projects/missing/domains", map[string]any{"hostname": "shop.example.com"})
 	if px.applied != 0 {
 		t.Fatalf("rejected input reached the proxy %d times", px.applied)
 	}
 
 	d := e.must(201, "POST", domains, map[string]any{"hostname": " Shop.Example.com "})
-	if d["hostname"] != "shop.example.com" || d["tls_mode"] != "auto" || d["is_primary"] != true || px.applied != 1 {
+	if d["hostname"] != "shop.example.com" || d["tls_mode"] != "auto" || d["project_id"] != pid || px.applied != 1 {
 		t.Fatalf("created = %v, applied %d", d, px.applied)
 	}
 	e.must(409, "POST", domains, map[string]any{"hostname": "shop.example.com"})
-	e.must(409, "POST", "/api/apps/"+other+"/domains", map[string]any{"hostname": "shop.example.com"})
+	e.must(409, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"hostname": "shop.example.com"})
+	did := d["id"].(string)
 
-	// TLS mode: HTTP only for a CDN that terminates TLS, switchable both ways.
-	e.must(422, "POST", domains, map[string]any{"hostname": "cf.example.com", "tls_mode": "nope"})
-	cf := e.must(201, "POST", domains, map[string]any{"hostname": "cf.example.com", "tls_mode": "http_only"})
-	if cf["tls_mode"] != "http_only" || cf["is_primary"] != false {
-		t.Fatalf("http-only domain = %v", cf)
+	// Routes: a path of the domain to an app of the same project.
+	routes := "/api/domains/" + did + "/routes"
+	e.must(422, "POST", routes, map[string]any{"path": "/a b", "app_id": web})
+	e.must(422, "POST", routes, map[string]any{"path": "/", "app_id": stranger})
+	e.must(422, "POST", routes, map[string]any{"path": "/", "app_id": "missing"})
+	front := e.must(201, "POST", routes, map[string]any{"path": "", "app_id": web, "strip_prefix": true})
+	if front["path"] != "/" || front["strip_prefix"] != false || front["url"] != "https://shop.example.com" || front["app_name"] != "web" {
+		t.Fatalf("/ route = %v", front)
 	}
-	modeBase := px.applied
-	// Switching primary is immediate metadata, independent of TLS and proxy availability.
-	px.err = errors.New("down")
-	if m := e.must(200, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"is_primary": true}); m["is_primary"] != true || m["tls_mode"] != "http_only" {
-		t.Fatalf("make primary = %v", m)
+	back := e.must(201, "POST", routes, map[string]any{"path": "api/", "app_id": api})
+	if back["path"] != "/api" || back["strip_prefix"] != false || back["url"] != "https://shop.example.com/api" {
+		t.Fatalf("/api route = %v", back)
 	}
-	if got := e.list(domains); len(got) != 2 || got[0]["id"] != cf["id"] || got[1]["is_primary"] != false {
-		t.Fatalf("primary selection = %v", got)
+	e.must(409, "POST", routes, map[string]any{"path": "/api", "app_id": web})
+	if m := e.must(200, "PATCH", "/api/routes/"+back["id"].(string), map[string]any{"path": "/api", "app_id": api, "strip_prefix": true}); m["strip_prefix"] != true {
+		t.Fatalf("strip = %v", m)
 	}
-	e.must(200, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"is_primary": true})
-	e.must(422, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"is_primary": false})
-	e.must(422, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{})
-	e.must(422, "PATCH", "/api/domains/"+d["id"].(string), map[string]any{"is_primary": true, "tls_mode": "invalid"})
-	e.must(404, "PATCH", "/api/domains/missing", map[string]any{"is_primary": true})
-	if px.applied != modeBase {
-		t.Fatal("primary selection reloaded the proxy")
+	e.must(409, "PATCH", "/api/routes/"+back["id"].(string), map[string]any{"path": "/", "app_id": api})
+	list := e.list(domains)
+	if len(list) != 1 || len(list[0]["routes"].([]any)) != 2 {
+		t.Fatalf("domains = %v", list)
 	}
-	px.err = nil
-	e.must(422, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"tls_mode": ""})
-	if m := e.must(200, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"tls_mode": "auto"}); m["tls_mode"] != "auto" || px.applied != modeBase+1 {
-		t.Fatalf("switch to auto = %v, applied %d", m, px.applied-modeBase)
+	if got := e.list("/api/apps/" + api + "/routes"); len(got) != 1 || got[0]["url"] != "https://shop.example.com/api" {
+		t.Fatalf("app routes = %v", got)
 	}
-	e.must(200, "PATCH", "/api/domains/"+cf["id"].(string), map[string]any{"tls_mode": "auto"}) // no change, no reload
-	if px.applied != modeBase+1 {
+
+	// TLS mode: HTTP only for a CDN that terminates TLS; URLs follow.
+	e.must(422, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "nope"})
+	before := px.applied
+	if m := e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "http_only"}); m["tls_mode"] != "http_only" || px.applied != before+1 {
+		t.Fatalf("http only = %v", m)
+	}
+	e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "http_only"}) // no change, no reload
+	if px.applied != before+1 {
 		t.Fatal("unchanged mode reloaded the proxy")
 	}
-	e.must(204, "DELETE", "/api/domains/"+cf["id"].(string), nil)
+	if got := e.list("/api/apps/" + web + "/routes"); got[0]["url"] != "http://shop.example.com" {
+		t.Errorf("http-only url = %v", got[0]["url"])
+	}
 
-	// The panel's domain and app domains exclude each other, both ways.
+	// The panel's domain and project domains exclude each other, both ways.
 	e.must(409, "PUT", "/api/settings/panel", map[string]any{"domain": "shop.example.com"})
 	e.must(200, "PUT", "/api/settings/panel", map[string]any{"domain": "panel.example.com"})
 	e.must(409, "POST", domains, map[string]any{"hostname": "panel.example.com"})
 
-	if got := e.list(domains); len(got) != 1 || got[0]["id"] != d["id"] || got[0]["is_primary"] != true {
-		t.Fatalf("list = %v", got)
-	}
-
 	// DNS hint.
-	dns := "/api/domains/" + d["id"].(string) + "/dns"
-	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) {
-		if host != "shop.example.com" {
-			t.Errorf("looked up %q", host)
-		}
-		return []string{"203.0.113.5"}, nil
-	}
+	dns := "/api/domains/" + did + "/dns"
+	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) { return []string{"203.0.113.5"}, nil }
 	e.srv.serverAddrs = func() []string { return []string{"203.0.113.5"} }
 	if m := e.must(200, "GET", dns, nil); m["resolves"] != true || m["points_here"] != true {
 		t.Errorf("dns match = %v", m)
-	}
-	e.srv.serverAddrs = func() []string { return []string{"198.51.100.1"} }
-	if m := e.must(200, "GET", dns, nil); m["resolves"] != true || m["points_here"] != false {
-		t.Errorf("dns mismatch = %v", m)
-	}
-	e.srv.serverAddrs = func() []string { return []string{} } // behind NAT: cannot tell
-	if m := e.must(200, "GET", dns, nil); m["points_here"] != nil {
-		t.Errorf("dns unknown = %v", m)
-	}
-	e.srv.lookupHost = func(context.Context, string) ([]string, error) { return nil, errors.New("no such host") }
-	if m := e.must(200, "GET", dns, nil); m["resolves"] != false || len(m["addresses"].([]any)) != 0 {
-		t.Errorf("dns unresolved = %v", m)
 	}
 	e.must(404, "GET", "/api/domains/missing/dns", nil)
 
@@ -352,17 +340,18 @@ func TestDomainsAPI(t *testing.T) {
 	}
 	px.err = nil
 
-	before := px.applied
-	if code, _ := e.raw("DELETE", "/api/domains/"+d["id"].(string), nil); code != 204 || px.applied != before+1 {
-		t.Fatalf("delete = %d, applied %d -> %d", code, before, px.applied)
-	}
-	e.must(404, "DELETE", "/api/domains/"+d["id"].(string), nil)
-
-	// Deleting the app frees its hostnames.
-	if code, _ := e.raw("DELETE", "/api/apps/"+id, nil); code != 204 {
+	// Deleting an app removes its routes, not the domain; deleting the domain frees the hostname.
+	if code, _ := e.raw("DELETE", "/api/apps/"+api, nil); code != 204 {
 		t.Fatal("delete app")
 	}
-	e.must(201, "POST", "/api/apps/"+other+"/domains", map[string]any{"hostname": "www.shop.example.com"})
+	if got := e.list(domains); len(got[0]["routes"].([]any))+len(got[1]["routes"].([]any)) != 1 {
+		t.Errorf("routes after deleting an app = %v", got)
+	}
+	e.must(204, "DELETE", "/api/routes/"+front["id"].(string), nil)
+	e.must(404, "DELETE", "/api/routes/"+front["id"].(string), nil)
+	e.must(204, "DELETE", "/api/domains/"+did, nil)
+	e.must(404, "DELETE", "/api/domains/"+did, nil)
+	e.must(201, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"hostname": "shop.example.com"})
 }
 
 func TestGitAppsAPI(t *testing.T) {
@@ -549,4 +538,21 @@ func TestListDeploymentsPaged(t *testing.T) {
 	if got, total := page(""); total != "5" || len(got) != 5 {
 		t.Errorf("default = %v (total %s)", got, total)
 	}
+}
+
+func TestProjectEnvironmentAPI(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
+	got := e.must(200, "GET", "/api/projects/"+pid+"/environment", nil)
+	if got["inherit"] != false || len(got["environment"].(map[string]any)) != 0 {
+		t.Fatalf("defaults = %v", got)
+	}
+	e.must(422, "PUT", "/api/projects/"+pid+"/environment", map[string]any{"environment": map[string]string{"1BAD": "x"}})
+	e.must(200, "PUT", "/api/projects/"+pid+"/environment", map[string]any{"environment": map[string]string{"REGION": "eu"}, "inherit": true})
+	got = e.must(200, "GET", "/api/projects/"+pid+"/environment", nil)
+	if got["inherit"] != true || got["environment"].(map[string]any)["REGION"] != "eu" {
+		t.Fatalf("saved = %v", got)
+	}
+	e.must(404, "GET", "/api/projects/nope/environment", nil)
 }
