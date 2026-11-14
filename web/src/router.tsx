@@ -4,11 +4,12 @@ import { Shell } from './components/shell'
 import { meQuery, metaQuery, onboardingQuery } from './lib/api'
 import { ActivityPage } from './routes/activity'
 import { RegistryPage } from './routes/registries'
+import { BuiltinRegistryPage, builtinTabs, type BuiltinTab } from './routes/registry-builtin'
 import { AppPage, appTabs, type AppTab } from './routes/app'
 import { LoginPage } from './routes/login'
 import { OnboardingPage } from './routes/onboarding'
 import { OverviewPage } from './routes/overview'
-import { ProjectPage } from './routes/project'
+import { ProjectPage, projectTabs, type ProjectTab } from './routes/project'
 import { ProjectsPage } from './routes/projects'
 import { SettingsPage, settingsTabs, type SettingsTab } from './routes/settings'
 import { SetupPage } from './routes/setup'
@@ -85,7 +86,12 @@ const appRoute = createRoute({
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: OverviewPage })
 
 const projectsRoute = createRoute({ getParentRoute: () => appRoute, path: '/projects', component: ProjectsPage })
-const projectRoute = createRoute({ getParentRoute: () => appRoute, path: '/projects/$projectId', component: ProjectPage })
+const projectRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId',
+  validateSearch: (s: Record<string, unknown>): { tab?: ProjectTab } => (projectTabs.includes(s.tab as ProjectTab) ? { tab: s.tab as ProjectTab } : {}),
+  component: ProjectPage,
+})
 const appPageRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/apps/$appId',
@@ -97,6 +103,12 @@ const appPageRoute = createRoute({
 })
 const activityRoute = createRoute({ getParentRoute: () => appRoute, path: '/activity', component: ActivityPage })
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
+const builtinRegistryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/registry/builtin',
+  validateSearch: (s: Record<string, unknown>): { tab?: BuiltinTab } => (builtinTabs.includes(s.tab as BuiltinTab) ? { tab: s.tab as BuiltinTab } : {}),
+  component: BuiltinRegistryPage,
+})
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
@@ -111,7 +123,8 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
   onboardingRoute,
-  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute, settingsRoute]),
+  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute,
+    builtinRegistryRoute, settingsRoute]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {

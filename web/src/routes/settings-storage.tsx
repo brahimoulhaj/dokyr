@@ -4,6 +4,7 @@ import { Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, Panel, Que
 import { api, s3ConnectionsQuery, type S3Connection } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { Sheet } from '../components/sheet'
 
 /** Settings → Storage: S3-compatible connections — add (checked by writing a small file),
  * test again, remove. */
@@ -19,16 +20,13 @@ export function StorageSettings() {
         <Panel
           title={t.what}
           actions={
-            !adding && (
-              <Button variant="ghost" onClick={() => setAdding(true)}>
-                {t.add}
-              </Button>
-            )
+            <Button variant="ghost" onClick={() => setAdding(true)}>
+              {t.add}
+            </Button>
           }
         >
-          {adding && <AddS3 onDone={() => setAdding(false)} />}
           {conns.data.length === 0 ? (
-            !adding && <Empty title={t.empty}>{t.emptyHint}</Empty>
+            <Empty title={t.empty}>{t.emptyHint}</Empty>
           ) : (
             <ul className="divide-y divide-line">
               {conns.data.map((c) => (
@@ -38,6 +36,9 @@ export function StorageSettings() {
           )}
         </Panel>
       )}
+      <Sheet open={adding} onOpenChange={setAdding} title={t.add} description={t.intro}>
+        {adding && <AddS3 onDone={() => setAdding(false)} />}
+      </Sheet>
     </div>
   )
 }
@@ -62,9 +63,8 @@ function AddS3({ onDone }: { onDone: () => void }) {
   }
   const ready = form.endpoint.trim() && form.bucket.trim() && form.access_key.trim() && form.secret_key
   return (
-    <form onSubmit={submit} className="space-y-3 border-b border-line bg-raised p-4 last:border-b-0">
-      <p className="text-sm">{t.add}</p>
-      <div className="grid gap-3 sm:grid-cols-2">
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <div className="space-y-5">
         <Field label={t.endpoint} name="s3-endpoint" required dir="ltr" placeholder="s3.amazonaws.com" hintTooltip hint={t.endpointHint}
           value={form.endpoint} onChange={set('endpoint')} autoComplete="off" spellCheck={false} />
         <Field label={t.bucket} name="s3-bucket" required dir="ltr" value={form.bucket} onChange={set('bucket')} autoComplete="off" spellCheck={false} />

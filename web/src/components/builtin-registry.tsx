@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Badge, Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, HelpTip, Panel, QueryState } from './ui'
 import {
   api,
   panelSettingsQuery,
-  registrySettingsQuery,
   registryTokensQuery,
   repositoriesQuery,
   s3ConnectionsQuery,
@@ -14,91 +13,89 @@ import {
 } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { Sheet } from './sheet'
 import { withToast } from '../lib/toasts'
 
-/** The built-in registry: settings, then (once on) how to push, tokens and repositories. */
-export function BuiltinRegistry() {
-  const settings = useQuery(registrySettingsQuery)
-  const t = useT().builtinRegistry
-  const on = settings.data?.enabled && settings.data.domain
-  return (
-    <div className="space-y-6">
-      <QueryState loading={settings.isPending} error={settings.error} what={t.title} />
-      {settings.data && <SettingsForm saved={settings.data} />}
-      {on && settings.data && (
-        <>
-          <PushHelp domain={settings.data.domain} />
-          <Tokens />
-          <Repositories domain={settings.data.domain} />
-        </>
-      )}
-    </div>
-  )
-}
-
-function SettingsForm({ saved }: { saved: RegistrySettings }) {
+/** The built-in registry's settings: to turn it on (in a sheet), or to change it once on
+ * (its Settings tab). Saving may pull the registry image first, so it runs under a toast. */
+export function BuiltinForm({ saved, mode, onDone }: { saved: RegistrySettings; mode: 'enable' | 'edit'; onDone?: () => void }) {
   const queryClient = useQueryClient()
   const t = useT().builtinRegistry
   const conns = useQuery(s3ConnectionsQuery)
   const panel = useQuery(panelSettingsQuery)
-  const [form, setForm] = useState(saved)
-  useEffect(() => setForm(saved), [saved])
-  // Suggest registry.<panel domain> until a domain is chosen.
+  // Suggest registry.<the panel domain's parent> until a domain is chosen.
   const suggested = panel.data?.domain ? 'registry.' + panel.data.domain.replace(/^[^.]+\./, '') : 'registry.example.com'
+  const [form, setForm] = useState({ domain: saved.domain || '', s3_connection_id: saved.s3_connection_id, build_cache: saved.build_cache })
   const save = useMutation({
     mutationFn: () =>
-      withToast(() => api<RegistrySettings>('/registry/settings', { method: 'PUT', body: { ...form, domain: form.domain || (form.enabled ? suggested : '') } }), {
+      withToast(() => api<RegistrySettings>('/registry/settings', { method: 'PUT', body: { ...form, enabled: true, domain: form.domain.trim() || suggested } }), {
         loading: t.savingToast,
         success: t.savedToast,
         error: t.saveFailed,
       }),
+    onSuccess: () => onDone?.(),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['registry'] }),
   })
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    save.mutate()
-  }
-  const dirty = JSON.stringify({ ...form, state: undefined, system_user: undefined }) !== JSON.stringify({ ...saved, state: undefined, system_user: undefined })
-  const state = saved.state ?? 'off'
+  const dirty = mode === 'enable' || form.domain !== saved.domain || form.s3_connection_id !== saved.s3_connection_id || form.build_cache !== saved.build_cache
   return (
-    <Panel
-      title={t.title}
-      actions={
-        <span className="flex items-center gap-2 text-xs text-muted">
-          {t.state} <Badge tone={state === 'running' ? 'accent' : state === 'off' ? 'muted' : 'warn'}>{t.states[state] ?? state}</Badge>
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
+      <Field label={t.domain} name="registry-domain" dir="ltr" placeholder={suggested} hint={t.domainHint}
+        value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} autoComplete="off" spellCheck={false} />
+      <label className="block space-y-1.5 text-xs text-muted">
+        {t.storage}
+        <select value={form.s3_connection_id} onChange={(e) => setForm({ ...form, s3_connection_id: e.target.value })}
+          className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
+          <option value="">{t.storageVolume}</option>
+          {conns.data?.map((c) => (
+            <option key={c.id} value={c.id}>{t.storageS3(c.name)}</option>
+          ))}
+        </select>
+        <span className="block">
+          {t.storageHint}{' '}
+          <Link to="/settings" search={{ tab: 'storage' }} className="text-accent hover:underline">{t.addS3}</Link>
         </span>
-      }
-    >
-      <form onSubmit={submit} className="space-y-4 p-4">
-        <p className="text-sm text-muted">{t.intro}</p>
-        <CheckOption checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label={t.enable} hint={t.enableHint} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t.domain} name="registry-domain" dir="ltr" placeholder={suggested} hintTooltip hint={t.domainHint}
-            value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} autoComplete="off" spellCheck={false} />
-          <label className="space-y-1.5 text-xs text-muted">
-            {t.storage}
-            <select value={form.s3_connection_id} onChange={(e) => setForm({ ...form, s3_connection_id: e.target.value })}
-              className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
-              <option value="">{t.storageVolume}</option>
-              {conns.data?.map((c) => (
-                <option key={c.id} value={c.id}>{t.storageS3(c.name)}</option>
-              ))}
-            </select>
-            <span className="block">
-              {t.storageHint}{' '}
-              <Link to="/settings" search={{ tab: 'storage' }} className="text-accent hover:underline">{t.addS3}</Link>
-            </span>
-          </label>
-        </div>
-        <CheckOption checked={form.build_cache} onChange={(v) => setForm({ ...form, build_cache: v })} label={t.buildCache} hint={t.buildCacheHint} />
-        {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-        <Button type="submit" disabled={!dirty || save.isPending}>{save.isPending ? t.saving : t.save}</Button>
-      </form>
-    </Panel>
+      </label>
+      <CheckOption checked={form.build_cache} onChange={(v) => setForm({ ...form, build_cache: v })} label={t.buildCache} hint={t.buildCacheHint} />
+      {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
+      <Button type="submit" disabled={!dirty || save.isPending}>
+        {mode === 'enable' ? (save.isPending ? t.enabling : t.enableSave) : save.isPending ? t.saving : t.save}
+      </Button>
+    </form>
   )
 }
 
-function PushHelp({ domain }: { domain: string }) {
+/** Turns the registry off; its images stay in their storage. */
+export function TurnOff({ saved, onDone }: { saved: RegistrySettings; onDone: () => void }) {
+  const queryClient = useQueryClient()
+  const t = useT().builtinRegistry
+  const off = useMutation({
+    mutationFn: () =>
+      withToast(() => api<RegistrySettings>('/registry/settings', { method: 'PUT', body: { ...saved, enabled: false } }), {
+        loading: t.turningOff,
+        success: t.turnedOff,
+        error: t.saveFailed,
+      }),
+    onSuccess: onDone,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['registry'] }),
+  })
+  return (
+    <section className="space-y-3 border-t border-danger/30 p-5">
+      <h3 className="font-pixel text-xs text-danger uppercase">{t.turnOff}</h3>
+      <p className="text-xs text-muted">{t.turnOffHint}</p>
+      <ConfirmButton label={t.turnOffButton} confirm={t.turnOffConfirm} pending={off.isPending} onConfirm={() => off.mutate()} />
+      {off.error && <ErrorNote>{off.error.message}</ErrorNote>}
+    </section>
+  )
+}
+
+/** The container state as a badge. */
+export function StateBadge({ state }: { state?: string }) {
+  const t = useT().builtinRegistry
+  const s = state ?? 'off'
+  return <Badge tone={s === 'running' ? 'accent' : s === 'off' ? 'muted' : 'warn'}>{t.states[s] ?? s}</Badge>
+}
+
+export function PushHelp({ domain }: { domain: string }) {
   const t = useT().builtinRegistry
   return (
     <Panel title={t.how}>
@@ -113,43 +110,15 @@ function PushHelp({ domain }: { domain: string }) {
   )
 }
 
-function Tokens() {
+/** Tokens: the list; creating one happens in a sheet, which then shows the secret once. */
+export function Tokens() {
   const tokens = useQuery(registryTokensQuery)
-  const queryClient = useQueryClient()
   const tt = useT()
   const t = tt.builtinRegistry
-  const [name, setName] = useState('')
-  const [scope, setScope] = useState<'push' | 'pull'>('push')
-  const [fresh, setFresh] = useState<RegistryToken | null>(null)
-  const create = useMutation({
-    mutationFn: () => api<RegistryToken>('/registry/tokens', { method: 'POST', body: { name, scope } }),
-    onSuccess: (tok) => {
-      setFresh(tok)
-      setName('')
-      queryClient.invalidateQueries({ queryKey: registryTokensQuery.queryKey })
-    },
-  })
+  const [open, setOpen] = useState(false)
   return (
-    <Panel title={t.tokens}>
-      <div className="space-y-3 border-b border-line p-4">
-        <p className="text-sm text-muted">{t.tokensIntro}</p>
-        <form onSubmit={(e) => { e.preventDefault(); create.mutate() }} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <Field label={t.tokenName} name="registry-token-name" dir="ltr" placeholder="github-actions" maxLength={64}
-              value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false} />
-          </div>
-          <label className="space-y-1.5 text-xs text-muted">
-            {t.scope}
-            <select value={scope} onChange={(e) => setScope(e.target.value as 'push' | 'pull')} className="block h-9 border border-line bg-bg px-2 text-sm text-fg">
-              <option value="push">{t.scopePush}</option>
-              <option value="pull">{t.scopePull}</option>
-            </select>
-          </label>
-          <Button type="submit" disabled={!name.trim() || create.isPending}>{create.isPending ? t.creating : t.create}</Button>
-        </form>
-        {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-      </div>
-      {fresh && <NewToken token={fresh} onDone={() => setFresh(null)} />}
+    <Panel title={t.tokens} actions={<Button variant="ghost" onClick={() => setOpen(true)}>{t.create}</Button>}>
+      <p className="border-b border-line px-4 py-3 text-sm text-muted">{t.tokensIntro}</p>
       <QueryState loading={tokens.isPending} error={tokens.error} what={t.tokens} />
       {tokens.data &&
         (tokens.data.length === 0 ? (
@@ -159,7 +128,42 @@ function Tokens() {
             {tokens.data.map((tok) => <TokenRow key={tok.id} token={tok} />)}
           </ul>
         ))}
+      <Sheet open={open} onOpenChange={setOpen} title={t.create} description={t.tokensIntro}>
+        {/* Remounted on each opening: a fresh form, no secret left from the last one. */}
+        {open && <CreateToken onDone={() => setOpen(false)} />}
+      </Sheet>
     </Panel>
+  )
+}
+
+function CreateToken({ onDone }: { onDone: () => void }) {
+  const queryClient = useQueryClient()
+  const tt = useT()
+  const t = tt.builtinRegistry
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState<'push' | 'pull'>('push')
+  const create = useMutation({
+    mutationFn: () => api<RegistryToken>('/registry/tokens', { method: 'POST', body: { name, scope } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: registryTokensQuery.queryKey }),
+  })
+  if (create.data) return <NewToken token={create.data} onDone={onDone} />
+  return (
+    <form onSubmit={(e: FormEvent) => { e.preventDefault(); create.mutate() }} className="space-y-5 p-5">
+      <Field label={t.tokenName} name="registry-token-name" dir="ltr" placeholder="github-actions" maxLength={64}
+        value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false} />
+      <label className="block space-y-1.5 text-xs text-muted">
+        {t.scope}
+        <select value={scope} onChange={(e) => setScope(e.target.value as 'push' | 'pull')} className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
+          <option value="push">{t.scopePush}</option>
+          <option value="pull">{t.scopePull}</option>
+        </select>
+      </label>
+      {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={!name.trim() || create.isPending}>{create.isPending ? t.creating : t.create}</Button>
+        <Button type="button" variant="ghost" onClick={onDone}>{tt.common.cancel}</Button>
+      </div>
+    </form>
   )
 }
 
@@ -169,7 +173,7 @@ function NewToken({ token, onDone }: { token: RegistryToken; onDone: () => void 
   const [copied, setCopied] = useState(false)
   const secret = token.token ?? ''
   return (
-    <div className="space-y-3 border-b border-line bg-raised p-4">
+    <div className="space-y-4 p-5">
       <p className="text-sm">{t.created(token.name)}</p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input readOnly value={secret} aria-label={t.newToken} dir="ltr" onFocus={(e) => e.target.select()}
@@ -207,7 +211,7 @@ function TokenRow({ token }: { token: RegistryToken }) {
   )
 }
 
-function Repositories({ domain }: { domain: string }) {
+export function Repositories({ domain }: { domain: string }) {
   const repos = useQuery(repositoriesQuery)
   const queryClient = useQueryClient()
   const t = useT().builtinRegistry

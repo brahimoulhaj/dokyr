@@ -2,6 +2,7 @@
 // is the source and its type is what the others must match.
 
 export const en = {
+  close: 'Close',
   cancel: 'Cancel',
   save: 'Save',
   saving: 'Saving…',
@@ -32,6 +33,7 @@ export const en = {
 }
 
 export const fr: typeof en = {
+  close: 'Fermer',
   cancel: 'Annuler',
   save: 'Enregistrer',
   saving: 'Enregistrement…',
@@ -62,6 +64,7 @@ export const fr: typeof en = {
 }
 
 export const ar: typeof en = {
+  close: 'إغلاق',
   cancel: 'إلغاء',
   save: 'حفظ',
   saving: 'جارٍ الحفظ…',
@@ -92,6 +95,7 @@ export const ar: typeof en = {
 }
 
 export const es: typeof en = {
+  close: 'Cerrar',
   cancel: 'Cancelar',
   save: 'Guardar',
   saving: 'Guardando…',

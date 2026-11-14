@@ -5,6 +5,7 @@ import { Button, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '
 import { api, projectsQuery, type Project } from '../lib/api'
 import { timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { Sheet } from '../components/sheet'
 
 export function ProjectsPage() {
   const t = useT()
@@ -16,9 +17,11 @@ export function ProjectsPage() {
       <PageHeader
         title={t.projects.title}
         subtitle={t.projects.subtitle}
-        actions={!creating && <Button onClick={() => setCreating(true)}>{t.projects.newProject}</Button>}
+        actions={<Button onClick={() => setCreating(true)}>{t.projects.newProject}</Button>}
       />
-      {creating && <NewProject onDone={() => setCreating(false)} />}
+      <Sheet open={creating} onOpenChange={setCreating} title={t.projects.newProject}>
+        {creating && <NewProject onDone={() => setCreating(false)} />}
+      </Sheet>
       <QueryState loading={projects.isPending} error={projects.error} what={t.projects.what} />
       {projects.data && (
         <Panel>
@@ -72,22 +75,18 @@ function NewProject({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <Panel title={t.projects.newProject}>
-      <form onSubmit={submit} className="space-y-4 p-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={t.common.name} name="name" required autoFocus maxLength={64} value={name} onChange={(e) => setName(e.target.value)} />
-          <Field label={`${t.common.description} (${t.common.optional})`} name="description" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-        <div className="flex gap-2">
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? t.common.creating : t.projects.createProject}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onDone}>
-            {t.common.cancel}
-          </Button>
-        </div>
-      </form>
-    </Panel>
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <Field label={t.common.name} name="name" required autoFocus maxLength={64} value={name} onChange={(e) => setName(e.target.value)} />
+      <Field label={`${t.common.description} (${t.common.optional})`} name="description" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
+      {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={create.isPending}>
+          {create.isPending ? t.common.creating : t.projects.createProject}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          {t.common.cancel}
+        </Button>
+      </div>
+    </form>
   )
 }
