@@ -17,6 +17,7 @@ export function ProjectPage() {
   const { projectId } = useParams({ strict: false }) as { projectId: string }
   const project = useQuery(projectQuery(projectId))
   const apps = useQuery(appsQuery(projectId))
+  const domains = useQuery(domainsQuery(projectId))
   const [adding, setAdding] = useState(false)
   const search = useSearch({ strict: false }) as { tab?: string }
   const tab: ProjectTab = projectTabs.includes(search.tab as ProjectTab) ? (search.tab as ProjectTab) : 'apps'
@@ -37,7 +38,14 @@ export function ProjectPage() {
       <PageHeader
         crumbs={<Crumbs />}
         title={p.name}
-        subtitle={p.description || undefined}
+        subtitle={
+          (p.description || mainDomain(domains.data)) && (
+            <>
+              {p.description && <span className="block">{p.description}</span>}
+              {mainDomain(domains.data) && <DomainLink domain={mainDomain(domains.data)!} />}
+            </>
+          )
+        }
         actions={tab === 'apps' && <Button onClick={() => setAdding(true)}>{t.project.newApp}</Button>}
       />
 
@@ -426,5 +434,21 @@ function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: stri
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
       </div>
     </form>
+  )
+}
+
+/** The domain that stands for the project: the one serving "/" (its front door), else the
+ * first one. */
+function mainDomain(list: Domain[] | undefined): Domain | undefined {
+  return list?.find((d) => d.routes.some((r) => r.path === '/')) ?? list?.[0]
+}
+
+function DomainLink({ domain }: { domain: Domain }) {
+  const url = (domain.tls_mode === 'http_only' ? 'http://' : 'https://') + domain.hostname
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-accent hover:underline" dir="ltr">
+      <span className="[overflow-wrap:anywhere]">{domain.hostname}</span>
+      <span aria-hidden="true">↗</span>
+    </a>
   )
 }
