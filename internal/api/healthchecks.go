@@ -23,9 +23,18 @@ func (s *Server) handleGetHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 // handleSetHealthCheck saves the check the next deploys wait for.
 func (s *Server) handleSetHealthCheck(w http.ResponseWriter, r *http.Request) {
-	var in store.HealthCheck
-	if !readJSON(w, r, &in) {
+	// Drain is optional: a client that does not send it gets the default, not 0.
+	var body struct {
+		store.HealthCheck
+		Drain *int `json:"drain"`
+	}
+	if !readJSON(w, r, &body) {
 		return
+	}
+	in := body.HealthCheck
+	in.Drain = store.DefaultDrain
+	if body.Drain != nil {
+		in.Drain = *body.Drain
 	}
 	a, err := s.store.GetApp(r.Context(), r.PathValue("id"))
 	if s.storeError(w, "get app", err, "") {
@@ -55,6 +64,9 @@ func validHealthCheck(h *store.HealthCheck) string {
 		return ""
 	}
 	h.Path = strings.TrimSpace(h.Path)
+	if msg := inRange("drain", h.Drain, 0, 300); msg != "" {
+		return msg
+	}
 	switch h.Type {
 	case store.HealthTCP, store.HealthRunning:
 	case store.HealthHTTP:

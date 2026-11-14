@@ -23,26 +23,32 @@ type HealthCheck struct {
 	Timeout        int    `json:"timeout"`      // seconds one attempt may take
 	Retries        int    `json:"retries"`      // failures in a row, after the start period, that fail the deploy
 	StartPeriod    int    `json:"start_period"` // seconds when failures do not count; running: how long to stay up
+	// Drain is how many seconds the old container keeps running after the switch, so the
+	// requests it is answering can finish; 0 = it is stopped at once.
+	Drain int `json:"drain"`
 }
+
+// DefaultDrain is the drain, in seconds, of new apps and of apps with no check saved.
+const DefaultDrain = 10
 
 // DefaultHealthCheck is what new apps get: their port must accept a connection.
 func DefaultHealthCheck() HealthCheck {
-	return HealthCheck{Type: HealthTCP, Path: "/", Interval: 2, Timeout: 5, Retries: 3, StartPeriod: 30}
+	return HealthCheck{Type: HealthTCP, Path: "/", Interval: 2, Timeout: 5, Retries: 3, StartPeriod: 30, Drain: DefaultDrain}
 }
 
 // LegacyHealthCheck is what an app with no health check saved gets, the behaviour from
 // before health checks existed: its container must stay up for 3 seconds.
 func LegacyHealthCheck() HealthCheck {
-	return HealthCheck{Type: HealthRunning, Path: "/", Interval: 2, Timeout: 5, Retries: 3, StartPeriod: 3}
+	return HealthCheck{Type: HealthRunning, Path: "/", Interval: 2, Timeout: 5, Retries: 3, StartPeriod: 3, Drain: DefaultDrain}
 }
 
 // AppHealthCheck returns the app's health check, and whether one was saved (false: the
 // legacy one is returned).
 func (s *Store) AppHealthCheck(ctx context.Context, appID string) (HealthCheck, bool, error) {
 	var h HealthCheck
-	err := s.db.QueryRowContext(ctx, `SELECT type, path, expected_status, interval_s, timeout_s, retries, start_period_s
+	err := s.db.QueryRowContext(ctx, `SELECT type, path, expected_status, interval_s, timeout_s, retries, start_period_s, drain_s
 		FROM app_health_checks WHERE app_id = ?`, appID).
-		Scan(&h.Type, &h.Path, &h.ExpectedStatus, &h.Interval, &h.Timeout, &h.Retries, &h.StartPeriod)
+		Scan(&h.Type, &h.Path, &h.ExpectedStatus, &h.Interval, &h.Timeout, &h.Retries, &h.StartPeriod, &h.Drain)
 	if errors.Is(err, sql.ErrNoRows) {
 		if ok, err := s.AppExists(ctx, appID); err != nil || !ok {
 			if err == nil {
@@ -58,10 +64,10 @@ func (s *Store) AppHealthCheck(ctx context.Context, appID string) (HealthCheck, 
 // SetAppHealthCheck saves the app's health check; the caller validates it.
 func (s *Store) SetAppHealthCheck(ctx context.Context, appID string, h HealthCheck) error {
 	return affected(s.db.ExecContext(ctx, `
-		INSERT INTO app_health_checks (app_id, type, path, expected_status, interval_s, timeout_s, retries, start_period_s, updated_at)
-		SELECT id, ?, ?, ?, ?, ?, ?, ?, ? FROM apps WHERE id = ?
+		INSERT INTO app_health_checks (app_id, type, path, expected_status, interval_s, timeout_s, retries, start_period_s, drain_s, updated_at)
+		SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM apps WHERE id = ?
 		ON CONFLICT (app_id) DO UPDATE SET type = excluded.type, path = excluded.path,
 			expected_status = excluded.expected_status, interval_s = excluded.interval_s, timeout_s = excluded.timeout_s,
-			retries = excluded.retries, start_period_s = excluded.start_period_s, updated_at = excluded.updated_at`,
-		h.Type, h.Path, h.ExpectedStatus, h.Interval, h.Timeout, h.Retries, h.StartPeriod, now(), appID))
+			retries = excluded.retries, start_period_s = excluded.start_period_s, drain_s = excluded.drain_s, updated_at = excluded.updated_at`,
+		h.Type, h.Path, h.ExpectedStatus, h.Interval, h.Timeout, h.Retries, h.StartPeriod, h.Drain, now(), appID))
 }

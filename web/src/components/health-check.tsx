@@ -13,6 +13,8 @@ type HealthCheck = {
   timeout: number
   retries: number
   start_period: number
+  /** Seconds the old container keeps running after the switch, for requests in flight. */
+  drain: number
 }
 type Saved = HealthCheck & { saved: boolean }
 
@@ -47,6 +49,7 @@ const toForm = (h: HealthCheck) => ({
   timeout: String(h.timeout),
   retries: String(h.retries),
   start: String(h.start_period),
+  drain: String(h.drain),
 })
 
 function CheckForm({ app, saved }: { app: App; saved: Saved }) {
@@ -64,6 +67,7 @@ function CheckForm({ app, saved }: { app: App; saved: Saved }) {
     timeout: Number(form.timeout),
     retries: Number(form.retries),
     start_period: Number(form.start),
+    drain: Number(form.drain),
   }
   const dirty = !saved.saved || JSON.stringify(toForm(body)) !== JSON.stringify(toForm(saved))
   const save = useMutation({
@@ -114,6 +118,10 @@ function CheckForm({ app, saved }: { app: App; saved: Saved }) {
           </div>
         </>
       )}
+
+      <div className="max-w-48">
+        <Field label={th.drain} name="drain" dir="ltr" type="number" required min={0} max={300} hintTooltip hint={th.drainHint} value={form.drain} onChange={set('drain')} />
+      </div>
 
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
       {save.isSuccess && !dirty && <p className="text-xs text-accent">{t.common.saved}</p>}

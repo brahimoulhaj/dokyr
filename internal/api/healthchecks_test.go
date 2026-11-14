@@ -15,7 +15,7 @@ func TestHealthCheckAPI(t *testing.T) {
 
 	// A new app gets the TCP check.
 	h := e.must(200, "GET", "/api/apps/"+id+"/health-check", nil)
-	if h["type"] != "tcp" || h["saved"] != true || h["start_period"] != float64(30) {
+	if h["type"] != "tcp" || h["saved"] != true || h["start_period"] != float64(30) || h["drain"] != float64(10) {
 		t.Fatalf("new app check = %v", h)
 	}
 	// An app from before health checks has none saved: the short wait.
@@ -31,8 +31,12 @@ func TestHealthCheckAPI(t *testing.T) {
 	if h := e.must(200, "PUT", "/api/apps/"+id+"/health-check", ok); h["path"] != "/healthz" || h["saved"] != true {
 		t.Fatalf("saved = %v", h)
 	}
-	if h := e.must(200, "GET", "/api/apps/"+id+"/health-check", nil); h["type"] != "http" || h["expected_status"] != float64(204) || h["retries"] != float64(4) {
-		t.Fatalf("read back = %v", h)
+	if h := e.must(200, "GET", "/api/apps/"+id+"/health-check", nil); h["type"] != "http" || h["expected_status"] != float64(204) || h["retries"] != float64(4) || h["drain"] != float64(10) {
+		t.Fatalf("read back = %v (no drain sent: the default)", h)
+	}
+	ok["drain"] = 0
+	if h := e.must(200, "PUT", "/api/apps/"+id+"/health-check", ok); h["drain"] != float64(0) {
+		t.Fatalf("drain 0 = %v", h)
 	}
 
 	bad := []map[string]any{
@@ -45,6 +49,8 @@ func TestHealthCheckAPI(t *testing.T) {
 		{"type": "tcp", "interval": 1, "timeout": 1, "retries": 0},
 		{"type": "tcp", "interval": 1, "timeout": 1, "retries": 1, "start_period": 901},
 		{"type": "running", "start_period": 0},
+		{"type": "tcp", "interval": 1, "timeout": 1, "retries": 1, "drain": -1},
+		{"type": "tcp", "interval": 1, "timeout": 1, "retries": 1, "drain": 301},
 	}
 	for _, b := range bad {
 		if code, _ := e.call("PUT", "/api/apps/"+id+"/health-check", b); code != 400 {

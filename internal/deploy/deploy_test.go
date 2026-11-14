@@ -93,6 +93,7 @@ func newEnv(t *testing.T) *env {
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		StartGrace:  20 * time.Millisecond,
 		RetryDelays: []time.Duration{time.Millisecond, time.Millisecond},
+		MaxDrain:    time.Millisecond,
 	})
 	return e
 }
@@ -1404,5 +1405,57 @@ func TestDeployPhasesGit(t *testing.T) {
 	want := []string{store.PhaseBuilding, store.PhaseStarting, store.PhaseHealthChecking, store.PhaseSwitching, store.PhaseDraining, store.DeploySucceeded}
 	if got := phaseNames(dep); dep.Status != store.DeploySucceeded || !slices.Equal(got, want) {
 		t.Fatalf("status %q, phases = %v, want %v", dep.Status, got, want)
+	}
+}
+
+func TestDeployDrains(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	e.svc.opts.MaxDrain = 0
+	h := store.HealthCheck{Type: store.HealthRunning, StartPeriod: 0, Drain: 1}
+	if err := e.st.SetAppHealthCheck(ctx, e.app.ID, h); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first deploy has no old container: nothing to drain.
+	start := time.Now()
+	first := e.deploy()
+	if took := time.Since(start); first.Status != store.DeploySucceeded || took > 900*time.Millisecond {
+		t.Fatalf("first deploy: %s after %s, want no drain", first.Status, took)
+	}
+	if strings.Contains(e.log(first), "Draining") {
+		t.Errorf("first deploy drained:\n%s", e.log(first))
+	}
+
+	// The second waits a second with the old container still running, then removes it.
+	start = time.Now()
+	second := e.deploy()
+	if took := time.Since(start); second.Status != store.DeploySucceeded || took < time.Second {
+		t.Fatalf("second deploy: %s after %s, want at least the 1 s drain", second.Status, took)
+	}
+	log := e.log(second)
+	drain, remove := strings.Index(log, "Draining"), strings.Index(log, "Removing old container")
+	if drain < 0 || remove < drain {
+		t.Errorf("want Draining before Removing old container:\n%s", log)
+	}
+	if cs := e.containers(); len(cs) != 1 || cs[0].Name != second.ContainerName {
+		t.Errorf("containers = %+v, want only the new one", cs)
+	}
+	var drained time.Duration
+	for i, p := range second.Phases {
+		if p.Phase == store.PhaseDraining && i+1 < len(second.Phases) {
+			drained = second.Phases[i+1].At.Sub(p.At)
+		}
+	}
+	if drained < time.Second {
+		t.Errorf("draining phase lasted %s, want at least 1 s", drained)
+	}
+
+	// Drain 0: removed at once.
+	h.Drain = 0
+	if err := e.st.SetAppHealthCheck(ctx, e.app.ID, h); err != nil {
+		t.Fatal(err)
+	}
+	if third := e.deploy(); strings.Contains(e.log(third), "Draining") {
+		t.Errorf("drain 0 still drained:\n%s", e.log(third))
 	}
 }

@@ -9,10 +9,10 @@ name; it lives only in `internal/brand/brand.go`.
 
 **Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ☐ · M5 ☐ · M6 ◐
 
-**Where we are (2026-11-14, v0.8.2):** M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy with a real drain is next. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
+**Where we are (2026-11-14, v0.8.3):** M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy now drains the old container (default 10 s) before removing it (v0.8.3); recreate for apps with volumes or host ports is next. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
 
 **Next up:**
-1. Code, M3: rolling strategy with a real drain (default 10 s before the old container goes), then recreate for apps with volumes or host ports (adds the `rolled_back` exit).
+1. Code, M3: recreate for apps with volumes or published host ports (stop old → start new → health check → back to the previous image on failure; adds the `rolled_back` exit; the UI states the short gap).
 2. Then: push builds to a registry (closes M2), or M4 databases (Postgres, MariaDB, S3 backups).
 3. Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
 4. Record the fresh-install time with image download (M1, "Under 60 seconds").
@@ -225,8 +225,8 @@ Goal: zero-downtime deploys you can trust, with rollback and every trigger.
 - [ ] Continuous health monitoring after deploy (feeds alerts in M6)
 
 ### Strategies
-- [ ] Rolling: start new → health check → patch Caddy upstream → drain (default 10 s) → remove old
-- [ ] Rolling failure path: remove new, leave route untouched, mark failed
+- [x] Rolling: start new → health check → patch Caddy upstream → drain (default 10 s) → remove old — after the switch the old container keeps running for the app's drain (Health check settings → Drain, 0–300 s, default 10; `0016_health_check_drain.sql`; an API call without `drain` gets the default), then gets SIGTERM and `StopGrace` (10 s) before it is killed and removed. No drain on a first deploy (nothing old running); a shutdown cuts it short and the old container goes. The timeline's draining step shows the wait (`TestDeployDrains`, `TestHealthCheckAPI`); checked against local Docker (2026-11-14)
+- [x] Rolling failure path: remove new, leave route untouched, mark failed — what every failed deploy already does (`TestDeployFailureKeepsOldContainer`)
 - [ ] Recreate: stop old → start new → health check → roll back to previous image on failure
 - [ ] Recreate forced for apps with volumes or published host ports; UI states the short gap
 - [x] Volumes CRUD and mounts — named volumes, bind mounts and inline files per app (`0006_app_mounts.sql`, `internal/deploy/mounts.go`); file content written per deployment so editing never changes the live container; tested in `internal/deploy/mounts_test.go` and `internal/store/mounts_test.go`

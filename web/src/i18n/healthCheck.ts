@@ -20,6 +20,8 @@ export const en = {
   stayUp: 'Stay up for (s)',
   stayUpHint: 'For apps that do not listen on their port, such as workers.',
   legacy: 'No check saved yet: the new container only has to stay up for 3 seconds. Save one to check the app itself.',
+  drain: 'Drain (s)',
+  drainHint: 'After traffic switches, the old container keeps running this long so requests it is still answering can finish. 0 stops it at once.',
   nextDeploy: 'Applies from the next deploy.',
   target: (target: string) => `Checks ${target} on the container.`,
 }
@@ -44,6 +46,8 @@ export const fr: typeof en = {
   stayUp: 'Rester lancé pendant (s)',
   stayUpHint: 'Pour les apps qui n’écoutent pas sur leur port, comme les workers.',
   legacy: 'Aucun contrôle enregistré : le nouveau conteneur doit seulement rester lancé 3 secondes. Enregistrez-en un pour contrôler l’app elle-même.',
+  drain: 'Drainage (s)',
+  drainHint: 'Après la bascule du trafic, l’ancien conteneur reste lancé ce temps-là pour finir les requêtes en cours. 0 l’arrête aussitôt.',
   nextDeploy: 'S’applique à partir du prochain déploiement.',
   target: (target) => `Contrôle ${target} sur le conteneur.`,
 }
@@ -68,6 +72,8 @@ export const ar: typeof en = {
   stayUp: 'البقاء قيد التشغيل لمدة (ث)',
   stayUpHint: 'للتطبيقات التي لا تستمع على منفذها، مثل العمّال (workers).',
   legacy: 'لا يوجد فحص محفوظ بعد: يكفي أن تبقى الحاوية الجديدة تعمل 3 ثوانٍ. احفظ فحصًا لفحص التطبيق نفسه.',
+  drain: 'التصريف (ث)',
+  drainHint: 'بعد تحويل الحركة تبقى الحاوية القديمة تعمل هذه المدة لإنهاء الطلبات الجارية. 0 يوقفها فوراً.',
   nextDeploy: 'يُطبَّق بدءًا من النشر التالي.',
   target: (target) => `يفحص ${target} على الحاوية.`,
 }
@@ -92,6 +98,8 @@ export const es: typeof en = {
   stayUp: 'Seguir en marcha durante (s)',
   stayUpHint: 'Para apps que no escuchan en su puerto, como los workers.',
   legacy: 'Aún no hay comprobación guardada: el nuevo contenedor solo tiene que seguir en marcha 3 segundos. Guarda una para comprobar la app en sí.',
+  drain: 'Drenaje (s)',
+  drainHint: 'Tras cambiar el tráfico, el contenedor anterior sigue en marcha este tiempo para terminar las peticiones en curso. 0 lo detiene al momento.',
   nextDeploy: 'Se aplica a partir del próximo despliegue.',
   target: (target) => `Comprueba ${target} en el contenedor.`,
 }

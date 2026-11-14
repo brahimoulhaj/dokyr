@@ -54,7 +54,7 @@ func newEnv(t *testing.T) *env {
 	api := New(st, acc, log, "test", web)
 	ex := executortest.New()
 	deployer := deploy.New(context.Background(), deploy.Options{
-		Store: st, Executor: ex, DataDir: dir, Log: log, StartGrace: 10 * time.Millisecond,
+		Store: st, Executor: ex, DataDir: dir, Log: log, StartGrace: 10 * time.Millisecond, MaxDrain: time.Millisecond,
 		// New apps get a TCP health check: every fake container accepts the connection.
 		Dial: func(context.Context, string, string) (net.Conn, error) {
 			c1, c2 := net.Pipe()

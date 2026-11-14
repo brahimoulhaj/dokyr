@@ -84,6 +84,8 @@ type Options struct {
 	// apps' Docker network: TCP and HTTP checks cannot reach a container, so a deploy only
 	// waits StartGrace for the container to stay up, and says so in its log.
 	OutsideNetwork bool
+	// MaxDrain caps the drain of every deploy (tests keep it short); 0 = no cap.
+	MaxDrain time.Duration
 	// StopGrace is how long a container gets to exit before it is killed.
 	StopGrace time.Duration
 	// MaxBuilds is how many Git builds run at once; 0 = 1. Further Git deploys stay queued
@@ -598,7 +600,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		return
 	}
 	if !saved {
-		check = store.HealthCheck{Type: store.HealthRunning}
+		check = store.HealthCheck{Type: store.HealthRunning, Drain: store.DefaultDrain}
 	}
 	phase(store.PhaseHealthChecking)
 	if err := s.waitHealthy(ctx, check, containerID, name, dep.Port, logw); err != nil {
@@ -628,8 +630,10 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		return
 	}
 
-	// 4. Remove every other container of this app. From here the deploy has succeeded.
+	// 4. Drain, then remove every other container of this app. From here the deploy has
+	// succeeded.
 	phase(store.PhaseDraining)
+	s.drain(ctx, app, containerID, check, logw)
 	s.removeOthers(final, app, containerID, logw)
 
 	s.pruneImages(final, app.ID, image, logw)
@@ -700,6 +704,36 @@ func temporary(err error) bool {
 		}
 	}
 	return false
+}
+
+// drain waits, before the old containers go, for the requests they are still answering:
+// the proxy sends new ones to the new container already. It returns at once when there is
+// no old container running, and early when the panel shuts down.
+func (s *Service) drain(ctx context.Context, app store.App, keep string, h store.HealthCheck, logw *logWriter) {
+	wait := time.Duration(h.Drain) * time.Second
+	if s.opts.MaxDrain > 0 {
+		wait = min(wait, s.opts.MaxDrain)
+	}
+	if wait <= 0 {
+		return
+	}
+	list, err := s.opts.Executor.ListContainers(ctx)
+	if err != nil {
+		return // removeOthers says so
+	}
+	old := 0
+	for _, c := range list {
+		if c.Kind == executor.KindApp && c.ResourceID == app.ID && c.ID != keep && c.Running {
+			old++
+		}
+	}
+	if old == 0 {
+		return
+	}
+	logw.printf("Draining: the old container keeps running for %s so requests in flight can finish", wait)
+	if err := sleep(ctx, wait); err != nil {
+		logw.printf("Drain cut short: the panel is shutting down")
+	}
 }
 
 // removeOthers removes every container of the app but keep. A leftover container is
