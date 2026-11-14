@@ -56,8 +56,11 @@ export function DeploymentTimeline({ deployment }: { deployment: Deployment }) {
   const start = list[0].from
   const end = Math.max(...list.map((s) => s.to))
   const total = Math.max(1, end - start)
-  const ended = deployment.status === 'failed' || deployment.status === 'cancelled'
-  const lastIndex = list.length - 1
+  const ended = deployment.status === 'failed' || deployment.status === 'cancelled' || deployment.status === 'rolled_back'
+  // The step it failed in; a recreate deploy then starts the old container again (rolling_back).
+  const failIndex = list[list.length - 1]?.phase === 'rolling_back' ? list.length - 2 : list.length - 1
+  // Cancelled is grey; failed, and the failure behind a rollback, red.
+  const failedTone = deployment.status === 'cancelled' ? 'muted' : 'danger'
 
   return (
     <div className="border-b border-line px-4 py-3">
@@ -67,18 +70,20 @@ export function DeploymentTimeline({ deployment }: { deployment: Deployment }) {
       </div>
       <ol className="space-y-1">
         {list.map((s, i) => {
-          const failedHere = ended && i === lastIndex && s.phase !== 'queued'
+          const failedHere = ended && i === failIndex && s.phase !== 'queued'
+          const rolledBack = deployment.status === 'rolled_back' && s.phase === 'rolling_back'
           const left = ((s.from - start) / total) * 100
           const width = Math.max(0.75, ((s.to - s.from) / total) * 100)
           return (
             <li key={s.phase + i} className="grid grid-cols-[minmax(8rem,12rem)_1fr_4.5rem] items-center gap-3 text-xs">
-              <span className={cx('truncate', failedHere ? (deployment.status === 'failed' ? 'text-danger' : 'text-muted') : 'text-fg')}>
+              <span className={cx('truncate', failedHere ? (failedTone === 'danger' ? 'text-danger' : 'text-muted') : 'text-fg')}>
                 {t.app.phase[s.phase]}
                 {failedHere && (
                   <span className="ms-1.5 text-[0.7rem]">
-                    · {deployment.status === 'failed' ? t.app.timelineFailedHere : t.app.timelineCancelledHere}
+                    · {deployment.status === 'cancelled' ? t.app.timelineCancelledHere : t.app.timelineFailedHere}
                   </span>
                 )}
+                {rolledBack && <span className="ms-1.5 text-[0.7rem] text-muted">· {t.app.timelineRolledBackHere}</span>}
               </span>
               <span className="relative h-2 overflow-hidden rounded-full bg-raised" aria-hidden>
                 <span
@@ -87,7 +92,7 @@ export function DeploymentTimeline({ deployment }: { deployment: Deployment }) {
                     s.phase === 'queued'
                       ? 'bg-line-strong'
                       : failedHere
-                        ? deployment.status === 'failed'
+                        ? failedTone === 'danger'
                           ? 'bg-danger'
                           : 'bg-line-strong'
                         : s.open && active

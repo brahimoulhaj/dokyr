@@ -22,6 +22,7 @@ export function MountSettings({ app }: { app: App }) {
     <form onSubmit={submit} className="space-y-4 p-4">
       <fieldset disabled={save.isPending} className="min-w-0 space-y-3">
         {mounts.length === 0 && <p className="text-xs text-muted">{t.mountsEmpty}</p>}
+        {mounts.some((m) => m.type === 'volume' || m.type === 'bind') && <p className="border-s-2 border-warn ps-3 text-xs text-muted">{t.recreateNote}</p>}
         {mounts.map((m, i) => <div key={i} className="space-y-3 border border-line p-3">
           <div className="grid items-end gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-xs text-muted">{t.mountType}

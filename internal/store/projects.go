@@ -180,6 +180,26 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	return a, err
 }
 
+// Deploy strategies. Rolling starts the new container next to the old one, so there is
+// no gap. Recreate stops the old one first: two containers writing the same volume (a
+// SQLite file, an upload directory) could corrupt it, so an app with a named volume or a
+// bind mount always deploys this way, with a short gap.
+const (
+	StrategyRolling  = "rolling"
+	StrategyRecreate = "recreate"
+)
+
+// Strategy is how the app deploys: recreate when it mounts a volume or a host directory,
+// rolling otherwise. Inline files are written per deployment, so they do not count.
+func (a App) Strategy() string {
+	for _, m := range a.Mounts {
+		if m.Type == "volume" || m.Type == "bind" {
+			return StrategyRecreate
+		}
+	}
+	return StrategyRolling
+}
+
 // Source types of an app.
 const (
 	SourceImage = "image" // a ready image pulled from a registry

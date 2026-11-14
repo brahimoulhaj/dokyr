@@ -16,19 +16,26 @@ const (
 	DeploySucceeded = "succeeded"
 	DeployFailed    = "failed"
 	DeployCancelled = "cancelled"
+	// DeployRolledBack is a recreate deploy whose new container failed: the old one was
+	// started again and serves as before.
+	DeployRolledBack = "rolled_back"
 )
 
 // Phases of a running deployment, in the order they come. A Git build is building, an
 // image pull is pulling; a Git rollback has neither and goes straight to starting.
 // Draining is the old containers going after the switch: from switching on, the new
-// container serves and the deployment can no longer be cancelled.
+// container serves and the deployment can no longer be cancelled. A recreate deploy stops
+// the old container (stopping) before starting the new one, and on failure starts the old
+// one again (rolling_back).
 const (
 	PhasePulling        = "pulling"
 	PhaseBuilding       = "building"
+	PhaseStopping       = "stopping"
 	PhaseStarting       = "starting"
 	PhaseHealthChecking = "health_checking"
 	PhaseSwitching      = "switching"
 	PhaseDraining       = "draining"
+	PhaseRollingBack    = "rolling_back"
 )
 
 // PhaseEntry is when a deployment entered a phase.
@@ -39,7 +46,7 @@ type PhaseEntry struct {
 
 // Finished reports whether the deployment has ended, whatever the outcome.
 func (d Deployment) Finished() bool {
-	return d.Status == DeploySucceeded || d.Status == DeployFailed || d.Status == DeployCancelled
+	return d.Status == DeploySucceeded || d.Status == DeployFailed || d.Status == DeployCancelled || d.Status == DeployRolledBack
 }
 
 type Deployment struct {

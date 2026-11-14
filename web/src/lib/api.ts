@@ -154,6 +154,8 @@ export type App = {
   dockerfile_path: string
   /** Replaces the image's entrypoint and command, run by /bin/sh -c; empty = the image's own. */
   start_command: string
+  /** rolling, or recreate (stop old first, short gap) for an app with a volume or a host path. */
+  strategy: 'rolling' | 'recreate'
   port: number
   cpu_limit: number
   memory_limit_mb: number
@@ -166,13 +168,13 @@ export type App = {
 }
 
 /** The steps of a running deployment, in order. A Git build is building, an image pull is pulling. */
-export const deploymentPhases = ['pulling', 'building', 'starting', 'health_checking', 'switching', 'draining'] as const
+export const deploymentPhases = ['pulling', 'building', 'stopping', 'starting', 'health_checking', 'switching', 'draining', 'rolling_back'] as const
 export type DeploymentPhase = (typeof deploymentPhases)[number]
 
 export type Deployment = {
   id: string
   app_id: string
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'rolled_back'
   trigger: string
   /** For a Git app: the image built, empty until the build succeeds. */
   image: string

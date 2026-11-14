@@ -90,6 +90,7 @@ type appJSON struct {
 	BuildContext        string            `json:"build_context"`
 	DockerfilePath      string            `json:"dockerfile_path"`
 	StartCommand        string            `json:"start_command"`
+	Strategy            string            `json:"strategy"`                // rolling or recreate, from the mounts
 	RuntimeState        string            `json:"runtime_state,omitempty"` // single-app responses only
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
@@ -106,6 +107,7 @@ func toAppJSON(a store.App) appJSON {
 		GitRepository:       a.Git.Repository, GitBranch: a.Git.Branch, Builder: a.Git.Builder,
 		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile,
 		StartCommand: a.StartCommand,
+		Strategy:     a.Strategy(),
 		CreatedAt:    a.CreatedAt, UpdatedAt: a.UpdatedAt,
 	}
 }

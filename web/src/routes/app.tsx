@@ -306,6 +306,11 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
             </Fact>
           )}
           <Fact label={t.app.containerPort}>{app.port}</Fact>
+          <Fact label={t.app.strategy}>
+            <span title={app.strategy === 'recreate' ? t.app.recreateNote : undefined}>
+              {app.strategy === 'recreate' ? t.app.strategyRecreate : t.app.strategyRolling}
+            </span>
+          </Fact>
           <Fact label={t.app.limits}>
             {app.cpu_limit > 0 ? t.app.cpuValue(app.cpu_limit) : t.app.cpuUnlimited} ·{' '}
             {app.memory_limit_mb > 0 ? t.app.memoryValue(app.memory_limit_mb) : t.app.memoryUnlimited}
@@ -359,6 +364,7 @@ const deployTone: Record<Deployment['status'], Tone> = {
   succeeded: 'accent',
   failed: 'danger',
   cancelled: 'muted',
+  rolled_back: 'warn',
 }
 
 function Deployments(props: {

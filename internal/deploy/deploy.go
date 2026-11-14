@@ -3,6 +3,11 @@
 // building) → starting → health_checking → switching → draining → succeeded, leaving
 // for failed or cancelled at any step before switching. Each step entered is recorded
 // with its time (store.EnterDeploymentPhase), for the timeline.
+//
+// An app with volumes deploys with the recreate strategy (store.App.Strategy): the old
+// container is stopped (stopping) before the new one starts, so the two never share the
+// volume; there is no draining. When the new one fails, the old one is started again
+// (rolling_back) and the deployment ends rolled_back.
 package deploy
 
 import (
@@ -284,6 +289,12 @@ func (s *Service) Recover(ctx context.Context) (Recovery, error) {
 		}
 		if dep.Attempts >= s.opts.MaxAttempts {
 			msg := fmt.Sprintf("interrupted: the panel restarted during this deployment %d times", dep.Attempts)
+			if app.Strategy() == store.StrategyRecreate {
+				// It may have stopped the old container before the restart.
+				if _, err := s.restoreOld(ctx, app, logw); err != nil {
+					msg += fmt.Sprintf("; the previous container could not be started again: %v", err)
+				}
+			}
 			logw.printf("Deployment failed: %s", msg)
 			logw.close()
 			if err := st.FinishDeployment(ctx, dep.ID, store.DeployFailed, msg); err != nil {
@@ -447,16 +458,36 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		logw.printf("The panel restarted during this deployment; starting again (attempt %d of %d)", dep.Attempts+1, s.opts.MaxAttempts)
 	}
 
+	// phase records the step the deployment enters. The timeline is bookkeeping: a failed
+	// write is logged, not fatal.
+	phase := func(p string) {
+		if err := st.EnterDeploymentPhase(final, dep.ID, p); err != nil {
+			s.opts.Log.Error("record deployment phase", "deployment", dep.ID, "phase", p, "error", err)
+		}
+	}
+
+	// stoppedOld is set once a recreate deploy has stopped the old container: from then on
+	// a failure starts it again.
+	stoppedOld := false
 	fail := func(containerID string, err error) {
 		if containerID != "" {
 			if rmErr := ex.RemoveContainer(final, containerID, true); rmErr != nil {
 				s.opts.Log.Error("remove failed deployment container", "error", rmErr)
 			}
 		}
-		msg, status, action := err.Error(), store.DeployFailed, "deployment.failed"
+		restored, notRestored := false, ""
+		if stoppedOld && hasOld(app) {
+			phase(store.PhaseRollingBack)
+			var rerr error
+			if restored, rerr = s.restoreOld(final, app, logw); rerr != nil {
+				restored, notRestored = false, fmt.Sprintf("; the previous container could not be started again: %v", rerr)
+				logw.printf("Warning: could not start the previous container again: %v", rerr)
+			}
+		}
+		msg, status, action := err.Error()+notRestored, store.DeployFailed, "deployment.failed"
 		switch {
 		case errors.Is(context.Cause(ctx), errCancelled):
-			msg, status, action = "cancelled by the user", store.DeployCancelled, "deployment.cancelled"
+			msg, status, action = "cancelled by the user"+notRestored, store.DeployCancelled, "deployment.cancelled"
 			logw.printf("Deployment cancelled")
 		case ctx.Err() != nil:
 			// Shutting down: back in the queue, Recover starts it again on the next start.
@@ -466,6 +497,10 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 			}
 			s.opts.Log.Info("deployment interrupted by shutdown, requeued", "app", app.Name, "deployment", dep.ID)
 			return
+		case restored:
+			msg, status, action = err.Error()+"; the previous container was started again", store.DeployRolledBack, "deployment.rolled_back"
+			logw.printf("Deployment failed: %s", err)
+			logw.printf("Rolled back: the previous container serves again")
 		default:
 			logw.printf("Deployment failed: %s", msg)
 		}
@@ -474,14 +509,6 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		}
 		s.event(final, action, app, msg)
 		s.opts.Log.Warn("deployment "+status, "app", app.Name, "deployment", dep.ID, "error", msg)
-	}
-
-	// phase records the step the deployment enters. The timeline is bookkeeping: a failed
-	// write is logged, not fatal.
-	phase := func(p string) {
-		if err := st.EnterDeploymentPhase(final, dep.ID, p); err != nil {
-			s.opts.Log.Error("record deployment phase", "deployment", dep.ID, "phase", p, "error", err)
-		}
 	}
 
 	buildDone := func() {}
@@ -555,13 +582,24 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		}
 	}
 
-	// 2. Create and start the new container next to the old one.
-	phase(store.PhaseStarting)
+	// 2. Create and start the new container: next to the old one (rolling), or in its place
+	// once it is stopped (recreate). Mounts are checked first, so a bad one costs no gap.
 	mounts, err := s.prepareMounts(app, dep)
 	if err != nil {
 		fail("", err)
 		return
 	}
+	recreate := app.Strategy() == store.StrategyRecreate
+	if recreate {
+		phase(store.PhaseStopping)
+		logw.printf("Strategy: recreate. The app has volumes, which two containers must not use at once: the old container stops first, and the app is unreachable until the new one passes its health check")
+		stoppedOld = true // even half-done, a failure must start it again
+		if err := s.stopOld(ctx, app, logw); err != nil {
+			fail("", fmt.Errorf("stop the old container: %w", err))
+			return
+		}
+	}
+	phase(store.PhaseStarting)
 	name := containerName(app.ID, dep.ID)
 	logw.printf("Creating container %s", name)
 	entrypoint, command := startCommand(app)
@@ -631,9 +669,11 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	}
 
 	// 4. Drain, then remove every other container of this app. From here the deploy has
-	// succeeded.
-	phase(store.PhaseDraining)
-	s.drain(ctx, app, containerID, check, logw)
+	// succeeded. A recreate deploy stopped the old container already: nothing to drain.
+	if !recreate {
+		phase(store.PhaseDraining)
+		s.drain(ctx, app, containerID, check, logw)
+	}
 	s.removeOthers(final, app, containerID, logw)
 
 	s.pruneImages(final, app.ID, image, logw)
@@ -734,6 +774,56 @@ func (s *Service) drain(ctx context.Context, app store.App, keep string, h store
 	if err := sleep(ctx, wait); err != nil {
 		logw.printf("Drain cut short: the panel is shutting down")
 	}
+}
+
+// stopOld stops every running container of the app, for a recreate deploy. They are kept:
+// restoreOld starts the live one again if the new container fails.
+func (s *Service) stopOld(ctx context.Context, app store.App, logw *logWriter) error {
+	ex := s.opts.Executor
+	list, err := ex.ListContainers(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range list {
+		if c.Kind != executor.KindApp || c.ResourceID != app.ID || !c.Running {
+			continue
+		}
+		logw.printf("Stopping old container %s", c.Name)
+		if err := ex.StopContainer(ctx, c.ID, s.opts.StopGrace); err != nil {
+			return fmt.Errorf("%s: %w", c.Name, err)
+		}
+	}
+	return nil
+}
+
+// restoreOld starts the container of the app's live deployment again, after a recreate
+// deploy stopped it and then failed, and points the route back at it. It reports false
+// when there is nothing to bring back: a first deploy, or an app stopped on purpose.
+func (s *Service) restoreOld(ctx context.Context, app store.App, logw *logWriter) (bool, error) {
+	if !hasOld(app) {
+		return false, nil
+	}
+	old, err := s.opts.Store.GetDeployment(ctx, app.CurrentDeploymentID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && old.ContainerName == "") {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	logw.printf("Starting the previous container %s again", old.ContainerName)
+	if err := s.opts.Executor.StartContainer(ctx, old.ContainerName); err != nil {
+		return false, err
+	}
+	if err := s.route(ctx, app.ID, []string{store.Upstream(old.ContainerName, old.Port)}); err != nil {
+		logw.printf("Warning: could not point the route back at the previous container: %v", err)
+	}
+	return true, nil
+}
+
+// hasOld reports whether the app has a live container to start again after a failed
+// recreate deploy: not on a first deploy, nor when it was stopped on purpose.
+func hasOld(app store.App) bool {
+	return app.CurrentDeploymentID != "" && app.DesiredState == store.StateRunning
 }
 
 // removeOthers removes every container of the app but keep. A leftover container is

@@ -1459,3 +1459,152 @@ func TestDeployDrains(t *testing.T) {
 		t.Errorf("drain 0 still drained:\n%s", e.log(third))
 	}
 }
+
+// soloExecutor fails the test when a container of the app is created while another one of
+// the same app still runs: what the recreate strategy must never allow.
+type soloExecutor struct {
+	*executortest.Fake
+	t     *testing.T
+	appID string
+}
+
+func (e *soloExecutor) CreateContainer(ctx context.Context, spec executor.ContainerSpec) (string, error) {
+	list, _ := e.ListContainers(ctx)
+	for _, c := range list {
+		if c.ResourceID == e.appID && c.Running {
+			e.t.Errorf("container %s created while %s still runs", spec.Name, c.Name)
+		}
+	}
+	return e.Fake.CreateContainer(ctx, spec)
+}
+
+// useVolume gives the app a named volume, which makes it deploy with recreate.
+func (e *env) useVolume() {
+	e.t.Helper()
+	a, err := e.st.UpdateApp(context.Background(), e.app.ID, store.AppInput{Name: "web", Image: e.app.Image, Port: e.app.Port, CPULimit: 1, MemoryMB: 64,
+		Mounts: []store.AppMount{{Type: "volume", Source: "web-data", Target: "/data"}}})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if a.Strategy() != store.StrategyRecreate {
+		e.t.Fatalf("strategy = %q, want recreate", a.Strategy())
+	}
+	e.app = a
+	e.svc.opts.Executor = &soloExecutor{Fake: e.ex, t: e.t, appID: a.ID}
+}
+
+func TestStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		mounts []store.AppMount
+		want   string
+	}{
+		{nil, store.StrategyRolling},
+		{[]store.AppMount{{Type: "file", Target: "/etc/app.conf", Content: "x"}}, store.StrategyRolling},
+		{[]store.AppMount{{Type: "volume", Source: "data", Target: "/data"}}, store.StrategyRecreate},
+		{[]store.AppMount{{Type: "file", Target: "/a"}, {Type: "bind", Source: "/srv/up", Target: "/up"}}, store.StrategyRecreate},
+	} {
+		if got := (store.App{Mounts: tc.mounts}).Strategy(); got != tc.want {
+			t.Errorf("Strategy(%+v) = %q, want %q", tc.mounts, got, tc.want)
+		}
+	}
+}
+
+func TestDeployRecreate(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	e.router.known[e.app.ID] = true
+	e.useVolume()
+
+	first := e.deploy()
+	if first.Status != store.DeploySucceeded {
+		t.Fatalf("first deploy = %+v", first)
+	}
+
+	e.setImageKeepMounts("nginx:2")
+	second := e.deploy()
+	want := []string{store.PhasePulling, store.PhaseStopping, store.PhaseStarting, store.PhaseHealthChecking, store.PhaseSwitching, store.DeploySucceeded}
+	if got := phaseNames(second); second.Status != store.DeploySucceeded || !slices.Equal(got, want) {
+		t.Fatalf("status %q, phases %v, want succeeded through %v", second.Status, got, want)
+	}
+	log := e.log(second)
+	stop, create := strings.Index(log, "Stopping old container "+first.ContainerName), strings.Index(log, "Creating container")
+	if stop < 0 || create < stop || !strings.Contains(log, "Strategy: recreate") || strings.Contains(log, "Draining") {
+		t.Errorf("want the old container stopped before the new one is created, no drain:\n%s", log)
+	}
+	if cs := e.containers(); len(cs) != 1 || cs[0].Name != second.ContainerName || !cs[0].Running {
+		t.Errorf("containers = %+v, want only the new one", cs)
+	}
+	if got := e.router.last(e.app.ID); len(got) != 1 || got[0] != second.ContainerName+":80" {
+		t.Errorf("route = %v", got)
+	}
+}
+
+func TestDeployRecreateRollsBack(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	if _, err := e.st.CreateDomain(ctx, e.app.ID, "shop.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	e.router.known[e.app.ID] = true
+	e.useVolume()
+	good := e.deploy()
+	wantRoute := e.router.last(e.app.ID)
+
+	e.setImageKeepMounts("crasher:1")
+	e.ex.CrashOnStart["crasher:1"] = true
+	dep := e.deploy()
+	if dep.Status != store.DeployRolledBack || !strings.Contains(dep.Error, "exited right after start") || !strings.Contains(dep.Error, "previous container was started again") {
+		t.Fatalf("deployment = %+v, want rolled_back", dep)
+	}
+	want := []string{store.PhasePulling, store.PhaseStopping, store.PhaseStarting, store.PhaseHealthChecking, store.PhaseRollingBack, store.DeployRolledBack}
+	if got := phaseNames(dep); !slices.Equal(got, want) {
+		t.Errorf("phases = %v, want %v", got, want)
+	}
+	if !dep.Finished() {
+		t.Error("rolled_back is not finished")
+	}
+	cs := e.containers()
+	if len(cs) != 1 || cs[0].Name != good.ContainerName || !cs[0].Running {
+		t.Errorf("containers = %+v, want the old one running again", cs)
+	}
+	app, _ := e.st.GetApp(ctx, e.app.ID)
+	if app.CurrentDeploymentID != good.ID {
+		t.Errorf("current deployment = %s, want %s", app.CurrentDeploymentID, good.ID)
+	}
+	if got := e.router.last(e.app.ID); !slices.Equal(got, wantRoute) {
+		t.Errorf("route = %v, want %v", got, wantRoute)
+	}
+	if !strings.Contains(e.log(dep), "Rolled back: the previous container serves again") {
+		t.Errorf("log:\n%s", e.log(dep))
+	}
+	events, _ := e.st.ListEvents(ctx, 1)
+	if len(events) != 1 || events[0].Action != "deployment.rolled_back" {
+		t.Errorf("events = %+v", events)
+	}
+
+	// A pull that fails comes before the stop: plain failed, the old one never stopped.
+	e.setImageKeepMounts("registry.example/missing:1")
+	if dep := e.deploy(); dep.Status != store.DeployFailed || strings.Contains(e.log(dep), "Stopping") {
+		t.Errorf("missing image: %+v\n%s", dep, e.log(dep))
+	}
+
+	// A first deploy has nothing to go back to: failed.
+	e2 := newEnv(t)
+	e2.useVolume()
+	e2.setImageKeepMounts("crasher:1")
+	e2.ex.CrashOnStart["crasher:1"] = true
+	if dep := e2.deploy(); dep.Status != store.DeployFailed {
+		t.Errorf("first deploy crash: status %q, want failed", dep.Status)
+	}
+}
+
+// setImageKeepMounts changes the image and keeps the app's mounts.
+func (e *env) setImageKeepMounts(image string) {
+	e.t.Helper()
+	a, err := e.st.UpdateApp(context.Background(), e.app.ID, store.AppInput{Name: "web", Image: image, Port: e.app.Port, CPULimit: 1, MemoryMB: 64, Mounts: e.app.Mounts})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.app = a
+}

@@ -19,6 +19,7 @@ export const en = {
   deployedApp: (app: string) => `${app} deployed`,
   failedApp: (app: string) => `${app} failed to deploy`,
   cancelledApp: (app: string) => `${app} deployment cancelled`,
+  rolledBackApp: (app: string) => `${app} failed to deploy; the previous version runs again`,
   toasts: 'Notifications',
   dismiss: 'Dismiss',
 }
@@ -42,6 +43,7 @@ export const fr: typeof en = {
   deployedApp: (app) => `${app} déployé`,
   failedApp: (app) => `Échec du déploiement de ${app}`,
   cancelledApp: (app) => `Déploiement de ${app} annulé`,
+  rolledBackApp: (app) => `Échec du déploiement de ${app} ; la version précédente tourne de nouveau`,
   toasts: 'Notifications',
   dismiss: 'Fermer',
 }
@@ -65,6 +67,7 @@ export const ar: typeof en = {
   deployedApp: (app) => `تم نشر ${app}`,
   failedApp: (app) => `فشل نشر ${app}`,
   cancelledApp: (app) => `أُلغي نشر ${app}`,
+  rolledBackApp: (app) => `فشل نشر ${app}؛ عادت النسخة السابقة للعمل`,
   toasts: 'الإشعارات',
   dismiss: 'إغلاق',
 }
@@ -88,6 +91,7 @@ export const es: typeof en = {
   deployedApp: (app) => `${app} desplegado`,
   failedApp: (app) => `Falló el despliegue de ${app}`,
   cancelledApp: (app) => `Despliegue de ${app} cancelado`,
+  rolledBackApp: (app) => `Falló el despliegue de ${app}; la versión anterior vuelve a funcionar`,
   toasts: 'Notificaciones',
   dismiss: 'Cerrar',
 }

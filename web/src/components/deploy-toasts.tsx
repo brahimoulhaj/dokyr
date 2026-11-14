@@ -85,6 +85,7 @@ export function DeployToasts() {
           const took = duration(done.started_at, done.finished_at)
           if (done.status === 'succeeded') toast.success(t.overview.deployedApp(d.app_name), { id, meta: took, ...buttons(d), duration: 8_000 })
           else if (done.status === 'failed') toast.error(t.overview.failedApp(d.app_name), { id, description: done.error || undefined, ...buttons(d) })
+          else if (done.status === 'rolled_back') toast.error(t.overview.rolledBackApp(d.app_name), { id, description: done.error || undefined, ...buttons(d) })
           else toast.info(t.overview.cancelledApp(d.app_name), { id })
         })
         .catch(() => toast.dismiss(id))
