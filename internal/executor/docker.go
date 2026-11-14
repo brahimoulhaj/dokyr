@@ -172,6 +172,41 @@ func (d *Docker) PullImage(ctx context.Context, ref string, auth *RegistryAuth, 
 	return nil
 }
 
+// TagImage gives the image source the extra name target.
+func (d *Docker) TagImage(ctx context.Context, source, target string) error {
+	if _, err := d.cli.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target}); err != nil {
+		return fmt.Errorf("tag %s as %s: %w", source, target, wrapNotFound(err))
+	}
+	return nil
+}
+
+// PushImage pushes ref to its registry, with credentials when auth is not nil.
+func (d *Docker) PushImage(ctx context.Context, ref string, auth *RegistryAuth) error {
+	opts := client.ImagePushOptions{}
+	if auth != nil {
+		header, err := encodeAuth(*auth)
+		if err != nil {
+			return err
+		}
+		opts.RegistryAuth = header
+	}
+	resp, err := d.cli.ImagePush(ctx, ref, opts)
+	if err != nil {
+		return fmt.Errorf("push %s: %w", ref, err)
+	}
+	defer resp.Close()
+	// As with a pull, a failure arrives inside the stream.
+	for msg, err := range resp.JSONMessages(ctx) {
+		if err != nil {
+			return fmt.Errorf("push %s: %w", ref, err)
+		}
+		if msg.Error != nil {
+			return fmt.Errorf("push %s: %s", ref, msg.Error.Message)
+		}
+	}
+	return nil
+}
+
 func (d *Docker) CreateContainer(ctx context.Context, spec ContainerSpec) (string, error) {
 	if spec.Name == "" || spec.Image == "" || spec.Kind == "" || spec.ResourceID == "" {
 		return "", errors.New("create container: name, image, kind and resource id are required")

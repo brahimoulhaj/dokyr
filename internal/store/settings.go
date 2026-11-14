@@ -21,6 +21,8 @@ const (
 	SettingUpdateSeen  = "update_seen"         // finished_at of the last update result recorded as an event
 	SettingBuildCPUs   = "build_cpus"          // CPU cap shared by Git builds; "0" = none; absent = the environment's default
 	SettingBuildMemory = "build_memory_mb"     // memory cap (MB) shared by Git builds; "0" = none; absent = the environment's default
+	SettingRegistry    = "registry"            // JSON RegistrySettings of the built-in registry
+	SettingRegistryS3  = "registry_s3"         // id of the S3 connection the registry stores in; absent = a Docker volume
 )
 
 // BuildLimits caps the CPU and memory that Git builds share. Zero leaves a resource uncapped.

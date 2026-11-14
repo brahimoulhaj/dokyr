@@ -101,6 +101,10 @@ func (s *Server) handlePutPanelSettings(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusConflict, "conflict", "this hostname is already used by an app")
 			return
 		}
+		if in.Domain == s.registryDomain(r.Context()) {
+			writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
+			return
+		}
 	}
 	for key, value := range map[string]string{store.SettingPanelDomain: in.Domain, store.SettingACMEEmail: in.ACMEEmail, store.SettingPanelTLS: in.TLSMode, store.SettingPanelIPOff: strconv.FormatBool(!ipAccess)} {
 		if err := s.store.SetSetting(r.Context(), key, value); err != nil {

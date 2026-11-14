@@ -4,6 +4,7 @@ import { Button, ConfirmButton, Empty, ErrorNote, Field, PageHeader, Panel, Quer
 import { api, registriesQuery, type Registry } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { BuiltinRegistry } from '../components/builtin-registry'
 
 /** The Registry page: private image registries apps pull from — add (checked by signing
  * in), list, remove. */
@@ -25,9 +26,10 @@ export function RegistryPage() {
           )
         }
       />
+      <BuiltinRegistry />
       <QueryState loading={registries.isPending} error={registries.error} what={tr.what} />
       {(adding || registries.data) && (
-        <Panel>
+        <Panel title={tr.external}>
           {adding && <AddRegistry onDone={() => setAdding(false)} />}
           {registries.data &&
             (registries.data.length === 0 ? (

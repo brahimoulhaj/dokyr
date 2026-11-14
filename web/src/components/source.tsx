@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { gitBranchesQuery, gitReposQuery, gitSourcesQuery, registriesQuery, type App, type GitSource, type SourceInput } from '../lib/api'
+import { gitBranchesQuery, gitReposQuery, gitSourcesQuery, registriesQuery, registrySettingsQuery, repositoriesQuery, type App, type GitSource, type SourceInput } from '../lib/api'
 import { repoName } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
 import { ComboField, type ComboOption } from './combobox'
@@ -92,15 +92,24 @@ export function SourceFields({ form, onChange }: { form: SourceForm; onChange: (
   )
 }
 
+const BUILTIN = '__builtin'
+
 /** The image, and the registry it is pulled from when it is private. */
 function ImageFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceForm) => void }) {
   const t = useT()
   const registries = useQuery(registriesQuery)
   const chosen = registries.data?.find((r) => r.id === form.registry_id)
+  // The built-in registry, when on: pulled with the panel's own account, no registry_id.
+  const builtin = useQuery({ ...registrySettingsQuery, retry: false })
+  const domain = builtin.data?.enabled ? builtin.data.domain : ''
+  const onBuiltin = domain !== '' && form.registry_id === '' && form.image.startsWith(domain + '/')
+  const repos = useQuery({ ...repositoriesQuery, enabled: onBuiltin })
   const options: ComboOption[] = [
     { value: '', label: t.source.publicImage },
+    ...(domain ? [{ value: BUILTIN, label: t.source.builtinRegistry(domain) }] : []),
     ...(registries.data ?? []).map((r) => ({ value: r.id, label: `${r.name} · ${r.username}@${r.server}` })),
   ]
+  const pushed: ComboOption[] = (repos.data ?? []).flatMap((r) => r.tags.map((tag) => ({ value: `${domain}/${r.name}:${tag}`, label: `${r.name}:${tag}` })))
   if (form.registry_id && !options.some((o) => o.value === form.registry_id)) {
     options.push({ value: form.registry_id, label: t.source.registryAccess })
   }
@@ -112,8 +121,12 @@ function ImageFields({ form, onChange }: { form: SourceForm; onChange: (f: Sourc
         label={t.source.registryAccess}
         name="registry_id"
         options={options}
-        value={form.registry_id}
-        onChange={(id) => onChange({ ...form, registry_id: id })}
+        value={onBuiltin ? BUILTIN : form.registry_id}
+        onChange={(id) =>
+          id === BUILTIN
+            ? onChange({ ...form, registry_id: '', image: form.image.startsWith(domain + '/') ? form.image : domain + '/' })
+            : onChange({ ...form, registry_id: id })
+        }
         hint={rich(t.source.registryHint, {
           a: (c) => (
             <Link to="/registry" className="text-accent hover:underline">
@@ -122,6 +135,16 @@ function ImageFields({ form, onChange }: { form: SourceForm; onChange: (f: Sourc
           ),
         })}
       />
+      {onBuiltin && pushed.length > 0 && (
+        <ComboField
+          label={t.source.builtinPick}
+          name="builtin_image"
+          options={pushed}
+          value={pushed.some((o) => o.value === form.image) ? form.image : ''}
+          onChange={(image) => onChange({ ...form, image })}
+          hint={t.source.builtinHint}
+        />
+      )}
       <Field
         label={t.source.image}
         name="image"

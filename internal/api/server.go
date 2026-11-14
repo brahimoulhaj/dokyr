@@ -13,6 +13,7 @@ import (
 	"panel/internal/account"
 	"panel/internal/brand"
 	"panel/internal/gitsource"
+	"panel/internal/storage"
 	"panel/internal/store"
 )
 
@@ -32,6 +33,8 @@ type Server struct {
 	dockerMetrics DockerMetrics
 	buildDefaults store.BuildLimits
 	registryCheck RegistryChecker
+	s3Test        S3Tester
+	registry      BuiltinRegistry
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
 	stop     chan struct{} // closed when the server shuts down; ends open streams
@@ -57,6 +60,7 @@ func New(st *store.Store, accounts *account.Service, log *slog.Logger, version s
 
 		lookupHost:  net.DefaultResolver.LookupHost,
 		serverAddrs: publicAddrs,
+		s3Test:      storage.Test,
 	}
 }
 
@@ -103,6 +107,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/registries", s.requireAuth(s.handleListRegistries))
 	mux.HandleFunc("POST /api/registries", s.requireAuth(s.handleAddRegistry))
 	mux.HandleFunc("DELETE /api/registries/{id}", s.requireAuth(s.handleDeleteRegistry))
+	mux.HandleFunc("GET /api/registry/settings", s.requireAuth(s.handleGetRegistrySettings))
+	mux.HandleFunc("PUT /api/registry/settings", s.requireAuth(sessionOnly(s.handlePutRegistrySettings)))
+	mux.HandleFunc("GET /api/registry/tokens", s.requireAuth(s.handleListRegistryTokens))
+	mux.HandleFunc("POST /api/registry/tokens", s.requireAuth(sessionOnly(s.handleCreateRegistryToken)))
+	mux.HandleFunc("DELETE /api/registry/tokens/{id}", s.requireAuth(sessionOnly(s.handleDeleteRegistryToken)))
+	mux.HandleFunc("GET /api/registry/repositories", s.requireAuth(s.handleListRepositories))
+	mux.HandleFunc("DELETE /api/registry/repositories/{repo...}", s.requireAuth(s.handleDeleteRepositoryTag))
+	mux.HandleFunc("GET /api/registry/token", s.handleRegistryToken)    // docker's token requests, on the registry's domain
+	mux.HandleFunc("POST /api/registry/token", s.handleRegistryToken)   // (the OAuth2 form flow)
+	mux.HandleFunc("POST /api/registry/events", s.handleRegistryEvents) // the registry's push reports, with a shared secret
+	mux.HandleFunc("POST /api/registry/gc", s.requireAuth(sessionOnly(s.handleRegistryGC)))
+	mux.HandleFunc("PUT /api/apps/{id}/push-deploy", s.requireAuth(s.handleSetPushDeploy))
+	mux.HandleFunc("GET /api/s3-connections", s.requireAuth(s.handleListS3))
+	mux.HandleFunc("POST /api/s3-connections", s.requireAuth(s.handleAddS3))
+	mux.HandleFunc("POST /api/s3-connections/{id}/test", s.requireAuth(s.handleTestS3))
+	mux.HandleFunc("DELETE /api/s3-connections/{id}", s.requireAuth(s.handleDeleteS3))
 
 	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
 	mux.HandleFunc("POST /api/projects", s.requireAuth(s.handleCreateProject))

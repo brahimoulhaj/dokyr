@@ -138,6 +138,7 @@ type App struct {
 	SourceType          string
 	Image               string
 	DeployHook          bool   // the deploy webhook is on (its token is read with AppDeployHook)
+	PushDeploy          bool   // an image on the built-in registry deploys when its tag is pushed
 	RegistryID          string // registry an image app is pulled from with credentials; "" = public
 	StartCommand        string // replaces the image's entrypoint and command, run by /bin/sh -c; "" = the image's own
 	Port                int
@@ -152,7 +153,7 @@ type App struct {
 
 const appCols = `id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb,
 	desired_state, COALESCE(current_deployment_id, ''),
-	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL`
+	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy`
 
 func (s *Store) scanApp(row scanner) (App, error) {
 	var a App
@@ -160,7 +161,7 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.Name, &a.SourceType, &a.Image, &a.Port, &a.CPULimit, &a.MemoryMB,
 		&a.DesiredState, &a.CurrentDeploymentID,
-		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook)
+		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}

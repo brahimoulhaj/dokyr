@@ -7,13 +7,13 @@ name; it lives only in `internal/brand/brand.go`.
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
 
-**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ☐ · M5 ☐ · M6 ◐
+**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ◐ (S3 connections) · M5 ◐ (registry built) · M6 ◐
 
-**Where we are (2026-11-14, v0.8.3):** M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy now drains the old container (default 10 s) before removing it (v0.8.3); apps with volumes now deploy with recreate (stop old → start new → health check → old one back on failure, `rolled_back`), not yet released. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
+**Where we are (2026-11-14, v0.9.0):** M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy now drains the old container (default 10 s) before removing it (v0.8.3); apps with volumes deploy with recreate (v0.9.0). The built-in registry (M5) is built, not yet released: off by default, its own domain, Docker volume or S3 storage, registry tokens, deploy on push, build cache, repositories with delete and garbage collection; checked against real Docker, Distribution and RustFS, not yet on a real domain. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
 
 **Next up:**
-1. Release recreate (v0.9.0), then check it on the VPS with an app that has a volume.
-2. Then: push builds to a registry (closes M2), or M4 databases (Postgres, MariaDB, S3 backups).
+1. Release the built-in registry (v0.10.0); on the VPS: turn it on with a real domain, docker login / push from a laptop, an app on the pushed image, a second push redeploys it, S3 storage, build cache. Also check recreate (v0.9.0) with an app that has a volume.
+2. Then M4 databases (Postgres, MariaDB, S3 backups): S3 connections are ready for them.
 3. Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
 4. Record the fresh-install time with image download (M1, "Under 60 seconds").
 ---
@@ -182,7 +182,7 @@ Goal: push-to-deploy from a repository with any of the builders.
 - [ ] Static — build command, output served by a small Caddy image
 - [~] Builder CLIs shipped in the panel image, pinned versions — `git`, `docker-cli` and `docker-cli-buildx` from Alpine in the runtime and dev images (not pinned); Railpack 0.43.0 pinned and checksummed in both (+22.5 MB), kept equal to `builder.RailpackVersion` by `TestRailpackPinMatchesImages`
 - [x] Image tag `app-<id>:<commit-sha>`; keep the last 5, prune older — after each successful deploy the newest 5 tagged build images stay (the live one always), older and dangling ones (a commit rebuilt under the same tag) are removed; Docker refuses any image a container still uses; deleting an app removes all its build images. `internal/deploy/deploy_test.go` and `internal/executor/docker_test.go` (real daemon)
-- [ ] Push to the configured registry after a build
+- [x] Push to the configured registry after a build — the built-in registry's build cache (off by default, Registry page → Keep Git builds): after a successful Git deploy the image is pushed as `<registry>/builds/app-<id>:<commit>` and only its local name kept (pruning works by id); a rollback to a build pruned from the server pulls it back instead of building, and such builds count as rollback targets. A failed push is a warning. `TestBuildCache`
 
 ### Jobs and queue (`internal/jobs`)
 - [x] SQLite-backed job queue with retries and resume after restart — the `deployments` table is the queue (a generic jobs table can come with backups and cron). On startup, queued deploys start again; a running one that had not switched traffic starts over, its half-made container removed; one that had switched is finished (old containers removed, succeeded); at most 3 starts per deploy (`attempts`, `0009_deployment_attempts.sql`). A shutdown puts running and waiting deploys back in the queue instead of failing them. Resumed deploys wait for the proxy. Clone, pull and Git credentials are retried twice (2 s, 5 s) on network errors; builds are not. `TestRecoverResumesDeployments`, `TestShutdownRequeues`, `TestRetryTemporaryFailures`, `TestTemporary`; checked against real Docker and Caddy: panel stopped mid-clone, deploy resumed at attempt 2 and succeeded (2026-11-13); panel restarted mid-deploy, deploy resumed and succeeded on a real VPS with v0.6.0 (2026-11-14)
@@ -274,8 +274,8 @@ Goal: managed Postgres and MariaDB with scheduled S3 backups and restore.
 - [ ] Mirror tables kept in sync with the instance
 
 ### Storage connection (`internal/storage`)
-- [ ] S3 client
-- [ ] External S3 connections CRUD (AWS, R2, others) with a connection test
+- [x] S3 client — `internal/storage` (minio-go): path-style or virtual-host, HTTPS or not, S3 errors in plain words
+- [x] External S3 connections CRUD (AWS, R2, others) with a connection test — Settings → Storage (`GET/POST /api/s3-connections`, `POST …/{id}/test`, `DELETE`); the check writes, reads and deletes a small object under the folder; the secret key is encrypted and never returned; a connection the registry stores in cannot be removed (`0017_s3_connections.sql`, `TestS3ConnectionsAPI`; real check against RustFS in `TestRealRegistryS3`)
 
 ### Backups
 - [ ] Manual backup of an instance or a single database
@@ -288,7 +288,7 @@ Goal: managed Postgres and MariaDB with scheduled S3 backups and restore.
 ### UI
 - [ ] Database instances list and create flow
 - [ ] Instance page: overview, databases, users, backups, logs, settings
-- [ ] S3 connections settings
+- [x] S3 connections settings — Settings → Storage
 - [ ] Backup policy editor and restore dialog
 
 ---
@@ -305,16 +305,16 @@ Goal: optional built-in S3 and image registry.
 - [ ] Usable as a backup target and as the registry backend
 
 ### Internal registry (`internal/registry`)
-- [ ] Registry container lifecycle, backed by an S3 connection
-- [ ] Auth for push and pull
-- [ ] Routed through Caddy with TLS
-- [ ] Push notification endpoint → auto-deploy on a new tag
-- [ ] Repositories and tags browser, delete, garbage collection
-- [ ] App source: image from the internal registry
+- [x] Registry container lifecycle, backed by an S3 connection — `internal/registry`: off by default; Registry page → Built-in registry turns it on with a domain of its own and a storage (a Docker volume, or an S3 connection with its folder). CNCF Distribution `registry:3.0.0` (`BERTH_REGISTRY_IMAGE`) in `<slug>-registry`, configuration (0600, may hold the S3 key) and token certificate under `<data>/registry`; recreated when the settings change, removed when turned off (images stay), supervised every 30 s. `TestRealRegistry`, `TestRealRegistryS3` (pushed blobs land in the bucket under the folder)
+- [x] Auth for push and pull — the panel is the token server (`/api/registry/token`, on the registry's domain): registry tokens (`0018_registry.sql`, Registry page → Tokens, shown once, stored hashed) with push+pull or pull-only scope; docker login user = token name. JWTs signed ES256 with a key in the data dir, certificate in x5c. Both docker's Basic auth GET and containerd's OAuth2 password POST are accepted; failed logins rate limited. The panel's own account pulls for deploys and pushes builds. Real `docker login` / `push` / pull in `TestDockerCLI` (a pull token cannot push); `TestTokenGrants`, `TestRegistryAPI`
+- [~] Routed through Caddy with TLS — a route for the registry domain, `/api/registry/token` to the panel (`PanelPaths`, `TestBuildPanelPaths`); the domain is kept apart from app domains and the panel's. Not yet tried on a real domain (VPS)
+- [x] Push notification endpoint → auto-deploy on a new tag — the registry reports pushes to `/api/registry/events` (shared secret); image apps whose image is that tag on the built-in registry deploy (trigger `registry`) unless deploy on push is off (app Source settings, `PUT /api/apps/{id}/push-deploy`). Real push report in `TestRealRegistry`; `TestRegistryAPI`
+- [x] Repositories and tags browser, delete, garbage collection — Registry page → Repositories (tags copy the full image name, Delete per tag), Free space runs `garbage-collect --delete-untagged` in a one-off container while the registry is stopped, then starts it again (`TestRealRegistry`)
+- [x] App source: image from the internal registry — the app form's Registry access offers Built-in registry with a picker of pushed images; deploys pull with the panel's own account
 
 ### UI
 - [ ] Storage page (buckets, keys, usage)
-- [ ] Registry page (repositories, tags, push instructions)
+- [x] Registry page (repositories, tags, push instructions) — built-in registry on top (settings, push instructions, tokens, repositories), external registries below
 
 ---
 

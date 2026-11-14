@@ -26,6 +26,10 @@ type Config struct {
 	BuildCPUs     float64
 	BuildMemoryMB int64
 	Proxy         Proxy
+	RegistryImage string // image of the built-in registry
+	// RegistryPort publishes the built-in registry on 127.0.0.1 of the host, for a panel
+	// run off the Docker network (development); 0 = not published (5005 by default then).
+	RegistryPort int
 }
 
 // Proxy configures the Caddy container in front of everything.
@@ -38,7 +42,7 @@ type Proxy struct {
 	PanelUpstream string // how Caddy reaches the panel, host:port
 }
 
-// Load reads <PREFIX>DATA_DIR, <PREFIX>DATA_VOLUME, <PREFIX>MAX_BUILDS, <PREFIX>BUILD_CPUS, <PREFIX>BUILD_MEMORY_MB, <PREFIX>ADDR, <PREFIX>PUBLIC_URL and the <PREFIX>PROXY_* variables.
+// Load reads <PREFIX>REGISTRY_IMAGE, <PREFIX>REGISTRY_PORT, <PREFIX>DATA_DIR, <PREFIX>DATA_VOLUME, <PREFIX>MAX_BUILDS, <PREFIX>BUILD_CPUS, <PREFIX>BUILD_MEMORY_MB, <PREFIX>ADDR, <PREFIX>PUBLIC_URL and the <PREFIX>PROXY_* variables.
 func Load() Config {
 	return Config{
 		DataDir:       env("DATA_DIR", brand.DataDir()),
@@ -48,6 +52,8 @@ func Load() Config {
 		MaxBuilds:     envInt("MAX_BUILDS", 1),
 		BuildCPUs:     envFloat("BUILD_CPUS", 0),
 		BuildMemoryMB: int64(envInt("BUILD_MEMORY_MB", 0)),
+		RegistryImage: env("REGISTRY_IMAGE", "registry:3.0.0"),
+		RegistryPort:  envInt("REGISTRY_PORT", 0),
 		Proxy: Proxy{
 			Image:         env("PROXY_IMAGE", "caddy:2.10.2-alpine"),
 			HTTPPort:      envInt("PROXY_HTTP_PORT", 80),

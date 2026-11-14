@@ -2,6 +2,7 @@
 
 export const en = {
   title: 'Registries',
+  external: 'External registries',
   what: 'registries',
   intro: 'Private image registries apps can pull from. The password or token is checked by signing in, then stored encrypted.',
   add: 'Add registry',
@@ -20,6 +21,7 @@ export const en = {
 
 export const fr: typeof en = {
   title: 'Registres',
+  external: 'Registres externes',
   what: 'registres',
   intro: 'Registres d’images privés depuis lesquels les apps peuvent télécharger. Le mot de passe ou jeton est vérifié par une connexion, puis stocké chiffré.',
   add: 'Ajouter un registre',
@@ -38,6 +40,7 @@ export const fr: typeof en = {
 
 export const ar: typeof en = {
   title: 'السجلات',
+  external: 'السجلات الخارجية',
   what: 'السجلات',
   intro: 'سجلات صور خاصة يمكن للتطبيقات السحب منها. تُتحقق كلمة المرور أو الرمز بتسجيل الدخول، ثم تُخزَّن مشفّرة.',
   add: 'إضافة سجل',
@@ -56,6 +59,7 @@ export const ar: typeof en = {
 
 export const es: typeof en = {
   title: 'Registros',
+  external: 'Registros externos',
   what: 'registros',
   intro: 'Registros de imágenes privados desde los que las apps pueden descargar. La contraseña o el token se comprueba iniciando sesión y se guarda cifrado.',
   add: 'Añadir registro',

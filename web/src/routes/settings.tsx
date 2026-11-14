@@ -6,11 +6,12 @@ import { GitConnections } from './settings-git'
 import { ApiTokens } from './settings-tokens'
 import { PanelUpdates } from './settings-updates'
 import { BuildSettingsSection } from './settings-builds'
+import { StorageSettings } from './settings-storage'
 import { Button, CheckOption, ConfirmButton, cx, ErrorNote, Field, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
 import { rich, useT } from '../lib/i18n'
 import { api, ApiError, panelDnsQuery, panelSettingsQuery, type PanelSettings } from '../lib/api'
 
-export const settingsTabs = ['general', 'git', 'builds', 'tokens'] as const
+export const settingsTabs = ['general', 'git', 'builds', 'storage', 'tokens'] as const
 export type SettingsTab = (typeof settingsTabs)[number]
 
 export function SettingsPage() {
@@ -26,6 +27,7 @@ export function SettingsPage() {
     general: t.settings.general,
     git: t.settingsGit.title,
     builds: t.settingsBuilds.title,
+    storage: t.settingsStorage.title,
     tokens: t.settingsTokens.title,
   }
   return (
@@ -62,6 +64,7 @@ export function SettingsPage() {
       )}
       {tab === 'git' && <GitConnections />}
       {tab === 'builds' && <BuildSettingsSection />}
+      {tab === 'storage' && <StorageSettings />}
       {tab === 'tokens' && <ApiTokens />}
     </div>
   )

@@ -156,6 +156,8 @@ export type App = {
   start_command: string
   /** rolling, or recreate (stop old first, short gap) for an app with a volume or a host path. */
   strategy: 'rolling' | 'recreate'
+  /** Image apps on the built-in registry: deploy when the tag is pushed again. */
+  push_deploy: boolean
   port: number
   cpu_limit: number
   memory_limit_mb: number
@@ -343,6 +345,40 @@ export type GitHubManifest = { action_url: string; manifest: string; state: stri
 export type Registry = { id: string; name: string; server: string; username: string; created_at: string }
 
 export const registriesQuery = { queryKey: ['registries'] as const, queryFn: () => api<Registry[]>('/registries') }
+
+/** An S3-compatible bucket the panel stores data in; the secret key is never returned. */
+export type S3Connection = {
+  id: string
+  name: string
+  endpoint: string
+  region: string
+  bucket: string
+  prefix: string
+  access_key: string
+  use_ssl: boolean
+  path_style: boolean
+  created_at: string
+}
+
+export const s3ConnectionsQuery = { queryKey: ['s3-connections'] as const, queryFn: () => api<S3Connection[]>('/s3-connections') }
+
+/** The built-in registry's settings; off by default. */
+export type RegistrySettings = {
+  enabled: boolean
+  domain: string
+  build_cache: boolean
+  /** '' = a Docker volume on this server. */
+  s3_connection_id: string
+  state?: string
+  system_user?: string
+}
+
+export type RegistryToken = { id: string; name: string; scope: 'push' | 'pull'; token?: string; last_used_at: string | null; created_at: string }
+export type Repository = { name: string; tags: string[] }
+
+export const registrySettingsQuery = { queryKey: ['registry', 'settings'] as const, queryFn: () => api<RegistrySettings>('/registry/settings') }
+export const registryTokensQuery = { queryKey: ['registry', 'tokens'] as const, queryFn: () => api<RegistryToken[]>('/registry/tokens') }
+export const repositoriesQuery = { queryKey: ['registry', 'repositories'] as const, queryFn: () => api<Repository[]>('/registry/repositories') }
 
 export const gitSourcesQuery = { queryKey: ['git-sources'] as const, queryFn: () => api<GitSource[]>('/git-sources') }
 

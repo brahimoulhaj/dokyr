@@ -91,6 +91,7 @@ type appJSON struct {
 	DockerfilePath      string            `json:"dockerfile_path"`
 	StartCommand        string            `json:"start_command"`
 	Strategy            string            `json:"strategy"`                // rolling or recreate, from the mounts
+	PushDeploy          bool              `json:"push_deploy"`             // image apps on the built-in registry: deploy when the tag is pushed
 	RuntimeState        string            `json:"runtime_state,omitempty"` // single-app responses only
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
@@ -108,6 +109,7 @@ func toAppJSON(a store.App) appJSON {
 		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile,
 		StartCommand: a.StartCommand,
 		Strategy:     a.Strategy(),
+		PushDeploy:   a.PushDeploy,
 		CreatedAt:    a.CreatedAt, UpdatedAt: a.UpdatedAt,
 	}
 }
@@ -847,6 +849,10 @@ func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	if host == panelDomain {
 		writeError(w, http.StatusConflict, "conflict", "this hostname is the panel's own domain")
+		return
+	}
+	if host == s.registryDomain(r.Context()) {
+		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
 		return
 	}
 	d, err := s.store.CreateDomain(r.Context(), a.ID, host, in.TLSMode)

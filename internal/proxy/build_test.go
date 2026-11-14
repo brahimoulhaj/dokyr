@@ -263,3 +263,24 @@ func TestBuildPanelDomainOnly(t *testing.T) {
 		t.Fatalf("catch-all without domain = %v", r)
 	}
 }
+
+func TestBuildPanelPaths(t *testing.T) {
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Routes: []Route{{
+		ID: "registry", Hosts: []string{"registry.example.com"}, Upstreams: []string{"berth-registry:5000"},
+		PanelPaths: []string{"/api/registry/token"},
+	}}})
+	route := dig(t, cfg, "apps", "http", "servers", "https", "routes", 0)
+	sub := dig(t, route, "handle", 0)
+	if dig(t, sub, "handler") != "subroute" {
+		t.Fatalf("handle = %v, want a subroute", sub)
+	}
+	if got := dig(t, sub, "routes", 0, "match", 0, "path", 0); got != "/api/registry/token" {
+		t.Errorf("panel path = %v", got)
+	}
+	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+		t.Errorf("token endpoint goes to %v, want the panel", got)
+	}
+	if got := dig(t, sub, "routes", 1, "handle", 0, "upstreams", 0, "dial"); got != "berth-registry:5000" {
+		t.Errorf("the rest goes to %v, want the registry", got)
+	}
+}

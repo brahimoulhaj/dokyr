@@ -65,6 +65,22 @@ type commitMessager interface {
 	CommitMessage(ctx context.Context, dir string) (string, error)
 }
 
+// Registry is the built-in registry, as a deploy uses it; *registry.Service implements it.
+type Registry interface {
+	// PullAuth is the panel's login for an image on the built-in registry; nil for others.
+	PullAuth(ctx context.Context, image string) *executor.RegistryAuth
+	// BuildCache is where a Git build is kept in the registry; ok false when builds are not kept.
+	BuildCache(ctx context.Context, local string) (ref string, auth *executor.RegistryAuth, ok bool)
+	// CachedBuilds lists the builds of an app kept there, by local tag.
+	CachedBuilds(ctx context.Context, appID string) map[string]bool
+}
+
+// imagePusher tags and pushes images; *executor.Docker implements it.
+type imagePusher interface {
+	TagImage(ctx context.Context, source, target string) error
+	PushImage(ctx context.Context, ref string, auth *executor.RegistryAuth) error
+}
+
 // GitAuth hands out credentials for private repositories; *gitsource.Service implements it.
 type GitAuth interface {
 	Credentials(ctx context.Context, connectionID, repository string) (builder.Auth, error)
@@ -102,6 +118,9 @@ type Options struct {
 	// RetryDelays are the waits before each retry of a step that failed for a temporary
 	// reason (network) — a clone, a pull; nil = 2 s then 5 s. Its length is the retry count.
 	RetryDelays []time.Duration
+	// Registry gives the panel's own credentials for images on the built-in registry; nil
+	// when there is none.
+	Registry Registry
 	// Ready, when set, holds back the deployments Recover resumes until it is closed — the
 	// proxy is up, so their traffic switch can work. New deploys do not wait.
 	Ready <-chan struct{}
@@ -400,11 +419,15 @@ func (s *Service) RollbackTargets(ctx context.Context, app store.App, deps []sto
 		}
 		live = cur.Image
 	}
+	var cached map[string]bool
+	if kept != nil && s.opts.Registry != nil {
+		cached = s.opts.Registry.CachedBuilds(ctx, app.ID)
+	}
 	out := map[string]bool{}
 	for _, d := range deps {
 		ok := d.AppID == app.ID && d.Status == store.DeploySucceeded && d.Image != "" && d.ID != app.CurrentDeploymentID && d.Image != live
 		if ok && kept != nil {
-			ok = kept[d.Image]
+			ok = kept[d.Image] || cached[d.Image]
 		}
 		if ok {
 			out[d.ID] = true
@@ -555,7 +578,11 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	}
 	switch {
 	case rollback && app.SourceType == store.SourceGit:
-		// Nothing to fetch: the image is still on the server.
+		// Nothing to fetch while the image is still on the server; else the registry keeps it.
+		if err := s.restoreBuild(ctx, app.ID, image, logw); err != nil {
+			fail("", err)
+			return
+		}
 	case app.SourceType == store.SourceGit:
 		phase(store.PhaseBuilding)
 		logw.printf("Deploying %s from %s (branch %s)", app.Name, app.Git.Repository, app.Git.Branch)
@@ -676,6 +703,9 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	}
 	s.removeOthers(final, app, containerID, logw)
 
+	if app.SourceType == store.SourceGit && !rollback {
+		s.cacheBuild(ctx, image, logw)
+	}
 	s.pruneImages(final, app.ID, image, logw)
 
 	// An image app now runs the rolled-back image: its settings say so, so a redeploy does
@@ -855,6 +885,9 @@ func (s *Service) removeOthers(ctx context.Context, app store.App, keep string, 
 // They are only ever sent to the registry they belong to: an image on another host fails.
 func (s *Service) registryAuth(ctx context.Context, app store.App, image string) (*executor.RegistryAuth, error) {
 	if app.RegistryID == "" {
+		if s.opts.Registry != nil {
+			return s.opts.Registry.PullAuth(ctx, image), nil // nil unless on the built-in registry
+		}
 		return nil, nil
 	}
 	c, err := s.opts.Store.RegistryCredentials(ctx, app.RegistryID)
@@ -988,6 +1021,66 @@ func startCommand(app store.App) (entrypoint, command []string) {
 		return nil, nil
 	}
 	return []string{"/bin/sh", "-c"}, []string{app.StartCommand}
+}
+
+// cacheBuild pushes a Git build to the built-in registry when it keeps builds, so a
+// rollback or another server can pull it instead of building again. A failure is a warning:
+// the deployment has succeeded already.
+func (s *Service) cacheBuild(ctx context.Context, image string, logw *logWriter) {
+	p, ok := s.opts.Executor.(imagePusher)
+	if !ok || s.opts.Registry == nil {
+		return
+	}
+	ref, auth, ok := s.opts.Registry.BuildCache(ctx, image)
+	if !ok {
+		return
+	}
+	logw.printf("Keeping the build in the registry as %s", ref)
+	if err := p.TagImage(ctx, image, ref); err != nil {
+		logw.printf("Warning: %v", err)
+		return
+	}
+	if err := p.PushImage(ctx, ref, auth); err != nil {
+		logw.printf("Warning: the build was not kept in the registry: %v", err)
+	}
+	// Only the local name stays: an image with two names cannot be pruned by id.
+	if err := s.opts.Executor.RemoveImage(context.WithoutCancel(ctx), ref); err != nil {
+		logw.printf("Warning: %v", err)
+	}
+}
+
+// restoreBuild makes sure a Git build is on the server for a rollback: pruned images are
+// pulled back from the registry when it keeps builds.
+func (s *Service) restoreBuild(ctx context.Context, appID, image string, logw *logWriter) error {
+	images, err := s.opts.Executor.ListBuildImages(ctx, appID)
+	if err != nil {
+		return err
+	}
+	for _, img := range images {
+		if slices.Contains(img.Tags, image) {
+			return nil
+		}
+	}
+	p, ok := s.opts.Executor.(imagePusher)
+	var ref string
+	var auth *executor.RegistryAuth
+	if ok && s.opts.Registry != nil {
+		ref, auth, ok = s.opts.Registry.BuildCache(ctx, image)
+	}
+	if !ok {
+		return fmt.Errorf("the image %s is no longer on the server", image)
+	}
+	logw.printf("The image is no longer on the server; pulling it from the registry")
+	if err := s.retry(ctx, logw, "Pull", func() error { return s.pull(ctx, ref, auth, logw) }); err != nil {
+		return err
+	}
+	if err := p.TagImage(ctx, ref, image); err != nil {
+		return err
+	}
+	if err := s.opts.Executor.RemoveImage(context.WithoutCancel(ctx), ref); err != nil {
+		logw.printf("Warning: %v", err)
+	}
+	return nil
 }
 
 // KeepImages is how many built images of an app survive a deploy, the live one included.

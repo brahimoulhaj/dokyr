@@ -31,6 +31,7 @@ import (
 	"panel/internal/gitsource"
 	"panel/internal/hostmetrics"
 	"panel/internal/proxy"
+	"panel/internal/registry"
 	"panel/internal/secret"
 	"panel/internal/store"
 	"panel/internal/update"
@@ -189,7 +190,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 		Admin:         cfg.Proxy.Admin,
 		AdminPort:     cfg.Proxy.AdminPort,
 		PanelUpstream: panelUpstream(cfg),
-		Source:        proxySource(st),
+		Source:        proxySource(st, brand.Slug+"-registry:5000"),
 	})
 	if err != nil {
 		return err
@@ -239,10 +240,28 @@ func serve(ctx context.Context, cfg config.Config) error {
 		},
 		KnownHosts: filepath.Join(cfg.DataDir, "ssh", "known_hosts"),
 	}
+	reg, err := registry.New(registry.Options{
+		Executor: ex, Store: st, Log: log,
+		Name:   brand.Slug + "-registry",
+		Image:  cfg.RegistryImage,
+		Dir:    filepath.Join(cfg.DataDir, "registry"),
+		Volume: cfg.DataVolume, VolumePath: "registry",
+		DataVolume:    brand.Slug + "-registry-data",
+		PanelUpstream: panelUpstream(cfg),
+		Issuer:        brand.Slug,
+		PublishPort:   registryPort(cfg),
+	})
+	if err != nil {
+		return err
+	}
+	go func() { // after the proxy: the registry is served through it
+		<-proxyReady
+		reg.Supervise(ctx, 30*time.Second)
+	}()
 	deployer := deploy.New(ctx, deploy.Options{
 		DataVolume: cfg.DataVolume, MaxBuilds: cfg.MaxBuilds,
 		Store: st, Executor: ex, Router: px, Builder: builds, GitAuth: git, DataDir: cfg.DataDir, Log: log,
-		Ready: proxyReady, OutsideNetwork: !inContainer(),
+		Ready: proxyReady, OutsideNetwork: !inContainer(), Registry: reg,
 	})
 	if r, err := deployer.Recover(ctx); err != nil {
 		return err
@@ -267,6 +286,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetProxy(px)
 	apiSrv.SetDeployer(deployer)
 	apiSrv.SetGitSources(git)
+	apiSrv.SetRegistry(reg)
 	if updater := newUpdater(ctx, cfg, st, log); updater != nil {
 		updater.Detect(ctx)
 		apiSrv.SetUpdater(updater)
@@ -319,7 +339,7 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 			ok, err := st.AppExists(ctx, id)
 			return ok && err == nil
 		}
-		return proxy.IsProxy(kind, id)
+		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id)
 	})
 	if err != nil {
 		log.Error("docker reconcile", "error", err)
@@ -333,7 +353,7 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 
 // proxySource reads the routing state from the database: the panel's own domain and one
 // route per app that has domains.
-func proxySource(st *store.Store) func(context.Context) (proxy.Config, error) {
+func proxySource(st *store.Store, registryUpstream string) func(context.Context) (proxy.Config, error) {
 	return func(ctx context.Context) (proxy.Config, error) {
 		domain, _, err := st.GetSetting(ctx, store.SettingPanelDomain)
 		if err != nil {
@@ -367,6 +387,13 @@ func proxySource(st *store.Store) func(context.Context) (proxy.Config, error) {
 				route.Upstreams = []string{r.Upstream}
 			}
 			cfg.Routes = append(cfg.Routes, route)
+		}
+		// The built-in registry, on its own domain; its token endpoint is the panel's.
+		if rs, err := st.GetRegistrySettings(ctx); err != nil {
+			return proxy.Config{}, err
+		} else if rs.Enabled && rs.Domain != "" {
+			cfg.Routes = append(cfg.Routes, proxy.Route{ID: "registry", Hosts: []string{rs.Domain},
+				Upstreams: []string{registryUpstream}, PanelPaths: []string{registry.TokenPath}})
 		}
 		return cfg, nil
 	}
@@ -580,4 +607,16 @@ func updateApply(ctx context.Context, cfg config.Config, args []string) error {
 		Docker: cli, DataDir: cfg.DataDir, Container: *target, Image: *image, From: *from,
 		Out: io.MultiWriter(f, os.Stdout),
 	})
+}
+
+// registryPort is where the built-in registry is published on 127.0.0.1 for a panel that
+// runs on the host (development) and cannot reach it on the Docker network; 0 in a container.
+func registryPort(cfg config.Config) int {
+	if cfg.RegistryPort > 0 {
+		return cfg.RegistryPort
+	}
+	if inContainer() {
+		return 0
+	}
+	return 5005
 }

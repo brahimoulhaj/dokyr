@@ -37,6 +37,10 @@ type Route struct {
 	Hosts     []string // hostnames, lowercase
 	HTTPOnly  []string // subset of Hosts served over plain HTTP only
 	Upstreams []string // host:port on the shared network; empty answers 503
+	// PanelPaths are path patterns ("/api/registry/token") served by the panel instead of
+	// the upstreams: the built-in registry's token endpoint lives on the registry's host.
+	// A route with them cannot be switched by SetUpstreams; Apply rebuilds it.
+	PanelPaths []string
 }
 
 // split returns the hosts served over HTTPS and those served over plain HTTP.
@@ -149,6 +153,12 @@ func Build(c Config) ([]byte, error) {
 		}
 		tlsHosts, plainHosts := r.split()
 		proxyTo := []object{{"handler": "reverse_proxy", "upstreams": upstreams}}
+		if len(r.PanelPaths) > 0 {
+			proxyTo = []object{{"handler": "subroute", "routes": []object{
+				{"match": []object{{"path": r.PanelPaths}}, "handle": []object{{"handler": "reverse_proxy", "upstreams": []object{{"dial": c.PanelUpstream}}}}, "terminal": true},
+				{"handle": proxyTo},
+			}}}
+		}
 		if len(tlsHosts) > 0 {
 			allHosts = append(allHosts, tlsHosts...)
 			httpsRoutes = append(httpsRoutes, object{
@@ -171,7 +181,7 @@ func Build(c Config) ([]byte, error) {
 			httpRoutes = append(httpRoutes, object{
 				"@id":      httpRouteKey(r.ID),
 				"match":    []object{{"host": plainHosts}},
-				"handle":   []object{{"handler": "reverse_proxy", "upstreams": upstreams}},
+				"handle":   proxyTo,
 				"terminal": true,
 			})
 		}

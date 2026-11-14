@@ -1608,3 +1608,92 @@ func (e *env) setImageKeepMounts(image string) {
 	}
 	e.app = a
 }
+
+// pushExecutor is the fake executor with a registry behind it: pushes land in pushed,
+// a pull of a pushed ref brings the image back under the app's build label.
+type pushExecutor struct {
+	*executortest.Fake
+	appID  string
+	pushed map[string]bool
+}
+
+func (p *pushExecutor) TagImage(_ context.Context, source, target string) error {
+	if strings.Contains(target, "/builds/") {
+		return nil // the cache name: nothing to track locally
+	}
+	p.Fake.AddImage(p.appID, target)
+	return nil
+}
+
+func (p *pushExecutor) PushImage(_ context.Context, ref string, _ *executor.RegistryAuth) error {
+	p.pushed[ref] = true
+	return nil
+}
+
+func (p *pushExecutor) PullImage(ctx context.Context, ref string, auth *executor.RegistryAuth, fn func(executor.PullProgress)) error {
+	if strings.Contains(ref, "/builds/") {
+		if !p.pushed[ref] {
+			return errors.New("manifest unknown")
+		}
+		return nil
+	}
+	return p.Fake.PullImage(ctx, ref, auth, fn)
+}
+
+type fakeCache struct{ pushed map[string]bool }
+
+func (fakeCache) PullAuth(context.Context, string) *executor.RegistryAuth { return nil }
+func (fakeCache) BuildCache(_ context.Context, local string) (string, *executor.RegistryAuth, bool) {
+	return "registry.example.com/builds/" + local, &executor.RegistryAuth{Username: "berth"}, true
+}
+func (c fakeCache) CachedBuilds(context.Context, string) map[string]bool {
+	out := map[string]bool{}
+	for ref := range c.pushed {
+		out[strings.TrimPrefix(ref, "registry.example.com/builds/")] = true
+	}
+	return out
+}
+
+func TestBuildCache(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	px := &pushExecutor{Fake: e.ex, appID: e.app.ID, pushed: map[string]bool{}}
+	b := &fakeBuilder{commit: strings.Repeat("a", 40), images: e.ex}
+	e.useGit(b)
+	e.svc.opts.Executor = px
+	e.svc.opts.Registry = fakeCache{pushed: px.pushed}
+
+	first := e.deploy()
+	if first.Status != store.DeploySucceeded || !px.pushed["registry.example.com/builds/"+first.Image] {
+		t.Fatalf("first = %s, pushed %v", first.Status, px.pushed)
+	}
+	if !strings.Contains(e.log(first), "Keeping the build in the registry") {
+		t.Errorf("log:\n%s", e.log(first))
+	}
+	b.commit = strings.Repeat("b", 40)
+	second := e.deploy()
+
+	// The first build is pruned from the server: still a rollback target, pulled back.
+	images, _ := e.ex.ListBuildImages(ctx, e.app.ID)
+	for _, img := range images {
+		if slices.Contains(img.Tags, first.Image) {
+			e.ex.RemoveImage(ctx, img.ID)
+		}
+	}
+	app, _ := e.st.GetApp(ctx, e.app.ID)
+	targets, err := e.svc.RollbackTargets(ctx, app, []store.Deployment{first, second})
+	if err != nil || !targets[first.ID] {
+		t.Fatalf("targets = %v, %v: a cached build can be rolled back to", targets, err)
+	}
+	dep, err := e.svc.Rollback(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.svc.Wait()
+	dep, _ = e.st.GetDeployment(ctx, dep.ID)
+	if dep.Status != store.DeploySucceeded || !strings.Contains(e.log(dep), "pulling it from the registry") {
+		t.Fatalf("rollback = %s:\n%s", dep.Status, e.log(dep))
+	}
+	if len(b.tags) != 2 {
+		t.Errorf("built %v: the rollback must pull, not build", b.tags)
+	}
+}

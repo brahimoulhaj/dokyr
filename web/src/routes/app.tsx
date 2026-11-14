@@ -9,7 +9,7 @@ import { DeployHookPanel } from '../components/deploy-hook'
 import { DeploymentTimeline } from '../components/deployment-timeline'
 import { HealthCheckPanel } from '../components/health-check'
 import { LogViewer } from '../components/logviewer'
-import { Badge, Button, ConfirmButton, cx, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
+import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
 import {
   addDeployment,
   api,
@@ -22,6 +22,7 @@ import {
   domainsQuery,
   isActive,
   projectQuery,
+  registrySettingsQuery,
   type App,
   type AppInput,
   type Deployment,
@@ -830,7 +831,27 @@ function SourceSettings({ app }: { app: App }) {
       onSubmit={() => save.mutate(sourceInput(source))}
     >
       <SourceFields form={source} onChange={setSource} />
+      <PushDeploy app={app} />
     </SectionForm>
+  )
+}
+
+/** Deploy on push, for an image app on the built-in registry: saved at once. */
+function PushDeploy({ app }: { app: App }) {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const builtin = useQuery({ ...registrySettingsQuery, retry: false })
+  const set = useMutation({
+    mutationFn: (on: boolean) => api<App>(`/apps/${app.id}/push-deploy`, { method: 'PUT', body: { on } }),
+    onSuccess: (a) => queryClient.setQueryData(appQuery(app.id).queryKey, (old: App | undefined) => (old ? { ...old, push_deploy: a.push_deploy } : old)),
+  })
+  const domain = builtin.data?.enabled ? builtin.data.domain : ''
+  if (app.source_type !== 'image' || !domain || !app.image.startsWith(domain + '/')) return null
+  return (
+    <div className="space-y-1">
+      <CheckOption checked={app.push_deploy} disabled={set.isPending} onChange={(on) => set.mutate(on)} label={t.app.pushDeploy} hint={t.app.pushDeployHint} />
+      {set.error && <ErrorNote>{set.error.message}</ErrorNote>}
+    </div>
   )
 }
 
