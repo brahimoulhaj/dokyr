@@ -61,7 +61,7 @@ func TestRegistryAPI(t *testing.T) {
 
 	// Off by default.
 	got := e.must(200, "GET", "/api/registry/settings", nil)
-	if got["enabled"] != false || got["domain"] != "" {
+	if got["enabled"] != false || got["domain"] != "" || got["tls_mode"] != "auto" {
 		t.Fatalf("defaults = %v", got)
 	}
 	// The domain must be a hostname of its own.
@@ -72,6 +72,15 @@ func TestRegistryAPI(t *testing.T) {
 	got = e.must(200, "PUT", "/api/registry/settings", map[string]any{"enabled": true, "domain": "Registry.Example.com", "build_cache": true})
 	if got["domain"] != "registry.example.com" || got["state"] != "running" || reg.applies != 1 {
 		t.Fatalf("saved = %v (applies %d)", got, reg.applies)
+	}
+	// HTTP only, for a CDN that terminates TLS (Cloudflare "Flexible").
+	e.must(422, "PUT", "/api/registry/settings", map[string]any{"enabled": true, "domain": "registry.example.com", "tls_mode": "https"})
+	got = e.must(200, "PUT", "/api/registry/settings", map[string]any{"enabled": true, "domain": "registry.example.com", "build_cache": true, "tls_mode": "http_only"})
+	if got["tls_mode"] != "http_only" {
+		t.Fatalf("tls_mode = %v", got["tls_mode"])
+	}
+	if got = e.must(200, "GET", "/api/registry/settings", nil); got["tls_mode"] != "http_only" {
+		t.Fatalf("saved tls_mode = %v", got["tls_mode"])
 	}
 	// Its domain is then off limits for apps and the panel.
 	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)

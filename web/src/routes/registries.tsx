@@ -91,6 +91,7 @@ function BuiltinRow({ settings }: { settings: RegistrySettings }) {
     settings.s3_connection_id ? `${tb.storageShortS3} · ${s3?.name ?? '…'}` : tb.storageShortVolume,
     tokens.data ? tb.tokenCount(tokens.data.length) : null,
     settings.build_cache ? tb.buildCacheOn : null,
+    settings.tls_mode === 'http_only' ? t.common.httpOnly : null,
   ].filter(Boolean)
   return (
     <li>

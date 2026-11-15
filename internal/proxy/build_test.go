@@ -285,6 +285,26 @@ func TestBuildPanelPaths(t *testing.T) {
 	}
 }
 
+// An HTTP-only registry (behind Cloudflare "Flexible") is served on the http server, token
+// path included, with no redirect to HTTPS (which would loop).
+func TestBuildPanelPathsHTTPOnly(t *testing.T) {
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Routes: []Route{{
+		ID: "registry", Hosts: []string{"registry.example.com"}, HTTPOnly: []string{"registry.example.com"},
+		Upstreams: []string{"berth-registry:5000"}, PanelPaths: []string{"/api/registry/token"},
+	}}})
+	servers := dig(t, cfg, "apps", "http", "servers").(map[string]any)
+	if _, ok := servers["https"]; ok {
+		t.Errorf("an https server exists for an HTTP-only registry: %v", servers["https"])
+	}
+	sub := dig(t, servers, "http", "routes", 0, "handle", 0)
+	if dig(t, sub, "handler") != "subroute" {
+		t.Fatalf("handle = %v, want the registry subroute, not a redirect", sub)
+	}
+	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+		t.Errorf("token endpoint goes to %v, want the panel", got)
+	}
+}
+
 func TestBuildSites(t *testing.T) {
 	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Sites: []Site{{Host: "shop.example.com", Paths: []Path{
 		{ID: "r1", AppID: "front", Prefix: "/", Upstreams: []string{"front:80"}},

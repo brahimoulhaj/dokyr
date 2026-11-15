@@ -396,8 +396,12 @@ func proxySource(st *store.Store, registryUpstream string) func(context.Context)
 		if rs, err := st.GetRegistrySettings(ctx); err != nil {
 			return proxy.Config{}, err
 		} else if rs.Enabled && rs.Domain != "" {
-			cfg.Routes = append(cfg.Routes, proxy.Route{ID: "registry", Hosts: []string{rs.Domain},
-				Upstreams: []string{registryUpstream}, PanelPaths: []string{registry.TokenPath}})
+			route := proxy.Route{ID: "registry", Hosts: []string{rs.Domain},
+				Upstreams: []string{registryUpstream}, PanelPaths: []string{registry.TokenPath}}
+			if rs.TLSMode == store.TLSHTTPOnly {
+				route.HTTPOnly = []string{rs.Domain}
+			}
+			cfg.Routes = append(cfg.Routes, route)
 		}
 		return cfg, nil
 	}

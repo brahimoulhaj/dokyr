@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
-import { Badge, Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, HelpTip, Panel, QueryState } from './ui'
+import { Badge, Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, Panel, QueryState } from './ui'
 import {
   api,
   panelSettingsQuery,
@@ -25,7 +25,7 @@ export function BuiltinForm({ saved, mode, onDone }: { saved: RegistrySettings; 
   const panel = useQuery(panelSettingsQuery)
   // Suggest registry.<the panel domain's parent> until a domain is chosen.
   const suggested = panel.data?.domain ? 'registry.' + panel.data.domain.replace(/^[^.]+\./, '') : 'registry.example.com'
-  const [form, setForm] = useState({ domain: saved.domain || '', s3_connection_id: saved.s3_connection_id, build_cache: saved.build_cache })
+  const [form, setForm] = useState({ domain: saved.domain || '', s3_connection_id: saved.s3_connection_id, build_cache: saved.build_cache, tls_mode: saved.tls_mode || 'auto' })
   const save = useMutation({
     mutationFn: () =>
       withToast(() => api<RegistrySettings>('/registry/settings', { method: 'PUT', body: { ...form, enabled: true, domain: form.domain.trim() || suggested } }), {
@@ -36,11 +36,15 @@ export function BuiltinForm({ saved, mode, onDone }: { saved: RegistrySettings; 
     onSuccess: () => onDone?.(),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['registry'] }),
   })
-  const dirty = mode === 'enable' || form.domain !== saved.domain || form.s3_connection_id !== saved.s3_connection_id || form.build_cache !== saved.build_cache
+  const dirty = mode === 'enable' || form.domain !== saved.domain || form.s3_connection_id !== saved.s3_connection_id || form.build_cache !== saved.build_cache || form.tls_mode !== (saved.tls_mode || 'auto')
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
       <Field label={t.domain} name="registry-domain" dir="ltr" placeholder={suggested} hint={t.domainHint}
         value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} autoComplete="off" spellCheck={false} />
+      <div className="space-y-1.5">
+        <HttpOnlyChoice checked={form.tls_mode === 'http_only'} onChange={(v) => setForm({ ...form, tls_mode: v ? 'http_only' : 'auto' })} />
+        {form.tls_mode === 'http_only' && <p className="text-xs text-warn">{t.httpOnlyLimit}</p>}
+      </div>
       <label className="block space-y-1.5 text-xs text-muted">
         {t.storage}
         <select value={form.s3_connection_id} onChange={(e) => setForm({ ...form, s3_connection_id: e.target.value })}

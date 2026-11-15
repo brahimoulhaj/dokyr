@@ -377,6 +377,8 @@ export type RegistrySettings = {
   enabled: boolean
   domain: string
   build_cache: boolean
+  /** 'http_only' for a CDN that terminates TLS (Cloudflare "Flexible"). */
+  tls_mode?: 'auto' | 'http_only'
   /** '' = a Docker volume on this server. */
   s3_connection_id: string
   state?: string

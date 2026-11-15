@@ -17,6 +17,9 @@ type RegistrySettings struct {
 	Enabled    bool   `json:"enabled"`
 	Domain     string `json:"domain"`
 	BuildCache bool   `json:"build_cache"` // push every Git build to the registry too
+	// TLSMode is TLSAuto (an automatic certificate, HTTP redirected) or TLSHTTPOnly (plain
+	// HTTP, for a CDN that terminates TLS: Cloudflare "Flexible"). "" means TLSAuto.
+	TLSMode string `json:"tls_mode,omitempty"`
 }
 
 // GetRegistrySettings returns the saved settings; the zero value (off) when never saved.

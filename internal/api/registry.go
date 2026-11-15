@@ -54,6 +54,7 @@ type registrySettingsJSON struct {
 	Enabled      bool   `json:"enabled"`
 	Domain       string `json:"domain"`
 	BuildCache   bool   `json:"build_cache"`
+	TLSMode      string `json:"tls_mode"`         // "auto" or "http_only"
 	S3Connection string `json:"s3_connection_id"` // "" = a Docker volume on this server
 	State        string `json:"state,omitempty"`  // the container: off, running, missing, …
 	SystemUser   string `json:"system_user,omitempty"`
@@ -73,7 +74,11 @@ func (s *Server) handleGetRegistrySettings(w http.ResponseWriter, r *http.Reques
 		s.internal(w, "registry settings", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, registrySettingsJSON{Enabled: rs.Enabled, Domain: rs.Domain, BuildCache: rs.BuildCache,
+	mode := rs.TLSMode
+	if mode == "" {
+		mode = store.TLSAuto
+	}
+	writeJSON(w, http.StatusOK, registrySettingsJSON{Enabled: rs.Enabled, Domain: rs.Domain, BuildCache: rs.BuildCache, TLSMode: mode,
 		S3Connection: conn, State: s.registry.State(r.Context()), SystemUser: s.registry.SystemUser()})
 }
 
@@ -89,6 +94,13 @@ func (s *Server) handlePutRegistrySettings(w http.ResponseWriter, r *http.Reques
 	}
 	ctx := r.Context()
 	in.Domain = strings.ToLower(strings.TrimSpace(in.Domain))
+	if in.TLSMode == "" {
+		in.TLSMode = store.TLSAuto
+	}
+	if !store.ValidTLSMode(in.TLSMode) {
+		invalid(w, `tls_mode must be "auto" or "http_only"`)
+		return
+	}
 	if in.Domain != "" || in.Enabled {
 		if err := proxy.ValidHost(in.Domain); err != nil {
 			invalid(w, "domain must be a hostname of its own like registry.example.com")
@@ -120,7 +132,7 @@ func (s *Server) handlePutRegistrySettings(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	if err := s.store.SetRegistrySettings(ctx, store.RegistrySettings{Enabled: in.Enabled, Domain: in.Domain, BuildCache: in.BuildCache}); err != nil {
+	if err := s.store.SetRegistrySettings(ctx, store.RegistrySettings{Enabled: in.Enabled, Domain: in.Domain, BuildCache: in.BuildCache, TLSMode: in.TLSMode}); err != nil {
 		s.internal(w, "registry settings", err)
 		return
 	}
