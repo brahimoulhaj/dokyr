@@ -160,6 +160,10 @@ func TestDatabaseAPI(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), creds["password"]) || strings.Contains(rec.Body.String(), creds["root_password"]) || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("connection response is unsafe")
 	}
+	call("GET", path+"/adminer/", nil, "", 401)
+	call("GET", path+"/adminer/", nil, "token", 403)
+	call("POST", path+"/adminer/", nil, "", 401)
+	call("GET", "/api/databases/missing/adminer/", nil, "session", 404)
 	call("GET", path+"/catalog", nil, "", 401)
 	call("POST", path+"/users", map[string]string{"name": "reader"}, "token", 403)
 	call("POST", path+"/databases", map[string]string{"name": "analytics"}, "session", 202)
@@ -250,6 +254,7 @@ func TestDatabaseAPI(t *testing.T) {
 	checkProjectDatabases(2)
 	call("POST", path+"/stop", nil, "session", 202)
 	svc.Wait()
+	call("GET", path+"/adminer/", nil, "session", 409)
 	call("POST", path+"/start", nil, "session", 202)
 	svc.Wait()
 	call("POST", path+"/restart", nil, "session", 202)

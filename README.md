@@ -168,6 +168,14 @@ the panel key. Instances have no published host ports; applications on the same 
 network connect internally. PostgreSQL's application user is not a superuser; MariaDB's
 application user has privileges on its initial database only.
 
+**Open Adminer** on a running instance opens a new tab, automatically signed in as
+its initial application user. Existing SQL grants apply; this is not a server root login.
+The panel starts one shared `adminer:5.5.1-standalone` gateway on first use and
+checks the browser's panel session on every request. Database passwords stay on
+the backend. The gateway has no public port when the panel runs in Docker;
+native development publishes it only on `127.0.0.1:18081`, behind a random
+internal gateway key. API tokens cannot open Adminer.
+
 Each project's **Databases** tab lists only its own instances, with engine/version,
 current status and panel-managed database names. Open an instance to manage its databases,
 users and permissions, or use **New instance** to create one in that project.

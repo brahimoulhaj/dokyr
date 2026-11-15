@@ -274,6 +274,9 @@ func serve(ctx context.Context, cfg config.Config) error {
 
 	apiSrv := api.New(st, acc, log, version, webui.FS())
 	databases := database.New(ctx, st, ex)
+	if !inContainer() {
+		databases.AdminerPort = 18081
+	}
 	if err := databases.Recover(ctx); err != nil {
 		return err
 	}

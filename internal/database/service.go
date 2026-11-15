@@ -30,12 +30,16 @@ type Host interface {
 }
 
 type Service struct {
-	ctx  context.Context
-	st   *store.Store
-	ex   Host
-	mu   sync.Mutex
-	busy map[string]bool
-	wg   sync.WaitGroup
+	ctx        context.Context
+	st         *store.Store
+	ex         Host
+	mu         sync.Mutex
+	busy       map[string]bool
+	wg         sync.WaitGroup
+	adminerMu  sync.Mutex
+	adminerKey string
+	// AdminerPort publishes only on loopback when the panel runs outside Docker.
+	AdminerPort int
 	// Shorter intervals are useful for tests; production waits for SQL readiness.
 	Poll time.Duration
 }

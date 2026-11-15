@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/databases/{id}", s.requireAuth(s.handleGetDatabase))
 	mux.HandleFunc("PATCH /api/databases/{id}", s.requireAuth(s.handleUpdateDatabase))
 	mux.HandleFunc("GET /api/databases/{id}/connection", s.requireAuth(sessionOnly(s.handleDatabaseConnection)))
+	mux.HandleFunc("/api/databases/{id}/adminer/", s.requireAuth(sessionOnly(s.handleAdminer)))
 	mux.HandleFunc("GET /api/databases/{id}/logs", s.requireAuth(s.handleDatabaseLogs))
 	mux.HandleFunc("GET /api/databases/{id}/catalog", s.requireAuth(s.handleDatabaseCatalog))
 	mux.HandleFunc("POST /api/databases/{id}/databases", s.requireAuth(sessionOnly(s.handleDatabaseManage("database_create"))))

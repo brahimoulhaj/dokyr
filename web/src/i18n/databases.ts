@@ -1,4 +1,5 @@
 export const en = {
+  openAdminer: 'Open Adminer',
   projectMoveHint: 'Moving this instance keeps its data, users and connection details. App references will resolve in the new project; apps in the old project using those references will fail their next deployment. Running apps keep their current connection.',
   projectSaving: 'Updating database project', projectSaved: 'Database project updated', projectSaveFailed: 'Could not update database project',
   access: 'Databases & users',
@@ -70,6 +71,7 @@ export const en = {
   noLogs: 'No container output yet.', unlimited: 'Unlimited', copyFailed: 'Could not copy. Select and copy the value manually.',
 }
 export const fr: typeof en = {
+  openAdminer: 'Ouvrir Adminer',
   projectMoveHint: 'Le déplacement conserve les données, utilisateurs et identifiants. Les références fonctionneront dans le nouveau projet ; les prochains déploiements des applications utilisant ces références dans l’ancien projet échoueront. Les applications en cours conservent leur connexion.',
   projectSaving: 'Modification du projet de la base', projectSaved: 'Projet de la base modifié', projectSaveFailed: 'Impossible de modifier le projet de la base',
   access: 'Bases de données et utilisateurs',
@@ -141,6 +143,7 @@ export const fr: typeof en = {
   noLogs: 'Aucune sortie du conteneur.', unlimited: 'Illimité', copyFailed: 'Copie impossible. Sélectionnez et copiez la valeur manuellement.',
 }
 export const ar: typeof en = {
+  openAdminer: 'فتح Adminer',
   projectMoveHint: 'يحافظ النقل على البيانات والمستخدمين وتفاصيل الاتصال. تعمل مراجع التطبيقات في المشروع الجديد؛ وسيفشل النشر التالي للتطبيقات التي تستخدمها في المشروع السابق. تحتفظ التطبيقات العاملة باتصالها الحالي.',
   projectSaving: 'جارٍ تحديث مشروع قاعدة البيانات', projectSaved: 'تم تحديث مشروع قاعدة البيانات', projectSaveFailed: 'تعذر تحديث مشروع قاعدة البيانات',
   access: 'قواعد البيانات والمستخدمون',
@@ -212,6 +215,7 @@ export const ar: typeof en = {
   noLogs: 'لا توجد مخرجات للحاوية بعد.', unlimited: 'بلا حد', copyFailed: 'تعذر النسخ. حدد القيمة وانسخها يدويًا.',
 }
 export const es: typeof en = {
+  openAdminer: 'Abrir Adminer',
   projectMoveHint: 'El traslado conserva datos, usuarios y conexión. Las referencias funcionarán en el nuevo proyecto; el próximo despliegue de las aplicaciones del proyecto anterior que las usen fallará. Las aplicaciones en ejecución mantienen su conexión actual.',
   projectSaving: 'Actualizando proyecto de la base', projectSaved: 'Proyecto de la base actualizado', projectSaveFailed: 'No se pudo actualizar el proyecto de la base',
   access: 'Bases de datos y usuarios',

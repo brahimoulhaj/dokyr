@@ -30,13 +30,17 @@ export function DatabasePage() {
   const ready = d?.status === 'running' && d.runtime === 'running' && d.desired_state === 'running'
   const active = d && ['running', 'restarting', 'paused'].includes(d.runtime)
   return <div className="space-y-6">
-    <PageHeader title={d?.name ?? t.databases.title} crumbs={<Link to="/databases" className="hover:text-fg">{t.databases.title}</Link>}
+    <PageHeader title={<>{d?.name ?? t.databases.title}{d && <DatabaseStatus value={d.status === 'running' && d.runtime !== 'running' ? d.runtime : d.status} />}</>} crumbs={<Link to="/databases" className="hover:text-fg">{t.databases.title}</Link>}
       subtitle={d && `${d.engine === 'postgres' ? 'PostgreSQL' : 'MariaDB'} ${d.version}`}
       actions={d && <>
-        <DatabaseStatus value={d.status === 'running' && d.runtime !== 'running' ? d.runtime : d.status} />
-        <Button variant="ghost" disabled={busy || ready} onClick={() => action.mutate('start')}>{t.databases.start}</Button>
-        <ConfirmButton variant="ghost" label={t.databases.stop} confirm={t.databases.confirmStop} disabled={busy || (!active && d.desired_state === 'stopped')} pending={action.isPending} onConfirm={() => action.mutate('stop')} />
-        <ConfirmButton variant="ghost" label={t.databases.restart} confirm={t.databases.confirmRestart} disabled={busy || !active} pending={action.isPending} onConfirm={() => action.mutate('restart')} />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" disabled={busy || ready} onClick={() => action.mutate('start')}>{t.databases.start}</Button>
+          <ConfirmButton variant="ghost" label={t.databases.stop} confirm={t.databases.confirmStop} disabled={busy || (!active && d.desired_state === 'stopped')} pending={action.isPending} onConfirm={() => action.mutate('stop')} />
+          <ConfirmButton variant="ghost" label={t.databases.restart} confirm={t.databases.confirmRestart} disabled={busy || !active} pending={action.isPending} onConfirm={() => action.mutate('restart')} />
+        </div>
+        <div className="border-s border-line ps-3">
+          <Button variant="ghost" className="whitespace-nowrap" disabled={busy || !ready} onClick={() => window.open(`/api/databases/${d.id}/adminer/`, '_blank', 'noopener,noreferrer')}>{t.databases.openAdminer}<span aria-hidden="true">↗</span></Button>
+        </div>
       </>} />
     <QueryState loading={db.isPending} error={db.error} what={t.databases.title} />
     {action.error && <ErrorNote>{action.error.message}</ErrorNote>}
