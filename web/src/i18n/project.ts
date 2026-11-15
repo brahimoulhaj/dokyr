@@ -1,10 +1,12 @@
 // Texts of a project's page: its apps, the new app form and the project settings.
 
 export const en = {
+  databasesIntro: 'Database instances belonging to this project, with their databases and current status. Open an instance to manage databases, users and permissions.',
   what: 'project',
   back: '← Projects',
   newApp: 'New app',
   apps: 'Apps',
+  appCount: (n: number) => n === 1 ? '1 app' : `${n} apps`,
   appsWhat: 'apps',
   emptyTitle: 'No apps in this project yet.',
   emptyHint:
@@ -43,10 +45,12 @@ export const en = {
 }
 
 export const fr: typeof en = {
+  databasesIntro: 'Instances de ce projet avec leurs bases de données et leur état actuel. Ouvrez une instance pour gérer les bases, utilisateurs et droits.',
   what: 'projet',
   back: '← Projets',
   newApp: 'Nouvelle application',
   apps: 'Applications',
+  appCount: (n) => n === 1 ? '1 application' : `${n} applications`,
   appsWhat: 'applications',
   emptyTitle: 'Aucune application dans ce projet pour le moment.',
   emptyHint:
@@ -85,10 +89,12 @@ export const fr: typeof en = {
 }
 
 export const ar: typeof en = {
+  databasesIntro: 'نسخ قواعد البيانات التابعة لهذا المشروع مع قواعد بياناتها وحالتها الحالية. افتح نسخة لإدارة قواعد البيانات والمستخدمين والصلاحيات.',
   what: 'المشروع',
   back: '→ المشاريع',
   newApp: 'تطبيق جديد',
   apps: 'التطبيقات',
+  appCount: (n) => n === 1 ? 'تطبيق واحد' : `${n} تطبيقات`,
   appsWhat: 'التطبيقات',
   emptyTitle: 'لا توجد تطبيقات في هذا المشروع بعد.',
   emptyHint: 'التطبيق يشغّل حاوية واحدة، من صورة جاهزة أو مبنية من مستودع Git. أضف إليه نطاقًا فيُقدَّم عبر HTTPS.',
@@ -126,10 +132,12 @@ export const ar: typeof en = {
 }
 
 export const es: typeof en = {
+  databasesIntro: 'Instancias de este proyecto con sus bases de datos y estado actual. Abre una instancia para gestionar bases de datos, usuarios y permisos.',
   what: 'proyecto',
   back: '← Proyectos',
   newApp: 'Nueva aplicación',
   apps: 'Aplicaciones',
+  appCount: (n) => n === 1 ? '1 aplicación' : `${n} aplicaciones`,
   appsWhat: 'aplicaciones',
   emptyTitle: 'Aún no hay aplicaciones en este proyecto.',
   emptyHint:

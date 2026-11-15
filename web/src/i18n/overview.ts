@@ -1,6 +1,12 @@
 // Texts of the overview page.
 
 export const en = {
+  appProblems: 'Apps needing attention',
+  appStatusUnavailable: 'App status is unavailable. Check the Docker connection.',
+  viewLogs: 'View logs',
+  crashingApp: (app: string) => `${app} is crashing`,
+  downApp: (app: string) => `${app} is down`,
+  missingApp: (app: string) => `${app} has a missing container`,
   title: 'Overview',
   signedInAs: (email: string) => `Signed in as ${email}.`,
   ready: (name: string) => `${name} is ready. Nothing is deployed yet.`,
@@ -25,6 +31,12 @@ export const en = {
 }
 
 export const fr: typeof en = {
+  appProblems: 'Applications à vérifier',
+  appStatusUnavailable: 'État des applications indisponible. Vérifiez la connexion Docker.',
+  viewLogs: 'Voir les journaux',
+  crashingApp: (app: string) => `${app} plante`,
+  downApp: (app: string) => `${app} est arrêtée`,
+  missingApp: (app: string) => `${app} a un conteneur manquant`,
   title: "Vue d'ensemble",
   signedInAs: (email) => `Connecté en tant que ${email}.`,
   ready: (name) => `${name} est prêt. Rien n'est encore déployé.`,
@@ -49,6 +61,12 @@ export const fr: typeof en = {
 }
 
 export const ar: typeof en = {
+  appProblems: 'تطبيقات تتطلب الانتباه',
+  appStatusUnavailable: 'حالة التطبيقات غير متاحة. تحقق من اتصال Docker.',
+  viewLogs: 'عرض السجلات',
+  crashingApp: (app: string) => `${app} ينهار`,
+  downApp: (app: string) => `${app} متوقف`,
+  missingApp: (app: string) => `${app} حاويته مفقودة`,
   title: 'نظرة عامة',
   signedInAs: (email) => `تم تسجيل الدخول باسم ${email}.`,
   ready: (name) => `${name} جاهز. لم يُنشر شيء بعد.`,
@@ -73,6 +91,12 @@ export const ar: typeof en = {
 }
 
 export const es: typeof en = {
+  appProblems: 'Aplicaciones que requieren atención',
+  appStatusUnavailable: 'Estado de aplicaciones no disponible. Comprueba la conexión con Docker.',
+  viewLogs: 'Ver registros',
+  crashingApp: (app: string) => `${app} está fallando`,
+  downApp: (app: string) => `${app} está caída`,
+  missingApp: (app: string) => `${app} tiene un contenedor ausente`,
   title: 'Resumen',
   signedInAs: (email) => `Sesión iniciada como ${email}.`,
   ready: (name) => `${name} está listo. Aún no hay nada desplegado.`,

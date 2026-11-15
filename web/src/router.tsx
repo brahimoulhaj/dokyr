@@ -13,6 +13,8 @@ import { ProjectPage, projectTabs, type ProjectTab } from './routes/project'
 import { ProjectsPage } from './routes/projects'
 import { SettingsPage, settingsTabs, type SettingsTab } from './routes/settings'
 import { SetupPage } from './routes/setup'
+import { DatabasesPage } from './routes/databases'
+import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
 
 type Ctx = { queryClient: QueryClient }
 
@@ -102,6 +104,11 @@ const appPageRoute = createRoute({
   component: AppPage,
 })
 const activityRoute = createRoute({ getParentRoute: () => appRoute, path: '/activity', component: ActivityPage })
+const databasesRoute = createRoute({ getParentRoute: () => appRoute, path: '/databases', component: DatabasesPage })
+const databaseRoute = createRoute({
+  getParentRoute: () => appRoute, path: '/databases/$databaseId', component: DatabasePage,
+  validateSearch: (s: Record<string, unknown>): { tab?: DatabaseTab } => (databaseTabs.includes(s.tab as DatabaseTab) ? { tab: s.tab as DatabaseTab } : {}),
+})
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
 const builtinRegistryRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -124,7 +131,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   onboardingRoute,
   appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute,
-    builtinRegistryRoute, settingsRoute]),
+    builtinRegistryRoute, settingsRoute, databasesRoute, databaseRoute]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {

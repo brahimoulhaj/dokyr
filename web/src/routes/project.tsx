@@ -9,8 +9,11 @@ import { useT } from '../lib/i18n'
 import { Sheet } from '../components/sheet'
 import { EnvironmentEditor } from '../components/environment'
 import { DnsHintText } from '../components/dns'
+import { projectDatabasesQuery } from '../lib/databases'
+import { DatabaseStatus, NewDatabase } from './databases'
+import { ContextBreadcrumb } from '../components/context-breadcrumb'
 
-export const projectTabs = ['apps', 'domains', 'environment', 'settings'] as const
+export const projectTabs = ['apps', 'databases', 'domains', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
 
 export function ProjectPage() {
@@ -18,7 +21,9 @@ export function ProjectPage() {
   const project = useQuery(projectQuery(projectId))
   const apps = useQuery(appsQuery(projectId))
   const domains = useQuery(domainsQuery(projectId))
+  const databases = useQuery(projectDatabasesQuery(projectId))
   const [adding, setAdding] = useState(false)
+  const [addingDatabase, setAddingDatabase] = useState(false)
   const search = useSearch({ strict: false }) as { tab?: string }
   const tab: ProjectTab = projectTabs.includes(search.tab as ProjectTab) ? (search.tab as ProjectTab) : 'apps'
   const t = useT()
@@ -26,7 +31,7 @@ export function ProjectPage() {
   if (!project.data) {
     return (
       <div className="space-y-4">
-        <Crumbs />
+        <ContextBreadcrumb projectId={projectId} />
         <QueryState loading={project.isPending} error={project.error} what={t.project.what} />
       </div>
     )
@@ -36,7 +41,7 @@ export function ProjectPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        crumbs={<Crumbs />}
+        crumbs={<ContextBreadcrumb projectId={p.id} projectName={p.name} projectTab={tab} />}
         title={p.name}
         subtitle={
           (p.description || mainDomain(domains.data)) && (
@@ -46,7 +51,8 @@ export function ProjectPage() {
             </>
           )
         }
-        actions={tab === 'apps' && <Button onClick={() => setAdding(true)}>{t.project.newApp}</Button>}
+        actions={tab === 'apps' ? <Button onClick={() => setAdding(true)}>{t.project.newApp}</Button>
+          : tab === 'databases' ? <Button onClick={() => setAddingDatabase(true)}>{t.databases.add}</Button> : undefined}
       />
 
       <nav className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line" aria-label={p.name}>
@@ -59,8 +65,9 @@ export function ProjectPage() {
             className={cx('border-b-2 px-3 py-1.5 text-sm whitespace-nowrap', name === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg')}
             aria-current={name === tab ? 'page' : undefined}
           >
-            {{ apps: t.project.apps, domains: t.project.domainsTab, environment: t.project.envTab, settings: t.common.settings }[name]}
+            {{ apps: t.project.apps, databases: t.databases.title, domains: t.project.domainsTab, environment: t.project.envTab, settings: t.common.settings }[name]}
             {name === 'apps' && apps.data && <span className="ms-1.5 text-xs text-muted">{apps.data.length}</span>}
+            {name === 'databases' && databases.data && <span className="ms-1.5 text-xs text-muted">{databases.data.length}</span>}
           </Link>
         ))}
       </nav>
@@ -81,6 +88,22 @@ export function ProjectPage() {
         </Panel>
       )}
       {tab === 'domains' && <ProjectDomains projectId={p.id} apps={apps.data ?? []} />}
+      {tab === 'databases' && <div className="space-y-4">
+        <p className="text-sm text-muted">{t.project.databasesIntro}</p>
+        <Panel>
+          <QueryState loading={databases.isPending} error={databases.error} what={t.databases.title} />
+          {databases.data?.length === 0 && <Empty title={t.databases.empty}>{t.databases.emptyHint}</Empty>}
+          {databases.data && databases.data.length > 0 && <ul className="divide-y divide-line">{databases.data.map((d) => <li key={d.id}>
+            <Link to="/databases/$databaseId" params={{ databaseId: d.id }} search={{ tab: 'access' }} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-raised">
+              <div className="min-w-0"><span className="block break-words text-sm">{d.name}</span>
+                <span className="text-xs text-muted">{d.engine === 'postgres' ? 'PostgreSQL' : 'MariaDB'} {d.version}</span>
+                <p className="mt-1 text-xs text-muted">{t.databases.databasesList}: <span dir="ltr" className="break-words">{d.database_names.join(', ')}</span></p>
+              </div>
+              <DatabaseStatus value={d.status === 'running' && d.runtime !== 'running' ? d.runtime : d.status} />
+            </Link>
+          </li>)}</ul>}
+        </Panel>
+      </div>}
       {tab === 'environment' && <ProjectEnvironment projectId={p.id} />}
       {tab === 'settings' && (
         <Panel title={t.project.settingsTitle}>
@@ -91,16 +114,10 @@ export function ProjectPage() {
       <Sheet open={adding} onOpenChange={setAdding} title={t.project.newApp} description={t.project.portHint}>
         {adding && <NewApp projectId={p.id} onDone={() => setAdding(false)} />}
       </Sheet>
+      <Sheet open={addingDatabase} onOpenChange={setAddingDatabase} title={t.databases.add}>
+        {addingDatabase && <NewDatabase projectId={p.id} onDone={() => setAddingDatabase(false)} />}
+      </Sheet>
     </div>
-  )
-}
-
-function Crumbs() {
-  const t = useT()
-  return (
-    <Link to="/projects" className="hover:text-fg">
-      {t.project.back}
-    </Link>
   )
 }
 

@@ -10,15 +10,16 @@ import { DeployToasts } from './deploy-toasts'
 import { QueueMenu } from './queue-menu'
 import { UpdateCheck } from './update-check'
 import { Badge, cx } from './ui'
+import { useDatabaseOperations } from '../lib/database-operations'
 
 // Sections light up as their milestone lands; until then they show as "soon".
 type NavKey = 'overview' | 'projects' | 'activity' | 'databases' | 'storage' | 'registry' | 'settings'
 // Registry lists the private registries apps pull from; the built-in registry (M5) joins it later.
-const nav: { key: NavKey; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings'; exact?: boolean }[] = [
+const nav: { key: NavKey; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases'; exact?: boolean }[] = [
   { key: 'overview', to: '/', exact: true },
   { key: 'projects', to: '/projects' },
   { key: 'activity', to: '/activity' },
-  { key: 'databases' },
+  { key: 'databases', to: '/databases' },
   { key: 'storage' },
   { key: 'registry', to: '/registry' },
   { key: 'settings', to: '/settings' },
@@ -29,6 +30,7 @@ export function Shell() {
   const { data: meta } = useSuspenseQuery(metaQuery)
   const { data: me } = useSuspenseQuery(meQuery)
   const updates = useQuery(updatesQuery)
+  const databaseOperations = useDatabaseOperations()
   const main = useRef<HTMLElement>(null)
   const { pathname } = useLocation()
   const [picking, setPicking] = useState(false)
@@ -68,7 +70,7 @@ export function Shell() {
           >
             <PaletteIcon />
           </button>
-          <QueueMenu />
+          <QueueMenu databaseOperations={databaseOperations.operations} />
           <LanguagePicker />
           {me && <UserMenu user={me} onPickTheme={() => setPicking(true)} />}
         </div>
@@ -104,7 +106,7 @@ export function Shell() {
           <Outlet />
         </main>
       </div>
-      <DeployToasts />
+      <DeployToasts databaseOperations={databaseOperations.operations} onDismissDatabase={databaseOperations.dismiss} />
       {picking && <ThemePicker brand={meta.name} onClose={() => setPicking(false)} />}
     </div>
   )

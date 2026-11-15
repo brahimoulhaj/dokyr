@@ -37,6 +37,7 @@ type Deployer interface {
 	// RollbackTargets tells which of an app's deployments a rollback can return to.
 	RollbackTargets(ctx context.Context, app store.App, deps []store.Deployment) (map[string]bool, error)
 	RuntimeState(ctx context.Context, appID string) string
+	AppProblems(ctx context.Context) ([]store.AppRuntimeTarget, error)
 	LogPath(dep store.Deployment) string
 	// StreamLogs calls fn for each line of the app's current container until the stream
 	// ends or ctx is cancelled.
@@ -90,9 +91,9 @@ type appJSON struct {
 	BuildContext        string            `json:"build_context"`
 	DockerfilePath      string            `json:"dockerfile_path"`
 	StartCommand        string            `json:"start_command"`
-	Strategy            string            `json:"strategy"`                // rolling or recreate, from the mounts
-	PushDeploy          bool              `json:"push_deploy"`             // image apps on the built-in registry: deploy when the tag is pushed
-	RuntimeState        string            `json:"runtime_state,omitempty"` // single-app responses only
+	Strategy            string            `json:"strategy"`    // rolling or recreate, from the mounts
+	PushDeploy          bool              `json:"push_deploy"` // image apps on the built-in registry: deploy when the tag is pushed
+	RuntimeState        string            `json:"runtime_state,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
@@ -390,7 +391,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = s.store.DeleteProject(r.Context(), p.ID)
-	if s.storeError(w, "delete project", err, "delete the project's apps first") {
+	if s.storeError(w, "delete project", err, "delete the project's apps and database instances first") {
 		return
 	}
 	s.audit(r, "project.delete", "project", p.ID, p.Name, "")
@@ -575,7 +576,13 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, "list apps", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, mapSlice(list, toAppJSON))
+	writeJSON(w, http.StatusOK, mapSlice(list, func(a store.App) appJSON {
+		out := toAppJSON(a)
+		if s.deployer != nil {
+			out.RuntimeState = s.deployer.RuntimeState(r.Context(), a.ID)
+		}
+		return out
+	}))
 }
 
 func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {

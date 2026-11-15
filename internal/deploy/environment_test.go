@@ -5,8 +5,50 @@ import (
 	"strings"
 	"testing"
 
+	"panel/internal/database"
 	"panel/internal/store"
 )
+
+func TestDeployDatabaseEnvironment(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	rec := &environmentExecutor{Executor: e.ex}
+	e.svc.opts.Executor = rec
+	d, err := e.st.CreateDBInstance(ctx, store.DBInstance{ProjectID: e.app.ProjectID, Name: "main", Engine: "postgres", Version: "18", DatabaseName: "app", Username: "app"}, map[string]string{"password": "app-secret", "root_password": "admin-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetDBInstanceState(ctx, d.ID, "running", "running", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetProjectEnvironment(ctx, e.app.ProjectID, map[string]string{"DB": "${db.main.URL}"}, false); err != nil {
+		t.Fatal(err)
+	}
+	e.app, err = e.st.UpdateApp(ctx, e.app.ID, appInputWithEnv(e, map[string]string{
+		"DATABASE_URL": "${project.DB}", "CUSTOM_URL": "custom://${db.main.HOST}:${db.main.PORT}/${db.main.DATABASE}",
+		"DB_USER": "${db.main.USERNAME}", "DB_PASSWORD": "${db.main.PASSWORD}",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dep := e.deploy()
+	if dep.Status != "succeeded" {
+		t.Fatalf("database deploy = %s\n%s", dep.Status, e.log(dep))
+	}
+	if rec.environment["DATABASE_URL"] != database.Connection(d, map[string]string{"password": "app-secret"})["URL"] {
+		t.Fatal("database reference was not resolved at deploy")
+	}
+	if rec.environment["CUSTOM_URL"] != "custom://"+database.ContainerName(d.ID)+":5432/app" || rec.environment["DB_USER"] != "app" || rec.environment["DB_PASSWORD"] != "app-secret" {
+		t.Fatal("composed database references were not resolved at deploy")
+	}
+	if strings.Contains(e.log(dep), "app-secret") || strings.Contains(e.log(dep), "admin-secret") {
+		t.Fatal("database credentials leaked into deploy log")
+	}
+	e.st.SetDBInstanceState(ctx, d.ID, "stopped", "stopped", "")
+	dep = e.deploy()
+	if dep.Status != "failed" || !strings.Contains(dep.Error, "must be running") {
+		t.Fatalf("stopped DB deploy = %+v", dep)
+	}
+}
 
 func TestResolveEnvironment(t *testing.T) {
 	project := map[string]string{"DB_HOST": "db.internal", "LOG_LEVEL": "info"}

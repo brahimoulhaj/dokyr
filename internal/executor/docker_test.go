@@ -15,6 +15,31 @@ import (
 
 const testImage = "busybox:1.37"
 
+func TestDockerCommand(t *testing.T) {
+	d := newTestDocker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := d.EnsureNetwork(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.PullImage(ctx, testImage, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	cid, err := d.CreateContainer(ctx, ContainerSpec{Name: d.network + "-exec", Image: testImage, Kind: KindDatabase, ResourceID: "test", Command: []string{"sleep", "300"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.StartContainer(ctx, cid); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Exec(ctx, cid, Command{Args: []string{"sh", "-c", `test "$(cat)" = 'statement' && test "$PASSWORD" = 'secret'`}, Input: "statement\n", Env: map[string]string{"PASSWORD": "secret"}}); err != nil {
+		t.Fatal("command input/env", err)
+	}
+	if err := d.Exec(ctx, cid, Command{Args: []string{"sh", "-c", "exit 23"}}); err == nil {
+		t.Fatal("nonzero exit was accepted")
+	}
+}
+
 // newTestDocker returns an executor on its own network and label namespace, so the test
 // never touches containers of a real install. It skips when no Docker daemon answers.
 func newTestDocker(t *testing.T) *Docker {

@@ -7,13 +7,13 @@ name; it lives only in `internal/brand/brand.go`.
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
 
-**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ◐ (S3 connections) · M5 ◐ (registry done and checked on the VPS) · M6 ◐
+**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ◐ (instance provisioning, lifecycle, connection references and UI; real Docker verification pending) · M5 ◐ (registry done and checked on the VPS) · M6 ◐
 
 **Where we are (2026-11-15, v0.11.5):** v0.11.5 adds a queue button to the navbar (a count and a list of the deployments running or waiting; each opens its app's Deployments tab) and turns the deployment toasts into a stack, one card per deployment, so several in parallel are all in view (ding shows one toast at a time). v0.11.4: the registry page has Images (how to push and pull, a table of image, tag, platform and size, with several tags in one collapsible row) and Settings (settings, turn off, tokens); the registry address carries the proxy's port in development. v0.11.3: the token endpoint accepts the space-separated scopes of containerd's login (Docker Desktop), which fixed `insufficient_scope` on push. v0.11.2: an HTTP-only option for the registry domain, for Cloudflare "Flexible" (it looped on redirects). v0.11.0 checked on the VPS (2026-11-15): the built-in registry on a real domain (docker login and push from a laptop, push redeploys, S3 storage, build cache) and a project domain with `/` → frontend and `/api` → backend with shared variables; recreate with a volume is not tried yet. v0.11.0 moves domains and shared variables to the project: a project domain's paths go to apps (`/` → frontend, `/api` → backend, prefix kept unless stripped), and project variables are used as `${project.NAME}` or inherited by every app when the project says so (off by default); forms open in side sheets; the registry page lists every registry in one list. v0.10.0 added the built-in registry. Earlier: M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy now drains the old container (default 10 s) before removing it (v0.8.3); apps with volumes deploy with recreate (v0.9.0). The built-in registry (M5, v0.10.0): off by default, its own domain, Docker volume or S3 storage, registry tokens, deploy on push, build cache, repositories with delete and garbage collection; checked against real Docker, Distribution and RustFS, and on the VPS with a real domain. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
 
 **Next up:**
 1. On the VPS: recreate with an app that has a volume (the one check left from v0.11.0; the project domain, shared variables and the built-in registry on a real domain are checked).
-2. Then M4 databases (Postgres, MariaDB, S3 backups): S3 connections are ready, and `${…}` references can carry connection strings (`${db.main.URL}`).
+2. M4 is started: project-scoped Postgres/MariaDB instances, encrypted credentials, lifecycle controls, an internal data volume and `${db.main.URL}` references are implemented. Isolated provisioning/recovery/API/deploy tests pass; run `go test ./internal/database -run TestRealDatabaseInstances -v` with Docker to check real SQL permissions and persistence. Next: extra databases and users, then manual S3 backups/restore, then schedules and retention. Public port exposure is still pending.
 3. Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
 4. Record the fresh-install time with image download (M1, "Under 60 seconds").
 ---
@@ -267,6 +267,8 @@ Goal: zero-downtime deploys you can trust, with rollback and every trigger.
 - [x] Registries as one list — the built-in registry first, then external ones; an empty state offers both; the built-in one has its own page (Images, Settings)
 - [x] Queue button in the navbar — a count and a popover list of the deployments running or queued (any app), each opening its app's Deployments tab (`web/src/components/queue-menu.tsx`)
 - [x] Stacked deployment toasts — one card per deployment in progress, centred at the bottom; an ended one keeps its place (success 8 s, failure until dismissed); ding still shows the other toasts and plays its chime (`web/src/components/deploy-toasts.tsx`)
+- [x] Database operations in the same queue and toast stack — create/start/stop/restart/remove persist as `db_operations` (`0022`), queued/running/succeeded/failed with snapshots kept after removal. The HTTP request returns 202 immediately; navigation never cancels the worker. Active jobs are discovered across clients, local submissions are tracked immediately so fast jobs still produce a completion toast, successes expire after 8 s and failures stay until dismissed. `GET /api/database-operations/active`, `GET /api/database-operations/{id}`; `TestDatabaseOperationRecovery`, `TestDatabaseAPI`. Real PostgreSQL 18 creation and queue count → success toast verified in the browser (2026-11-15)
+- [x] Dashboard app runtime alerts — `/api/apps/problems`, authenticated, polled every 5 s, one Docker container-list call. Crashing/down/missing containers show the app and project with a link to Logs; intentional stops and in-progress deploys are excluded; Docker failures have a distinct unavailable message. Alerts clear after recovery. `TestAppProblems`, `TestAppProblemsAPI`; checked in the browser that the intentionally stopped inertia app does not alert (2026-11-15)
 - [ ] Other forms still inline: app settings sections, Git connections, API tokens, build limits, panel domain
 
 ## M4 — Databases
@@ -274,19 +276,19 @@ Goal: zero-downtime deploys you can trust, with rollback and every trigger.
 Goal: managed Postgres and MariaDB with scheduled S3 backups and restore.
 
 ### Instances (`internal/database`)
-- [ ] Migration: `db_instances`, `db_databases`, `db_users`, `s3_connections`, `backup_policies`, `backups`
-- [ ] Driver interface: provision, databases, users, backup, restore
-- [ ] Postgres driver
-- [ ] MariaDB driver
-- [ ] Version picker, persistent volume, CPU and memory limits
-- [ ] Internal-only by default; opt-in public port (confirm against the open question)
-- [ ] Start / stop / restart / delete with confirmation
-- [ ] Connection strings; inject into an app as env vars
+- [~] Migrations: `db_instances` (`0021`), `db_operations` (`0022`), panel-managed `db_databases`, `db_users` and `db_user_grants` (`0023`), `s3_connections` (`0017`) done; `backup_policies`, `backups` remain
+- [~] Driver interface: container spec, SQL readiness and initialization implemented; extra databases, users, backup and restore follow
+- [~] Postgres driver — versions 18/17/16, a separate non-superuser application role; version-specific volume mount. Fake-host lifecycle and role SQL tests pass; real Docker check pending
+- [~] MariaDB driver — versions 11.8/11.4/10.11, initial database and scoped application user, administrator login limited to localhost. Fake-host lifecycle tests pass; real Docker check pending
+- [~] Version picker, persistent named volume, CPU and memory limits — implemented; volume reuse checked with a fake host, actual persistence covered by `TestRealDatabaseInstances` (pending Docker access)
+- [~] Internal-only by default — no published host port; opt-in public port remains
+- [x] Start / stop / restart / remove with confirmation — start/restart wait for SQL readiness asynchronously, durable provisioning resumes after a panel restart; interrupted Stop is enforced on recovery. Remove gracefully stops and removes the container and record, retaining its named data volume. `TestProvisionLifecycleAndRecovery`, `TestProvisionFailureRetryAndBusy`, `TestDatabaseAPI`
+- [x] Connection strings; inject into an app as env vars — `${db.<instance-name>.URL}` (also HOST, PORT, DATABASE, USERNAME, PASSWORD), restricted to the app's project, resolved before the deployment starts. The database layer exposes generic URI and individual field references; apps compose any client-specific URL format themselves. Generated administrator/application passwords are stored encrypted; only the application connection can be revealed, through a browser session and a no-store response. Unknown/stopped references fail deployment. `TestDatabasePersistence`, `TestDatabaseReferences`, `TestConnectionFormats`, `TestDatabaseAPI`, `TestDeployDatabaseEnvironment`
 
 ### Databases and users
-- [ ] Create / drop databases
-- [ ] Create / drop users, grants, password rotation
-- [ ] Mirror tables kept in sync with the instance
+- [~] Create / drop databases — creation implemented for PostgreSQL and MariaDB; drop remains. Names validated and quoted, operation tracked globally, metadata recorded after SQL succeeds
+- [~] Create / drop users, grants, password rotation — creation and per-database No access / Read only / Read & write / Full access implemented. Generated user passwords and operation payloads encrypted; session-only credential reveal. PostgreSQL existing/future public-schema table and sequence grants, owner downgrade guard, protected initial access; MariaDB grants scoped to the database with wildcard escaping. SQL errors do not falsely fail the running instance. Drop/rotation remain. `TestManageDatabasesUsersAndGrants`, `TestPostgresPermissionSQL`, `TestMariaDBPermissionSQL`, `TestFailedPermissionDoesNotReportSuccess`, `TestDatabaseAPI`; real permission tests included in `TestRealDatabaseInstances`, skipped here (Docker socket denied)
+- [~] Mirror tables kept in sync with panel operations — original resources seeded for existing instances, new rows/grants saved after successful SQL. External SQL users/databases/grants are not discovered or reconciled yet
 
 ### Storage connection (`internal/storage`)
 - [x] S3 client — `internal/storage` (minio-go): path-style or virtual-host, HTTPS or not, S3 errors in plain words
@@ -301,8 +303,10 @@ Goal: managed Postgres and MariaDB with scheduled S3 backups and restore.
 - [ ] Backup status, size, and failure reason
 
 ### UI
-- [ ] Database instances list and create flow
-- [ ] Instance page: overview, databases, users, backups, logs, settings
+- [x] Database instances list and create flow — Databases navigation, project/engine/version/initial database/application user and resource limits in a side sheet; English, French, Arabic and Spanish. Typecheck and production build pass; PostgreSQL 18 creation, Running state and completion toast verified in the browser (2026-11-15)
+- [x] Project Databases tab — scoped instance count/list with engine/version, observed status and panel-managed database names, management links and creation bound to the current project. Authenticated `GET /api/projects/{id}/databases`; project isolation, empty list and additional database names covered by `TestDatabaseAPI`. Populated/empty projects and project-bound creation form verified in the browser (2026-11-15)
+- [x] Change an instance's project in Settings — authenticated PATCH, atomic metadata move, duplicate-name and active-operation guards; preserves data/users/credentials/container/volume and refreshes project lists. Save toasts and reference-impact explanation in four languages. `TestDatabaseAPI`, `TestDatabaseReferences`, race checks, typecheck/build pass; project selector verified in the browser (2026-11-15)
+- [~] Instance page — overview, Databases & users (create forms, per-user grant editor and credential reveal), connection references, recent logs (200 lines, polling), settings/removal and lifecycle controls. Databases & users tab, creation form and protected initial permission editor checked in browser (2026-11-15). Backups follow their backend feature; live additional-user/grant SQL verification pending
 - [x] S3 connections settings — Settings → Storage
 - [ ] Backup policy editor and restore dialog
 

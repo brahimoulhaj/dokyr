@@ -12,6 +12,7 @@ export type ComboOption = {
   label: string
   /** Shown muted after the label, e.g. "public". */
   note?: string
+  noteTone?: 'accent' | 'muted' | 'warn' | 'danger'
 }
 
 function ChevronIcon() {
@@ -44,6 +45,78 @@ type ComboFieldProps = {
   hint?: ReactNode
   required?: boolean
   disabled?: boolean
+}
+
+type CompactComboProps = {
+  label: string
+  options: ComboOption[]
+  value: string
+  onChange: (value: string) => void
+  searchPlaceholder?: string
+  empty?: string
+}
+
+/** ReUI popup combobox sized for compact navigation controls. */
+export function CompactCombo(props: CompactComboProps) {
+  const t = useT()
+  const selected = props.options.find((option) => option.value === props.value) ?? null
+
+  return (
+    <Primitive.Root
+      items={props.options}
+      value={selected}
+      onValueChange={(option: ComboOption | null) => option && props.onChange(option.value)}
+      itemToStringLabel={(option: ComboOption) => option.label}
+      itemToStringValue={(option: ComboOption) => option.value}
+      isItemEqualToValue={(a: ComboOption, b: ComboOption) => a.value === b.value}
+      autoHighlight
+    >
+      <Primitive.Trigger
+        aria-label={props.label}
+        className={cx(
+          'flex h-6 min-w-0 max-w-44 items-center gap-1 border border-transparent bg-transparent px-1 text-xs text-fg',
+          'hover:border-line focus:border-accent focus:outline-none data-[popup-open]:border-accent',
+        )}
+      >
+        <span className="min-w-0 truncate">{selected?.label ?? props.label}</span>
+        <ChevronIcon />
+      </Primitive.Trigger>
+      <Primitive.Portal>
+        <Primitive.Positioner side="bottom" align="start" sideOffset={4} className="isolate z-50">
+          <Primitive.Popup className="flex max-h-[min(22rem,var(--available-height))] min-w-44 w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) flex-col border border-line-strong bg-surface text-fg shadow-lg shadow-black/30 outline-none transition-[opacity,scale] duration-100 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
+            <Primitive.Input
+              placeholder={props.searchPlaceholder ?? t.common.search}
+              className="h-8 w-full shrink-0 border-b border-line bg-bg px-2.5 text-xs text-fg placeholder:text-muted/60 focus:outline-none"
+            />
+            <Primitive.Empty className="px-2.5 py-2 text-xs text-muted empty:hidden">{props.empty ?? t.common.nothingMatches}</Primitive.Empty>
+            <Primitive.List className="min-h-0 flex-1 scroll-py-1 overflow-y-auto overscroll-contain py-1 data-[empty]:hidden">
+              {(option: ComboOption) => (
+                <Primitive.Item
+                  key={option.value}
+                  value={option}
+                  className="relative flex w-full cursor-default items-center gap-2 py-1.5 ps-2.5 pe-8 text-xs outline-none select-none data-[highlighted]:bg-raised data-[selected]:text-accent"
+                >
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  {option.note && (
+                    <span className={cx(
+                      'shrink-0 text-[11px]',
+                      (!option.noteTone || option.noteTone === 'muted') && 'text-muted',
+                      option.noteTone === 'accent' && 'text-accent',
+                      option.noteTone === 'warn' && 'text-warn',
+                      option.noteTone === 'danger' && 'text-danger',
+                    )}>{option.note}</span>
+                  )}
+                  <Primitive.ItemIndicator className="pointer-events-none absolute end-2 flex size-4 items-center justify-center text-accent">
+                    <CheckIcon />
+                  </Primitive.ItemIndicator>
+                </Primitive.Item>
+              )}
+            </Primitive.List>
+          </Primitive.Popup>
+        </Primitive.Positioner>
+      </Primitive.Portal>
+    </Primitive.Root>
+  )
 }
 
 /** A labelled, searchable dropdown that looks like Field. */

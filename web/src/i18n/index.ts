@@ -28,10 +28,12 @@ import * as onboarding from './onboarding'
 import * as terminal from './terminal'
 import * as metrics from './metrics'
 import * as dockerMetrics from './dockerMetrics'
+import * as databases from './databases'
 
 type Code = 'en' | 'fr' | 'ar' | 'es'
 
 const pick = (l: Code) => ({
+  databases: databases[l] as typeof databases.en,
   dockerMetrics: dockerMetrics[l] as typeof dockerMetrics.en,
   metrics: metrics[l] as typeof metrics.en,
   terminal: terminal[l] as typeof terminal.en,

@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Badge, cx, Empty, PageHeader, Panel, QueryState } from '../components/ui'
-import { activeDeploymentsQuery, eventsQuery, meQuery, metaQuery, projectsQuery, type ActiveDeployment } from '../lib/api'
+import { activeDeploymentsQuery, appProblemsQuery, eventsQuery, meQuery, metaQuery, projectsQuery, type ActiveDeployment } from '../lib/api'
 import { deploymentVersion, duration, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { EventList } from './activity'
@@ -21,6 +21,7 @@ export function OverviewPage() {
       <PageHeader title={t.overview.title} subtitle={t.overview.signedInAs(me?.email ?? '')} />
 
       <ActiveDeployments />
+      <AppProblems />
       <HostMetrics />
       <DockerMetrics />
 
@@ -73,6 +74,24 @@ export function OverviewPage() {
       </Panel>
     </div>
   )
+}
+
+/** Runtime alerts disappear on the next poll after recovery or an intentional stop. */
+function AppProblems() {
+  const t = useT()
+  const q = useQuery(appProblemsQuery)
+  if (q.error) return <p role="status" className="border border-warn/60 bg-warn/10 px-4 py-3 text-sm text-warn">{t.overview.appStatusUnavailable}</p>
+  if (!q.data?.length) return null
+  return <section aria-label={t.overview.appProblems} aria-live="polite" className="space-y-2">
+    {q.data.map((app) => <div key={app.app_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border border-danger/60 bg-danger/10 px-4 py-3">
+      <span aria-hidden className="flex size-5 shrink-0 items-center justify-center text-danger">!</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm break-words">{app.runtime_state === 'restarting' ? t.overview.crashingApp(app.app_name) : app.runtime_state === 'missing' ? t.overview.missingApp(app.app_name) : t.overview.downApp(app.app_name)}</p>
+        <p className="text-xs text-muted">{app.project_name}</p>
+      </div>
+      <Link to="/projects/$projectId/apps/$appId" params={{ projectId: app.project_id, appId: app.app_id }} search={{ tab: 'logs' }} className="inline-flex h-8 items-center border border-danger/60 px-3 text-sm text-danger hover:bg-danger hover:text-bg">{t.overview.viewLogs}</Link>
+    </div>)}
+  </section>
 }
 
 /**

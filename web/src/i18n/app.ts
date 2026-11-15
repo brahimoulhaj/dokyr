@@ -16,7 +16,7 @@ export const en = {
   mountAdd: "Add mount",
 
   environment: "Environment variables",
-  environmentHint: "Runtime variables apply on the next deployment. Use a project variable with ${project.NAME} in a value.",
+  environmentHint: "Runtime variables apply on the next deployment. Use ${project.NAME} for a project variable or ${db.main.URL} for a database connection.",
   environmentFields: "Individual fields",
   environmentBulk: "Bulk editor",
   environmentFormat: "One KEY=value per line. Blank lines and # comments are ignored. Double-quoted values use JSON escapes. No variable expansion.",
@@ -185,7 +185,7 @@ export const fr: typeof en = {
   mountAdd: "Ajouter un montage",
 
   environment: "Variables d’environnement",
-  environmentHint: "Les variables sont appliquées au prochain déploiement. Utilisez une variable du projet avec ${project.NOM} dans une valeur.",
+  environmentHint: "Les variables sont appliquées au prochain déploiement. Utilisez ${project.NAME} pour une variable du projet ou ${db.main.URL} pour une connexion à une base de données.",
   environmentFields: "Champs individuels",
   environmentBulk: "Éditeur en bloc",
   environmentFormat: "Une entrée CLÉ=valeur par ligne. Lignes vides et commentaires # ignorés. Les guillemets doubles utilisent les échappements JSON. Aucune interpolation.",
@@ -356,7 +356,7 @@ export const ar: typeof en = {
   mountAdd: "إضافة ربط",
 
   environment: "متغيرات البيئة",
-  environmentHint: "تُطبّق المتغيرات عند النشر التالي. استخدم متغير المشروع بكتابة ${project.NAME} في قيمة.",
+  environmentHint: "تُطبّق المتغيرات عند النشر التالي. استخدم ${project.NAME} لمتغير مشروع أو ${db.main.URL} لاتصال قاعدة بيانات.",
   environmentFields: "حقول منفردة",
   environmentBulk: "محرر جماعي",
   environmentFormat: "متغير KEY=value في كل سطر. تُتجاهل الأسطر الفارغة وتعليقات #. القيم بين علامتي اقتباس تستخدم صيغة JSON. لا يتم توسيع المتغيرات.",
@@ -525,7 +525,7 @@ export const es: typeof en = {
   mountAdd: "Añadir montaje",
 
   environment: "Variables de entorno",
-  environmentHint: "Las variables se aplican en el próximo despliegue. Usa una variable del proyecto con ${project.NOMBRE} en un valor.",
+  environmentHint: "Las variables se aplican en el próximo despliegue. Usa ${project.NAME} para una variable del proyecto o ${db.main.URL} para una conexión a una base de datos.",
   environmentFields: "Campos individuales",
   environmentBulk: "Editor en bloque",
   environmentFormat: "Una entrada CLAVE=valor por línea. Se ignoran líneas vacías y comentarios #. Las comillas dobles usan escapes JSON. Sin expansión de variables.",

@@ -25,6 +25,7 @@ import (
 	"panel/internal/brand"
 	"panel/internal/builder"
 	"panel/internal/config"
+	"panel/internal/database"
 	"panel/internal/deploy"
 	"panel/internal/dockermetrics"
 	"panel/internal/executor"
@@ -272,6 +273,11 @@ func serve(ctx context.Context, cfg config.Config) error {
 	}
 
 	apiSrv := api.New(st, acc, log, version, webui.FS())
+	databases := database.New(ctx, st, ex)
+	if err := databases.Recover(ctx); err != nil {
+		return err
+	}
+	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetRegistryChecker(ex)
 	metrics := hostmetrics.New(hostmetrics.Options{DataDir: cfg.DataDir, ProcRoot: os.Getenv(brand.EnvPrefix() + "HOST_PROC")})
@@ -319,6 +325,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	deployer.Wait() // ctx is cancelled: running deployments fail fast and record it
+	databases.Wait()
 	return err
 }
 
@@ -340,6 +347,10 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 		if kind == executor.KindApp {
 			ok, err := st.AppExists(ctx, id)
 			return ok && err == nil
+		}
+		if kind == executor.KindDatabase {
+			_, err := st.GetDBInstance(ctx, id)
+			return err == nil
 		}
 		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id)
 	})

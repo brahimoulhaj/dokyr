@@ -12,6 +12,7 @@ import (
 
 	"panel/internal/account"
 	"panel/internal/brand"
+	"panel/internal/database"
 	"panel/internal/gitsource"
 	"panel/internal/storage"
 	"panel/internal/store"
@@ -35,6 +36,7 @@ type Server struct {
 	registryCheck RegistryChecker
 	s3Test        S3Tester
 	registry      BuiltinRegistry
+	databases     *database.Service
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
 	stop     chan struct{} // closed when the server shuts down; ends open streams
@@ -125,6 +127,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/s3-connections/{id}", s.requireAuth(s.handleDeleteS3))
 
 	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
+	mux.HandleFunc("GET /api/database-engines", s.requireAuth(s.handleDatabaseEngines))
+	mux.HandleFunc("GET /api/database-operations/active", s.requireAuth(s.handleActiveDatabaseOperations))
+	mux.HandleFunc("GET /api/database-operations/{id}", s.requireAuth(s.handleGetDatabaseOperation))
+	mux.HandleFunc("GET /api/databases", s.requireAuth(s.handleListDatabases))
+	mux.HandleFunc("POST /api/databases", s.requireAuth(s.handleCreateDatabase))
+	mux.HandleFunc("GET /api/databases/{id}", s.requireAuth(s.handleGetDatabase))
+	mux.HandleFunc("PATCH /api/databases/{id}", s.requireAuth(s.handleUpdateDatabase))
+	mux.HandleFunc("GET /api/databases/{id}/connection", s.requireAuth(sessionOnly(s.handleDatabaseConnection)))
+	mux.HandleFunc("GET /api/databases/{id}/logs", s.requireAuth(s.handleDatabaseLogs))
+	mux.HandleFunc("GET /api/databases/{id}/catalog", s.requireAuth(s.handleDatabaseCatalog))
+	mux.HandleFunc("POST /api/databases/{id}/databases", s.requireAuth(sessionOnly(s.handleDatabaseManage("database_create"))))
+	mux.HandleFunc("POST /api/databases/{id}/users", s.requireAuth(sessionOnly(s.handleDatabaseManage("user_create"))))
+	mux.HandleFunc("PUT /api/databases/{id}/grants", s.requireAuth(sessionOnly(s.handleDatabaseManage("grant_update"))))
+	mux.HandleFunc("GET /api/databases/{id}/users/{user}/connection", s.requireAuth(sessionOnly(s.handleDatabaseUserConnection)))
+	mux.HandleFunc("POST /api/databases/{id}/{action}", s.requireAuth(s.handleDatabaseAction))
+	mux.HandleFunc("DELETE /api/databases/{id}", s.requireAuth(s.handleDeleteDatabase))
 	mux.HandleFunc("POST /api/projects", s.requireAuth(s.handleCreateProject))
 	mux.HandleFunc("GET /api/projects/{id}", s.requireAuth(s.handleGetProject))
 	mux.HandleFunc("PATCH /api/projects/{id}", s.requireAuth(s.handleUpdateProject))
@@ -132,9 +150,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}/environment", s.requireAuth(s.handleGetProjectEnv))
 	mux.HandleFunc("PUT /api/projects/{id}/environment", s.requireAuth(s.handlePutProjectEnv))
 	mux.HandleFunc("GET /api/projects/{id}/apps", s.requireAuth(s.handleListApps))
+	mux.HandleFunc("GET /api/projects/{id}/databases", s.requireAuth(s.handleProjectDatabases))
 	mux.HandleFunc("POST /api/projects/{id}/apps", s.requireAuth(s.handleCreateApp))
 
 	mux.HandleFunc("GET /api/apps/{id}", s.requireAuth(s.handleGetApp))
+	mux.HandleFunc("GET /api/apps/problems", s.requireAuth(s.handleAppProblems))
 	mux.HandleFunc("PATCH /api/apps/{id}", s.requireAuth(s.handleUpdateApp))
 	mux.HandleFunc("DELETE /api/apps/{id}", s.requireAuth(s.handleDeleteApp))
 	mux.HandleFunc("POST /api/apps/{id}/deploy", s.requireAuth(s.handleDeploy))

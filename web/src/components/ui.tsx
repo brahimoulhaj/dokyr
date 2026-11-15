@@ -112,7 +112,7 @@ export function PageHeader(props: { title: ReactNode; crumbs?: ReactNode; subtit
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div className="min-w-0">
-        {props.crumbs && <p className="mb-1 text-xs text-muted">{props.crumbs}</p>}
+        {props.crumbs && <div className="mb-1 text-xs text-muted">{props.crumbs}</div>}
         <h1 className="flex flex-wrap items-center gap-3 font-pixel text-base [overflow-wrap:anywhere] uppercase">{props.title}</h1>
         {props.subtitle && <p className="mt-1 text-sm text-muted">{props.subtitle}</p>}
       </div>
@@ -176,7 +176,7 @@ export function ConfirmButton(props: {
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <Button variant={ghost ? 'primary' : 'danger'} type="button" disabled={props.pending} onClick={props.onConfirm}>
+      <Button variant={ghost ? 'primary' : 'danger'} type="button" disabled={props.disabled || props.pending} onClick={props.onConfirm}>
         {props.pending ? t.common.working : props.confirm}
       </Button>
       <Button variant="ghost" type="button" disabled={props.pending} onClick={() => setArmed(false)}>

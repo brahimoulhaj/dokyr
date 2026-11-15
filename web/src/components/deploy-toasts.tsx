@@ -10,6 +10,8 @@ import { useT } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
 import { takeUpdated } from '../lib/toasts'
 import { Button } from './ui'
+import type { DatabaseOperation } from '../lib/databases'
+import { databaseOperationActive } from '../lib/database-operations'
 
 // ding's built-in tones: success rises, error falls, info is one note; loading stays silent.
 // Browsers hold audio until the first click or key press on the page.
@@ -27,7 +29,7 @@ const endedMs: Partial<Record<Deployment['status'], number>> = { succeeded: 8_00
  * failure when its deployment ends and the others stay where they are. It follows the same
  * list the overview alert polls, so an end is noticed within one poll.
  */
-export function DeployToasts() {
+export function DeployToasts({ databaseOperations, onDismissDatabase }: { databaseOperations: DatabaseOperation[]; onDismissDatabase: (id: string) => void }) {
   const t = useT()
   const theme = useTheme()
   const navigate = useNavigate()
@@ -77,6 +79,12 @@ export function DeployToasts() {
         onView={view}
         onDismiss={dismiss}
         onCancel={(d, anchor) => setConfirm({ d, anchor })}
+        databaseOperations={databaseOperations}
+        onDismissDatabase={onDismissDatabase}
+        onViewDatabase={(op) => {
+          if (op.action === 'delete') navigate({ to: '/databases' })
+          else navigate({ to: '/databases/$databaseId', params: { databaseId: op.instance_id }, search: { tab: ['database_create', 'user_create', 'grant_update'].includes(op.action) ? 'access' : 'logs' } })
+        }}
       />
       <Toaster position="bottom-center" theme={theme.mode === 'dark' ? 'light' : 'dark'} labels={{ region: t.overview.toasts, dismiss: t.overview.dismiss }} />
       <CancelConfirm target={confirm} onClose={() => setConfirm(null)} />
@@ -95,18 +103,25 @@ function DeployStack({
   onView,
   onDismiss,
   onCancel,
+  databaseOperations,
+  onDismissDatabase,
+  onViewDatabase,
 }: {
   active: ActiveDeployment[]
   ended: Ended[]
   onView: (d: ActiveDeployment) => void
   onDismiss: (id: string) => void
   onCancel: (d: ActiveDeployment, anchor: Element | null) => void
+  databaseOperations: DatabaseOperation[]
+  onDismissDatabase: (id: string) => void
+  onViewDatabase: (op: DatabaseOperation) => void
 }) {
   const t = useT()
   const cards = [
-    ...active.map((d) => ({ d, end: null as Deployment | null })),
-    ...ended.filter((e) => !active.some((d) => d.id === e.d.id)).map((e) => ({ d: e.d, end: e.done })),
-  ].sort((a, b) => a.d.created_at.localeCompare(b.d.created_at))
+    ...active.map((d) => ({ kind: 'deployment' as const, d, end: null as Deployment | null })),
+    ...ended.filter((e) => !active.some((d) => d.id === e.d.id)).map((e) => ({ kind: 'deployment' as const, d: e.d, end: e.done })),
+    ...databaseOperations.map((op) => ({ kind: 'database' as const, op })),
+  ].sort((a, b) => (a.kind === 'database' ? a.op.created_at : a.d.created_at).localeCompare(b.kind === 'database' ? b.op.created_at : b.d.created_at))
   if (cards.length === 0) return null
   // The queue runs in the order of the list; the running ones are not in line.
   let place = 0
@@ -116,7 +131,9 @@ function DeployStack({
       aria-live="polite"
       className="pointer-events-none fixed bottom-4 left-1/2 z-40 flex w-[26rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2 transition-[bottom] duration-200 [body:has(.tst-slot)_&]:bottom-24"
     >
-      {cards.map(({ d, end }) => {
+      {cards.map((card) => {
+        if (card.kind === 'database') return <DatabaseOperationCard key={card.op.id} op={card.op} onView={onViewDatabase} onDismiss={onDismissDatabase} />
+        const { d, end } = card
         const running = !end && d.status === 'running'
         const version = deploymentVersion(d).replace(/^—$/, '')
         const n = !end && !running ? ++place : 0
@@ -181,6 +198,22 @@ function DeployStack({
       })}
     </ol>
   )
+}
+
+function DatabaseOperationCard({ op, onView, onDismiss }: { op: DatabaseOperation; onView: (op: DatabaseOperation) => void; onDismiss: (id: string) => void }) {
+  const t = useT()
+  const pending = databaseOperationActive(op)
+  const title = pending ? t.databases.operationRunning[op.action](op.instance_name)
+    : op.status === 'succeeded' ? t.databases.operationSucceeded[op.action](op.instance_name) : `${t.databases.operationFailed} · ${op.instance_name}`
+  const sub = op.status === 'failed' ? op.error : [op.detail, `${op.engine === 'postgres' ? 'PostgreSQL' : 'MariaDB'} ${op.version}`, duration(op.started_at ?? op.created_at, op.finished_at)].filter(Boolean).join(' · ')
+  return <li className="pointer-events-auto flex animate-[stack-in_220ms_cubic-bezier(.2,.8,.3,1)] items-center gap-3 bg-fg py-2.5 ps-4 pe-2.5 text-bg shadow-lg shadow-black/40 motion-reduce:animate-none">
+    <span aria-hidden className="flex size-5 shrink-0 items-center justify-center">{pending
+      ? <span className="size-4 animate-spin rounded-full border-2 border-bg/25 border-t-bg motion-reduce:animate-none" />
+      : <EndIcon status={op.status === 'succeeded' ? 'succeeded' : 'failed'} />}</span>
+    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="line-clamp-2 break-words text-xs text-bg/60">{sub}</span></span>
+    <button type="button" onClick={() => onView(op)} className="shrink-0 bg-bg px-3 py-1 text-xs font-medium text-fg hover:opacity-85">{op.action === 'delete' ? t.databases.title : t.databases.viewInstance}</button>
+    {!pending && <button type="button" onClick={() => onDismiss(op.id)} aria-label={t.overview.dismiss} title={t.overview.dismiss} className="flex size-6 shrink-0 items-center justify-center text-bg/60 hover:bg-bg/10 hover:text-bg">×</button>}
+  </li>
 }
 
 function EndIcon({ status }: { status: Deployment['status'] }) {

@@ -102,10 +102,11 @@ func (s *Store) UpdateProject(ctx context.Context, projectID, name, description 
 	return s.GetProject(ctx, projectID)
 }
 
-// DeleteProject refuses with ErrConflict while the project still has apps.
+// DeleteProject refuses with ErrConflict while the project still has workloads.
 func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 	err := affected(s.db.ExecContext(ctx,
-		`DELETE FROM projects WHERE id = ? AND NOT EXISTS (SELECT 1 FROM apps WHERE project_id = ?)`, projectID, projectID))
+		`DELETE FROM projects WHERE id = ? AND NOT EXISTS (SELECT 1 FROM apps WHERE project_id = ?)
+        AND NOT EXISTS (SELECT 1 FROM db_instances WHERE project_id = ?)`, projectID, projectID, projectID))
 	if errors.Is(err, ErrNotFound) {
 		if _, getErr := s.GetProject(ctx, projectID); getErr == nil {
 			return ErrConflict // it exists, so it was the apps that stopped the delete

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"panel/internal/builder"
+	"panel/internal/database"
 	"panel/internal/executor"
 	"panel/internal/store"
 )
@@ -1013,7 +1014,11 @@ func (s *Service) environment(ctx context.Context, app store.App, logw *logWrite
 	if inherit && len(project) > 0 {
 		logw.printf("Inheriting %d project variables (the app's own values win)", len(project))
 	}
-	return resolveEnvironment(app.Environment, project, inherit)
+	env, err := resolveEnvironment(app.Environment, project, inherit)
+	if err != nil {
+		return nil, err
+	}
+	return database.ResolveEnvironment(ctx, s.opts.Store, app.ProjectID, env)
 }
 
 // containerEnv is the app's environment, plus PORT set to port (the deployment's) for a

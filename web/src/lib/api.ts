@@ -127,6 +127,13 @@ export type Project = {
   updated_at: string
 }
 
+export type AppProblem = { app_id: string; app_name: string; project_id: string; project_name: string; runtime_state: string }
+export const appProblemsQuery = {
+  queryKey: ['apps', 'problems'] as const,
+  queryFn: () => api<AppProblem[]>('/apps/problems'),
+  refetchInterval: 5_000,
+}
+
 export type AppMount = { type: 'bind' | 'volume' | 'file'; source: string; target: string; read_only: boolean; content: string }
 
 export type App = {
@@ -163,7 +170,7 @@ export type App = {
   memory_limit_mb: number
   desired_state: 'running' | 'stopped'
   current_deployment_id: string
-  /** What the container is doing right now; only on single-app responses. */
+  /** What the container is doing right now, when the runtime is available. */
   runtime_state?: string
   created_at: string
   updated_at: string

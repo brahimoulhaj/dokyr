@@ -30,6 +30,7 @@ import { SourceFields, sourceChanged, sourceForm, sourceInput } from '../compone
 import { rich, useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, duration, repoName, timeAgo, type Tone } from '../lib/format'
+import { ContextBreadcrumb } from '../components/context-breadcrumb'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
 export const appTabs = ['overview', 'deployments', 'logs', 'terminal', 'settings'] as const
@@ -92,16 +93,12 @@ export function AppPage() {
     onSuccess: (a) => queryClient.setQueryData(appQuery(appId).queryKey, a),
   })
 
-  const crumbs = (
-    <Link to="/projects/$projectId" params={{ projectId }} className="hover:text-fg">
-      {t.app.back(project.data?.name ?? t.app.project)}
-    </Link>
-  )
+  const crumbs = <ContextBreadcrumb projectId={projectId} projectName={project.data?.name} appId={appId} appName={app.data?.name} appTab={tab} />
 
   if (!app.data) {
     return (
       <div className="space-y-4">
-        <p className="text-xs text-muted">{crumbs}</p>
+        {crumbs}
         <QueryState loading={app.isPending} error={app.error} what={t.app.whatApp} />
       </div>
     )
