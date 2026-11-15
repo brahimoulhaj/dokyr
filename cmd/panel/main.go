@@ -280,6 +280,9 @@ func serve(ctx context.Context, cfg config.Config) error {
 	if err := databases.Recover(ctx); err != nil {
 		return err
 	}
+	schedulerCtx, stopBackupScheduler := context.WithCancel(ctx)
+	defer stopBackupScheduler()
+	databases.StartBackupScheduler(schedulerCtx)
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetRegistryChecker(ex)
@@ -328,6 +331,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	deployer.Wait() // ctx is cancelled: running deployments fail fast and record it
+	stopBackupScheduler()
 	databases.Wait()
 	return err
 }

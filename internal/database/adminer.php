@@ -18,12 +18,12 @@ $_GET[$panelDriver] = $panelConnection['server'];
 $_GET['username'] = $panelConnection['username'];
 if (!isset($_GET['db'])) $_GET['db'] = $panelConnection['database'];
 unset($_POST['auth']);
-// Scope PHP sessions to each database instance. Never forward
-// the panel's own session cookie to PHP or place database passwords in the browser.
+// Configure cookies before loading Adminer, but let its bootstrap open its own
+// adminer_sid session. Starting one here prevents Adminer from configuring PHP's
+// session settings and can send warning output before its response headers.
 ini_set('session.use_strict_mode', '1');
-session_name('panel_adminer');
-session_set_cookie_params(['path' => $_SERVER['HTTP_X_PANEL_PATH'], 'httponly' => true, 'samesite' => 'Strict', 'secure' => ($_SERVER['HTTP_X_PANEL_HTTPS'] ?? '') === '1']);
-session_start();
+ini_set('session.cookie_samesite', 'Strict');
+ini_set('session.cookie_secure', ($_SERVER['HTTP_X_PANEL_HTTPS'] ?? '') === '1' ? '1' : '0');
 $_SERVER['PHP_SELF'] = $_SERVER['HTTP_X_PANEL_PATH'];
 $_SERVER['SCRIPT_NAME'] = $_SERVER['HTTP_X_PANEL_PATH'];
 $_SERVER['REQUEST_URI'] = $_SERVER['HTTP_X_PANEL_PATH'] . (empty($_SERVER['QUERY_STRING']) ? '' : '?' . $_SERVER['QUERY_STRING']);
@@ -36,9 +36,16 @@ function adminer_object() {
         function login($login, $password) { return true; }
         function permanentLogin($create = false) { return ''; }
     }
-    // Seed the session on every request; SQL form CSRF tokens still use Adminer's session.
-    if (session_status() !== PHP_SESSION_ACTIVE) session_start();
-    Adminer\set_password($GLOBALS['panelDriver'], $GLOBALS['panelConnection']['server'], $GLOBALS['panelConnection']['username'], 'panel-session');
+    // Adminer calls this hook after opening its session. Seed automatic login
+    // once, retaining its CSRF token and session ID on subsequent SQL requests.
+    $driver = $GLOBALS['panelDriver'];
+    $server = $GLOBALS['panelConnection']['server'];
+    $user = $GLOBALS['panelConnection']['username'];
+    if (($_SESSION['pwds'][$driver][$server][$user] ?? null) === null) {
+        session_regenerate_id(true);
+        Adminer\set_password($driver, $server, $user, 'panel-session');
+        $_SESSION['db'][$driver][$server][$user][(string) $_GET['db']] = true;
+    }
     return new PanelAdminer;
 }
 require '/var/www/html/adminer.php';

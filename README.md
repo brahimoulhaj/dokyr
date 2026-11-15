@@ -176,6 +176,33 @@ the backend. The gateway has no public port when the panel runs in Docker;
 native development publishes it only on `127.0.0.1:18081`, behind a random
 internal gateway key. API tokens cannot open Adminer.
 
+The instance **Backups** tab creates manual, per-database gzip SQL dumps in an
+existing S3 connection and lists status, compressed size and failures. Restore
+creates a **new database in the same instance** and grants its initial application
+user access; it never overwrites an existing database. PostgreSQL dumps omit
+ownership and ACLs; database users, passwords and their grants are not backed up.
+MariaDB uses a single-transaction dump (transactional tables should use InnoDB;
+avoid schema changes during a backup). S3 connections with backup records cannot
+be removed. Daily and weekly backup schedules are configurable per database in the Backups
+tab, using an explicit UTC time and (for weekly schedules) day of week. Pause a
+schedule by clearing Enabled. Schedules survive panel restarts; one missed run is
+queued when the instance becomes available, then the next future slot is used.
+Busy or stopped instances keep their due slot for retry. The next slot and its
+backup job are saved atomically. A failed backup is shown on the policy and is
+retried at the next scheduled slot.
+
+Retention keeps the latest 1–365 successful backups belonging to that policy.
+After each successful scheduled backup, older successful copies are permanently
+removed from S3 before their backup rows are removed. Manual backups and failed
+backup rows are retained. Cleanup failures are shown separately from backup
+success and retried after the next successful scheduled backup. Paused policies
+are not pruned. S3 connections referenced by a policy cannot be removed. Arbitrary
+cron expressions, age-based retention and manual backup deletion are not available
+yet. Jobs have a ten-minute timeout. Restore verifies gzip integrity using a 0600
+temporary SQL file, limited to 20 GiB uncompressed, and removes it afterward;
+allow sufficient free temporary disk. Interrupted restores are marked failed and
+may leave a partial **new** database for inspection. Restore again under a new name.
+
 Each project's **Databases** tab lists only its own instances, with engine/version,
 current status and panel-managed database names. Open an instance to manage its databases,
 users and permissions, or use **New instance** to create one in that project.

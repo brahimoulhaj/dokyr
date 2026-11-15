@@ -119,5 +119,12 @@ func (s *Store) DeleteS3Connection(ctx context.Context, connID string) error {
 	} else if v == connID {
 		return ErrConflict
 	}
+	var references int
+	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM db_backups WHERE s3_connection_id=?) + (SELECT COUNT(*) FROM backup_policies WHERE s3_connection_id=?)`, connID, connID).Scan(&references); err != nil {
+		return err
+	}
+	if references > 0 {
+		return ErrConflict
+	}
 	return affected(s.db.ExecContext(ctx, `DELETE FROM s3_connections WHERE id = ?`, connID))
 }

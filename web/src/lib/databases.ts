@@ -9,7 +9,7 @@ export type DatabaseInstance = {
 }
 export type DatabaseOperation = {
   id: string; instance_id: string; project_id: string; instance_name: string; engine: string; version: string
-  action: 'create' | 'start' | 'stop' | 'restart' | 'delete' | 'database_create' | 'user_create' | 'grant_update'
+  action: 'create' | 'start' | 'stop' | 'restart' | 'delete' | 'database_create' | 'user_create' | 'grant_update' | 'backup' | 'restore'
   detail: string
   status: 'queued' | 'running' | 'succeeded' | 'failed'; error: string
   started_at: string | null; finished_at: string | null; created_at: string; updated_at: string

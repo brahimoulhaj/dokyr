@@ -26,6 +26,10 @@ import (
 
 type databaseTestHost struct{ *executortest.Fake }
 
+func (h databaseTestHost) ExecStream(context.Context, string, executor.Command, io.Reader, io.Writer) error {
+	return nil
+}
+
 func (h databaseTestHost) Exec(context.Context, string, executor.Command) error { return nil }
 
 // Exercise the real router and auth middleware in memory, without opening a port.
@@ -164,6 +168,37 @@ func TestDatabaseAPI(t *testing.T) {
 	call("GET", path+"/adminer/", nil, "token", 403)
 	call("POST", path+"/adminer/", nil, "", 401)
 	call("GET", "/api/databases/missing/adminer/", nil, "session", 404)
+	call("GET", path+"/backup-policies", nil, "", 401)
+	call("PUT", path+"/backup-policies", map[string]any{}, "token", 403)
+	call("GET", path+"/backup-policies", nil, "session", 200)
+	scheduleStorage, err := st.CreateS3Connection(ctx, store.S3Input{S3Connection: store.S3Connection{Name: "schedule-store", Endpoint: "s3.example", Bucket: "backups"}, SecretKey: "schedule-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleInput := map[string]any{"database": "app", "s3_connection_id": scheduleStorage.ID, "enabled": true, "frequency": "daily", "hour": 2, "minute": 30, "weekday": 0, "keep_count": 7}
+	scheduleResponse := call("PUT", path+"/backup-policies", scheduleInput, "session", 200)
+	if strings.Contains(scheduleResponse.Body.String(), "schedule-secret") || !strings.Contains(scheduleResponse.Body.String(), "next_run_at") {
+		t.Fatal("unsafe policy response")
+	}
+	scheduleInput["keep_count"] = 0
+	call("PUT", path+"/backup-policies", scheduleInput, "session", 422)
+	scheduleInput["keep_count"] = 7
+	scheduleInput["frequency"] = "invalid"
+	call("PUT", path+"/backup-policies", scheduleInput, "session", 422)
+	scheduleInput["frequency"] = "weekly"
+	scheduleInput["enabled"] = false
+	call("PUT", path+"/backup-policies", scheduleInput, "session", 200)
+	policyList, err := st.BackupPolicies(ctx, d.ID)
+	if err != nil || len(policyList) != 1 || policyList[0].Enabled || policyList[0].Frequency != "weekly" {
+		t.Fatal("policy upsert did not preserve one policy per database", policyList, err)
+	}
+	call("GET", path+"/backups", nil, "", 401)
+	call("POST", path+"/backups", map[string]string{}, "token", 403)
+	call("POST", path+"/restore", map[string]string{}, "token", 403)
+	call("GET", path+"/backups", nil, "session", 200)
+	call("GET", "/api/databases/missing/backups", nil, "session", 404)
+	call("POST", path+"/backups", map[string]string{"database": "missing", "s3_connection_id": "missing"}, "session", 404)
+	call("POST", path+"/restore", map[string]string{"backup_id": "missing", "name": "restored"}, "session", 404)
 	call("GET", path+"/catalog", nil, "", 401)
 	call("POST", path+"/users", map[string]string{"name": "reader"}, "token", 403)
 	call("POST", path+"/databases", map[string]string{"name": "analytics"}, "session", 202)

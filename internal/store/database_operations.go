@@ -72,7 +72,7 @@ func (s *Store) CreateDBOperationPayload(ctx context.Context, d DBInstance, acti
 		return DBOperation{}, conflict(err)
 	}
 	desired, status := StateRunning, "provisioning"
-	if action == "database_create" || action == "user_create" || action == "grant_update" {
+	if action == "database_create" || action == "user_create" || action == "grant_update" || action == "backup" || action == "restore" {
 		desired, status = d.DesiredState, d.Status
 	}
 	if action == "stop" || action == "delete" || action == "restart" {

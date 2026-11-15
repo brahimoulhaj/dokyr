@@ -8,9 +8,10 @@ import { submitDatabaseOperation } from '../lib/database-operations'
 import { useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 import { DatabaseSelect, DatabaseStatus } from './databases'
+import { DatabaseBackups } from '../components/database-backups'
 import { DatabaseAccess } from '../components/database-access'
 
-export const databaseTabs = ['overview', 'access', 'connection', 'logs', 'settings'] as const
+export const databaseTabs = ['overview', 'access', 'connection', 'backups', 'logs', 'settings'] as const
 export type DatabaseTab = typeof databaseTabs[number]
 
 export function DatabasePage() {
@@ -48,7 +49,7 @@ export function DatabasePage() {
     {d && <>
       <nav aria-label={t.databases.title} className="flex gap-4 overflow-x-auto border-b border-line">
         {databaseTabs.map((key) => <Link key={key} to="/databases/$databaseId" params={{ databaseId }} search={{ tab: key }} aria-current={tab === key ? 'page' : undefined}
-          className={cx('border-b-2 px-1 py-2 text-sm whitespace-nowrap', tab === key ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-fg')}>{t.databases[key]}</Link>)}
+          className={cx('border-b-2 px-1 py-2 text-sm whitespace-nowrap', tab === key ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-fg')}>{key === 'backups' ? t.databases.backupsTab : t.databases[key]}</Link>)}
       </nav>
       {tab === 'overview' && <>
         <Panel title={t.databases.overview}><dl className="grid gap-x-6 gap-y-4 p-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
@@ -58,8 +59,9 @@ export function DatabasePage() {
           <Detail label={t.databases.cpu}>{d.cpu_limit || t.databases.unlimited}</Detail><Detail label={t.databases.memory}>{d.memory_mb || t.databases.unlimited}</Detail>
           <Detail label={t.databases.volume}>{d.volume}</Detail>
         </dl></Panel>
-        <p className="text-xs text-muted">{t.databases.privateHint}</p><p className="border border-warn/50 p-3 text-xs text-warn">{t.databases.backups}</p>
+        <p className="text-xs text-muted">{t.databases.privateHint}</p>
       </>}
+      {tab === 'backups' && <DatabaseBackups d={d} busy={!!busy} />}
       {tab === 'connection' && <Connection key={d.id} d={d} />}
       {tab === 'access' && <DatabaseAccess d={d} busy={busy} />}
       {tab === 'logs' && <DatabaseLogs id={d.id} />}

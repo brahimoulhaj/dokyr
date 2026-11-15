@@ -12,7 +12,7 @@ import (
 )
 
 func managementAction(action string) bool {
-	return action == "database_create" || action == "user_create" || action == "grant_update"
+	return action == "database_create" || action == "user_create" || action == "grant_update" || action == "backup" || action == "restore"
 }
 
 func validSQLName(name string) bool {

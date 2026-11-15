@@ -30,14 +30,16 @@ type Host interface {
 }
 
 type Service struct {
-	ctx        context.Context
-	st         *store.Store
-	ex         Host
-	mu         sync.Mutex
-	busy       map[string]bool
-	wg         sync.WaitGroup
-	adminerMu  sync.Mutex
-	adminerKey string
+	ctx           context.Context
+	st            *store.Store
+	ex            Host
+	mu            sync.Mutex
+	busy          map[string]bool
+	wg            sync.WaitGroup
+	adminerMu     sync.Mutex
+	schedulerOnce sync.Once
+	adminerKey    string
+	BackupTarget  func(store.S3Input) (BackupObjects, error)
 	// AdminerPort publishes only on loopback when the panel runs outside Docker.
 	AdminerPort int
 	// Shorter intervals are useful for tests; production waits for SQL readiness.
@@ -192,6 +194,8 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 			break
 		}
 		err = s.deleteInstance(ctx, op.InstanceID)
+	case "backup", "restore":
+		err = s.backupOperation(ctx, op)
 	case "database_create", "user_create", "grant_update":
 		err = s.manageOperation(ctx, op)
 	}
@@ -217,6 +221,11 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 	}
 	if finishErr := s.st.FinishDBOperation(save, op.ID, reason); finishErr != nil {
 		return finishErr
+	}
+	if op.Action == "backup" {
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		s.finishPolicyBackup(cleanup, op, err)
 	}
 	return err
 }
@@ -297,6 +306,12 @@ func (s *Service) Recover(ctx context.Context) error {
 	}
 	pending := map[string]bool{}
 	for _, op := range ops {
+		if op.Action == "restore" && op.Status == "running" {
+			if err := s.st.FinishDBOperation(ctx, op.ID, "Restore was interrupted. Its new database may contain partial data; inspect it and restore again using a different name."); err != nil {
+				return err
+			}
+			continue
+		}
 		pending[op.InstanceID] = true
 		if s.acquire(op.InstanceID) {
 			s.launch(op)

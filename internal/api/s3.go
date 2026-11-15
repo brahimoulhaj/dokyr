@@ -149,7 +149,7 @@ func (s *Server) handleDeleteS3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = s.store.DeleteS3Connection(r.Context(), c.ID)
-	if s.storeError(w, "delete s3 connection", err, "the built-in registry stores its images in this connection; change its storage first") {
+	if s.storeError(w, "delete s3 connection", err, "this connection is used by the registry, backup schedules or saved database backups") {
 		return
 	}
 	s.audit(r, "s3.remove", "s3", c.ID, c.Name, c.Bucket+"@"+c.Endpoint)
