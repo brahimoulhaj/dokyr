@@ -242,13 +242,17 @@ func (s *Service) Token(ctx context.Context, user, password, service string, sco
 		}
 	}
 	var grant []Access
-	for _, sc := range scopes {
-		a, ok := ParseScope(sc)
-		if !ok {
-			continue
-		}
-		if acts := allowed(a); len(acts) > 0 {
-			grant = append(grant, Access{Type: a.Type, Name: a.Name, Actions: acts})
+	for _, field := range scopes {
+		// containerd's OAuth2 POST (Docker Desktop's image store) sends every scope in one
+		// space-separated field; docker's GET sends one scope parameter each.
+		for _, sc := range strings.Fields(field) {
+			a, ok := ParseScope(sc)
+			if !ok {
+				continue
+			}
+			if acts := allowed(a); len(acts) > 0 {
+				grant = append(grant, Access{Type: a.Type, Name: a.Name, Actions: acts})
+			}
 		}
 	}
 	return s.signer.issue(rs.Domain, user, grant, tokenTTL)

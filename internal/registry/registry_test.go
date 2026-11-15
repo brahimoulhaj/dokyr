@@ -104,6 +104,11 @@ func TestTokenGrants(t *testing.T) {
 	if a := access("reader", "pull-secret", "repository:shop/api:pull,push", "registry:catalog:*"); len(a) != 1 || fmt.Sprint(a[0].(map[string]any)["actions"]) != "[pull]" {
 		t.Errorf("pull token = %v", a)
 	}
+	// containerd's OAuth2 POST: every scope in one space-separated field.
+	if a := access("ci", "push-secret", "repository:shop/base:pull repository:shop/api:pull,push"); len(a) != 2 ||
+		a[1].(map[string]any)["name"] != "shop/api" || fmt.Sprint(a[1].(map[string]any)["actions"]) != "[pull push]" {
+		t.Errorf("space-separated scopes = %v", a)
+	}
 	if a := access("", "", "repository:shop/api:pull"); len(a) != 0 {
 		t.Errorf("anonymous = %v", a)
 	}
