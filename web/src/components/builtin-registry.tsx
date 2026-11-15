@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
-import { Badge, Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, Panel, QueryState } from './ui'
+import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, HelpTip, HttpOnlyChoice, Panel, QueryState } from './ui'
 import {
   api,
   panelSettingsQuery,
@@ -10,8 +10,10 @@ import {
   s3ConnectionsQuery,
   type RegistrySettings,
   type RegistryToken,
+  type Repository,
+  type RepositoryTag,
 } from '../lib/api'
-import { dateTime, timeAgo } from '../lib/format'
+import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet } from './sheet'
 import { withToast } from '../lib/toasts'
@@ -107,6 +109,10 @@ export function PushHelp({ domain }: { domain: string }) {
         <p className="text-sm text-muted">{t.howIntro}</p>
         <pre dir="ltr" className="overflow-x-auto border border-line bg-bg p-3 text-xs">
           {`docker login ${domain} -u <token name>\ndocker tag my-app ${domain}/team/my-app:1.0\ndocker push ${domain}/team/my-app:1.0`}
+        </pre>
+        <p className="pt-1 text-sm text-muted">{t.pullIntro}</p>
+        <pre dir="ltr" className="overflow-x-auto border border-line bg-bg p-3 text-xs">
+          {`docker pull ${domain}/team/my-app:1.0`}
         </pre>
         <p className="text-xs text-muted">{t.deploy}</p>
       </div>
@@ -238,39 +244,77 @@ export function Repositories({ domain }: { domain: string }) {
         (repos.data.length === 0 ? (
           <Empty title={t.noRepos} />
         ) : (
-          <ul className="divide-y divide-line">
-            {repos.data.map((r) => (
-              <li key={r.name} className="space-y-2 px-4 py-3">
-                <p className="text-sm" dir="ltr">{domain}/{r.name}</p>
-                <ul className="flex flex-wrap gap-2">
-                  {r.tags.map((tag) => <TagChip key={tag} domain={domain} repo={r.name} tag={tag} />)}
-                </ul>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full whitespace-nowrap text-start text-sm tabular-nums">
+              <thead className="text-xs text-muted">
+                <tr>
+                  {[t.colImage, t.colTag, t.colPlatform, t.colSize].map((label) => (
+                    <th key={label} scope="col" className="px-4 py-2 text-start font-normal">{label}</th>
+                  ))}
+                  <th scope="col" className="px-4 py-2"><span className="sr-only">{t.deleteTag}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {repos.data.map((r) => <RepoRows key={r.name} domain={domain} repo={r} />)}
+              </tbody>
+            </table>
+          </div>
         ))}
     </Panel>
   )
 }
 
-function TagChip({ domain, repo, tag }: { domain: string; repo: string; tag: string }) {
+/** One image: a plain row with a single tag; with several, a row that opens to list them.
+ * The group's size is what the repository stores: layers shared by tags count once. */
+function RepoRows({ domain, repo }: { domain: string; repo: Repository }) {
+  const t = useT().builtinRegistry
+  const [open, setOpen] = useState(false)
+  if (repo.tags.length === 1) return <TagRow domain={domain} repo={repo.name} tag={repo.tags[0]} />
+  const platforms = [...new Set(repo.tags.flatMap((tag) => tag.platforms))]
+  return (
+    <>
+      <tr className={cx('cursor-pointer border-t border-line hover:bg-raised', open && 'bg-raised')} onClick={() => setOpen(!open)}>
+        <td className="px-4 py-2" dir="ltr">
+          <button type="button" aria-expanded={open} className="flex items-center gap-2 text-start" onClick={(e) => { e.stopPropagation(); setOpen(!open) }}>
+            <span aria-hidden className={cx('text-xs text-muted transition-transform', open && 'rotate-90')}>›</span>
+            {repo.name}
+          </button>
+        </td>
+        <td className="px-4 py-2 text-muted">{t.tagCount(repo.tags.length)}</td>
+        <td className="px-4 py-2 text-muted" dir="ltr">{platforms.length ? platforms.join(', ') : '—'}</td>
+        <td className="px-4 py-2" dir="ltr">{repo.size ? formatBytes(repo.size) : '—'}</td>
+        <td />
+      </tr>
+      {open && repo.tags.map((tag) => <TagRow key={tag.name} domain={domain} repo={repo.name} tag={tag} nested />)}
+    </>
+  )
+}
+
+function TagRow({ domain, repo, tag, nested }: { domain: string; repo: string; tag: RepositoryTag; nested?: boolean }) {
   const queryClient = useQueryClient()
   const t = useT().builtinRegistry
   const [copied, setCopied] = useState(false)
-  const image = `${domain}/${repo}:${tag}`
+  const image = `${domain}/${repo}:${tag.name}`
   const remove = useMutation({
-    mutationFn: () => api<void>(`/registry/repositories/${repo}?tag=${encodeURIComponent(tag)}`, { method: 'DELETE' }),
+    mutationFn: () => api<void>(`/registry/repositories/${repo}?tag=${encodeURIComponent(tag.name)}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: repositoriesQuery.queryKey }),
   })
   return (
-    <li className="flex items-center gap-2 border border-line px-2 py-1 text-xs">
-      <button type="button" dir="ltr" title={t.copyImage} className="hover:text-accent" onClick={async () => {
-        try { await navigator.clipboard.writeText(image); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* no clipboard */ }
-      }}>
-        {copied ? t.copied : tag}
-      </button>
-      <ConfirmButton label={t.deleteTag} confirm={t.yesDelete} pending={remove.isPending} onConfirm={() => remove.mutate()} />
-      {remove.error && <span className="text-danger">{remove.error.message}</span>}
-    </li>
+    <tr className={cx('border-t border-line align-middle', nested && 'bg-bg/40')}>
+      <td className={cx('px-4 py-2', nested && 'ps-10 text-xs text-muted')} dir="ltr">
+        <button type="button" title={t.copyImage} className="text-start hover:text-accent" onClick={async () => {
+          try { await navigator.clipboard.writeText(image); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* no clipboard */ }
+        }}>
+          {copied ? t.copied : nested ? `${repo}:${tag.name}` : repo}
+        </button>
+      </td>
+      <td className="px-4 py-2" dir="ltr" title={tag.digest}>{tag.name}</td>
+      <td className="px-4 py-2 text-muted" dir="ltr">{tag.platforms.length ? tag.platforms.join(', ') : '—'}</td>
+      <td className="px-4 py-2" dir="ltr">{tag.digest ? formatBytes(tag.size) : '—'}</td>
+      <td className="px-4 py-2 text-end">
+        <ConfirmButton label={t.deleteTag} confirm={t.yesDelete} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+        {remove.error && <span className="ms-2 text-xs text-danger">{remove.error.message}</span>}
+      </td>
+    </tr>
   )
 }

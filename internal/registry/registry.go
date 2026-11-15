@@ -61,6 +61,9 @@ type Options struct {
 	// PublishPort publishes the registry on 127.0.0.1 of the host (development, where the
 	// panel runs off the shared network); 0 = not published.
 	PublishPort int
+	// HTTPPort and HTTPSPort are the proxy's host ports (80 and 443 unless changed, as in
+	// development); clients reach the registry's domain on them.
+	HTTPPort, HTTPSPort int
 	// Realm replaces the token endpoint's URL (https://<domain>/api/registry/token); tests
 	// point it at a local server.
 	Realm string
@@ -372,7 +375,24 @@ func (s *Service) realm(rs store.RegistrySettings) string {
 	if s.opts.Realm != "" {
 		return s.opts.Realm
 	}
-	return "https://" + rs.Domain + TokenPath
+	scheme := "https"
+	if rs.TLSMode == store.TLSHTTPOnly {
+		scheme = "http"
+	}
+	return scheme + "://" + s.Address(rs) + TokenPath
+}
+
+// Address is the registry as docker sees it: its domain, with the proxy's port when that
+// port is not the default one (80 for HTTP only, 443 otherwise).
+func (s *Service) Address(rs store.RegistrySettings) string {
+	port, def := s.opts.HTTPSPort, 443
+	if rs.TLSMode == store.TLSHTTPOnly {
+		port, def = s.opts.HTTPPort, 80
+	}
+	if port == 0 || port == def {
+		return rs.Domain
+	}
+	return fmt.Sprintf("%s:%d", rs.Domain, port)
 }
 
 // Apply makes the container match the settings: removed when the registry is off,

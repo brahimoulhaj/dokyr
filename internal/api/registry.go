@@ -22,10 +22,12 @@ type BuiltinRegistry interface {
 	Apply(ctx context.Context) error
 	State(ctx context.Context) string
 	SystemUser() string
+	Address(rs store.RegistrySettings) string
 	Token(ctx context.Context, user, password, service string, scopes []string) (string, error)
 	CheckEvents(authorization string) bool
 	Repositories(ctx context.Context) ([]string, error)
 	Tags(ctx context.Context, repo string) ([]string, error)
+	TagDetail(ctx context.Context, repo, tag string) (registry.TagDetail, error)
 	DeleteTag(ctx context.Context, repo, tag string) error
 	GarbageCollect(ctx context.Context) (string, error)
 }
@@ -54,9 +56,10 @@ type registrySettingsJSON struct {
 	Enabled      bool   `json:"enabled"`
 	Domain       string `json:"domain"`
 	BuildCache   bool   `json:"build_cache"`
-	TLSMode      string `json:"tls_mode"`         // "auto" or "http_only"
-	S3Connection string `json:"s3_connection_id"` // "" = a Docker volume on this server
-	State        string `json:"state,omitempty"`  // the container: off, running, missing, …
+	TLSMode      string `json:"tls_mode"`          // "auto" or "http_only"
+	S3Connection string `json:"s3_connection_id"`  // "" = a Docker volume on this server
+	Address      string `json:"address,omitempty"` // domain[:port], what docker login and image names use
+	State        string `json:"state,omitempty"`   // the container: off, running, missing, …
 	SystemUser   string `json:"system_user,omitempty"`
 }
 
@@ -79,7 +82,7 @@ func (s *Server) handleGetRegistrySettings(w http.ResponseWriter, r *http.Reques
 		mode = store.TLSAuto
 	}
 	writeJSON(w, http.StatusOK, registrySettingsJSON{Enabled: rs.Enabled, Domain: rs.Domain, BuildCache: rs.BuildCache, TLSMode: mode,
-		S3Connection: conn, State: s.registry.State(r.Context()), SystemUser: s.registry.SystemUser()})
+		S3Connection: conn, Address: s.registry.Address(rs), State: s.registry.State(r.Context()), SystemUser: s.registry.SystemUser()})
 }
 
 // handlePutRegistrySettings saves the settings, then starts, recreates or removes the
@@ -327,8 +330,16 @@ func (s *Server) handleRegistryEvents(w http.ResponseWriter, r *http.Request) {
 // ---- repositories ----
 
 type repositoryJSON struct {
-	Name string   `json:"name"`
-	Tags []string `json:"tags"`
+	Name string    `json:"name"`
+	Size int64     `json:"size"` // stored size of all its tags, shared layers counted once
+	Tags []tagJSON `json:"tags"`
+}
+
+type tagJSON struct {
+	Name      string   `json:"name"`
+	Digest    string   `json:"digest,omitempty"`
+	Size      int64    `json:"size"`
+	Platforms []string `json:"platforms"`
 }
 
 func (s *Server) handleListRepositories(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +365,25 @@ func (s *Server) handleListRepositories(w http.ResponseWriter, r *http.Request) 
 		if len(tags) == 0 {
 			continue // every tag deleted: nothing to show until garbage collection
 		}
-		out = append(out, repositoryJSON{Name: name, Tags: tags})
+		rj := repositoryJSON{Name: name, Tags: make([]tagJSON, 0, len(tags))}
+		blobs := map[string]int64{}
+		for _, tag := range tags {
+			tj := tagJSON{Name: tag, Platforms: []string{}}
+			// A tag whose manifest cannot be read is still listed, without its details.
+			if d, err := s.registry.TagDetail(r.Context(), name, tag); err == nil {
+				tj.Digest, tj.Size, tj.Platforms = d.Digest, d.Size, d.Platforms
+				for digest, size := range d.Blobs {
+					blobs[digest] = size
+				}
+			} else {
+				s.log.Warn("registry tag detail", "repo", name, "tag", tag, "err", err)
+			}
+			rj.Tags = append(rj.Tags, tj)
+		}
+		for _, size := range blobs {
+			rj.Size += size
+		}
+		out = append(out, rj)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

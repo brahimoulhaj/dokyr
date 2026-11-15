@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,10 +19,11 @@ type fakeRegistry struct {
 	tags    map[string][]string
 }
 
-func (f *fakeRegistry) Apply(context.Context) error  { f.applies++; return nil }
-func (f *fakeRegistry) State(context.Context) string { return "running" }
-func (f *fakeRegistry) SystemUser() string           { return "berth" }
-func (f *fakeRegistry) CheckEvents(auth string) bool { return auth == "Bearer events" }
+func (f *fakeRegistry) Apply(context.Context) error              { f.applies++; return nil }
+func (f *fakeRegistry) State(context.Context) string             { return "running" }
+func (f *fakeRegistry) SystemUser() string                       { return "berth" }
+func (f *fakeRegistry) Address(rs store.RegistrySettings) string { return rs.Domain }
+func (f *fakeRegistry) CheckEvents(auth string) bool             { return auth == "Bearer events" }
 func (f *fakeRegistry) Repositories(context.Context) ([]string, error) {
 	var out []string
 	for r := range f.tags {
@@ -32,6 +34,11 @@ func (f *fakeRegistry) Repositories(context.Context) ([]string, error) {
 func (f *fakeRegistry) GarbageCollect(context.Context) (string, error) { return "done", nil }
 func (f *fakeRegistry) Tags(_ context.Context, repo string) ([]string, error) {
 	return f.tags[repo], nil
+}
+func (f *fakeRegistry) TagDetail(_ context.Context, repo, tag string) (registry.TagDetail, error) {
+	// Every tag shares the base layer; each has its own config.
+	return registry.TagDetail{Digest: "sha256:" + tag, Size: 1024, Platforms: []string{"linux/amd64"},
+		Blobs: map[string]int64{"sha256:base": 1000, "sha256:cfg-" + tag: 24}}, nil
 }
 func (f *fakeRegistry) DeleteTag(_ context.Context, repo, tag string) error {
 	var keep []string
@@ -123,6 +130,13 @@ func TestRegistryAPI(t *testing.T) {
 	repos := e.list("/api/registry/repositories")
 	if len(repos) != 1 || repos[0]["name"] != "shop/api" {
 		t.Fatalf("repositories = %v", repos)
+	}
+	if repos[0]["size"] != float64(1000+24+24) {
+		t.Errorf("repository size = %v, want shared layers counted once", repos[0]["size"])
+	}
+	if tag := repos[0]["tags"].([]any)[0].(map[string]any); tag["name"] != "1.0" || tag["size"] != float64(1024) ||
+		tag["digest"] != "sha256:1.0" || fmt.Sprint(tag["platforms"]) != "[linux/amd64]" {
+		t.Errorf("tag = %v", tag)
 	}
 	e.must(422, "DELETE", "/api/registry/repositories/shop/api?tag=../x", nil)
 	e.must(204, "DELETE", "/api/registry/repositories/shop/api?tag=latest", nil)

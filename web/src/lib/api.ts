@@ -379,6 +379,8 @@ export type RegistrySettings = {
   build_cache: boolean
   /** 'http_only' for a CDN that terminates TLS (Cloudflare "Flexible"). */
   tls_mode?: 'auto' | 'http_only'
+  /** domain[:port] as docker sees it (a port when the proxy is not on 80/443). */
+  address?: string
   /** '' = a Docker volume on this server. */
   s3_connection_id: string
   state?: string
@@ -386,7 +388,10 @@ export type RegistrySettings = {
 }
 
 export type RegistryToken = { id: string; name: string; scope: 'push' | 'pull'; token?: string; last_used_at: string | null; created_at: string }
-export type Repository = { name: string; tags: string[] }
+/** A pushed tag: digest of its manifest, stored size (compressed), platforms it runs on. */
+export type RepositoryTag = { name: string; digest?: string; size: number; platforms: string[] }
+/** size: all its tags as stored, shared layers counted once. */
+export type Repository = { name: string; size: number; tags: RepositoryTag[] }
 
 export const registrySettingsQuery = { queryKey: ['registry', 'settings'] as const, queryFn: () => api<RegistrySettings>('/registry/settings') }
 export const registryTokensQuery = { queryKey: ['registry', 'tokens'] as const, queryFn: () => api<RegistryToken[]>('/registry/tokens') }

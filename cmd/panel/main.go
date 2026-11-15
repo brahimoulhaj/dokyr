@@ -250,6 +250,8 @@ func serve(ctx context.Context, cfg config.Config) error {
 		PanelUpstream: panelUpstream(cfg),
 		Issuer:        brand.Slug,
 		PublishPort:   registryPort(cfg),
+		HTTPPort:      cfg.Proxy.HTTPPort,
+		HTTPSPort:     cfg.Proxy.HTTPSPort,
 	})
 	if err != nil {
 		return err

@@ -116,5 +116,121 @@ func (s *Service) DeleteTag(ctx context.Context, repo, tag string) error {
 	return decode(resp, nil)
 }
 
+// TagDetail describes what a tag points to.
+type TagDetail struct {
+	Digest    string   // of the tag's manifest (or index)
+	Size      int64    // compressed layers and configs of its images, as stored
+	Platforms []string // "linux/amd64", …; none for a single image without platform info
+	// Blobs are the layers and configs it uses, by digest, with their size: tags often
+	// share layers, so a repository's size counts each blob once.
+	Blobs map[string]int64
+}
+
+// manifest covers an image manifest and an image index (manifest list).
+type manifest struct {
+	MediaType string `json:"mediaType"`
+	Config    blob   `json:"config"`
+	Layers    []blob `json:"layers"`
+	Manifests []struct {
+		Digest   string `json:"digest"`
+		Platform *struct {
+			OS           string `json:"os"`
+			Architecture string `json:"architecture"`
+			Variant      string `json:"variant"`
+		} `json:"platform"`
+	} `json:"manifests"`
+}
+
+type blob struct {
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
+}
+
+// addBlobs records the image's blobs and returns its size.
+func (m manifest) addBlobs(into map[string]int64) int64 {
+	n := m.Config.Size
+	into[m.Config.Digest] = m.Config.Size
+	for _, l := range m.Layers {
+		n += l.Size
+		into[l.Digest] = l.Size
+	}
+	return n
+}
+
+func (s *Service) manifest(ctx context.Context, repo, ref string) (manifest, string, error) {
+	resp, err := s.call(ctx, "GET", "/v2/"+repo+"/manifests/"+url.PathEscape(ref), manifestTypes,
+		Access{Type: "repository", Name: repo, Actions: []string{"pull"}})
+	if err != nil {
+		return manifest{}, "", err
+	}
+	digest := resp.Header.Get("Docker-Content-Digest")
+	var m manifest
+	if err := decode(resp, &m); err != nil {
+		return manifest{}, "", err
+	}
+	return m, digest, nil
+}
+
+// TagDetail reads a tag's manifest: its digest, its size, and the platforms it runs on.
+// For an index, each platform's image counts; attestations (platform unknown/unknown,
+// as buildx adds) are left out.
+func (s *Service) TagDetail(ctx context.Context, repo, tag string) (TagDetail, error) {
+	m, digest, err := s.manifest(ctx, repo, tag)
+	if err != nil {
+		return TagDetail{}, err
+	}
+	d := TagDetail{Digest: digest, Platforms: []string{}, Blobs: map[string]int64{}}
+	if len(m.Manifests) == 0 {
+		d.Size = m.addBlobs(d.Blobs)
+		// A single image keeps its platform in its config blob, not in the manifest.
+		if p := s.configPlatform(ctx, repo, m.Config.Digest); p != "" {
+			d.Platforms = append(d.Platforms, p)
+		}
+		return d, nil
+	}
+	for _, child := range m.Manifests {
+		if p := child.Platform; p != nil && p.OS == "unknown" {
+			continue
+		}
+		cm, _, err := s.manifest(ctx, repo, child.Digest)
+		if err != nil {
+			return TagDetail{}, err
+		}
+		d.Size += cm.addBlobs(d.Blobs)
+		if p := child.Platform; p != nil {
+			name := p.OS + "/" + p.Architecture
+			if p.Variant != "" {
+				name += "/" + p.Variant
+			}
+			d.Platforms = append(d.Platforms, name)
+		}
+	}
+	return d, nil
+}
+
+// configPlatform reads os/architecture[/variant] from an image's config blob; "" when it
+// cannot be read (a missing or non-image config).
+func (s *Service) configPlatform(ctx context.Context, repo, digest string) string {
+	if digest == "" {
+		return ""
+	}
+	resp, err := s.call(ctx, "GET", "/v2/"+repo+"/blobs/"+digest, "", Access{Type: "repository", Name: repo, Actions: []string{"pull"}})
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		OS           string `json:"os"`
+		Architecture string `json:"architecture"`
+		Variant      string `json:"variant"`
+	}
+	if decode(resp, &c) != nil || c.OS == "" || c.Architecture == "" {
+		return ""
+	}
+	if c.Variant != "" {
+		return c.OS + "/" + c.Architecture + "/" + c.Variant
+	}
+	return c.OS + "/" + c.Architecture
+}
+
 // nopExecutor stands in where no container is run (unit tests).
 type nopExecutor struct{ executor.Executor }

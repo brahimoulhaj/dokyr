@@ -237,6 +237,10 @@ func TestRealRegistry(t *testing.T) {
 	if err != nil || strings.Join(tags, ",") != "1.2" {
 		t.Errorf("Tags = %v, %v", tags, err)
 	}
+	if d, err := s.TagDetail(ctx, "shop/api", "1.2"); err != nil || d.Size != int64(len(config)) || !strings.HasPrefix(d.Digest, "sha256:") ||
+		strings.Join(d.Platforms, ",") != "linux/amd64" {
+		t.Errorf("TagDetail = %+v, %v", d, err)
+	}
 	repos, err := s.Repositories(ctx)
 	if err != nil || strings.Join(repos, ",") != "shop/api" {
 		t.Errorf("Repositories = %v, %v", repos, err)
@@ -364,4 +368,29 @@ func upload(t *testing.T, base, tok string, blob []byte) string {
 		t.Fatalf("finish upload = %d", code)
 	}
 	return digest
+}
+
+// The token URL docker is sent to follows the TLS mode and the proxy's host ports.
+func TestRealmAndAddress(t *testing.T) {
+	cases := []struct {
+		http, https int
+		mode        string
+		addr, realm string
+	}{
+		{80, 443, store.TLSAuto, "registry.example.com", "https://registry.example.com/api/registry/token"},
+		{80, 443, store.TLSHTTPOnly, "registry.example.com", "http://registry.example.com/api/registry/token"},
+		{8880, 8443, store.TLSAuto, "registry.example.com:8443", "https://registry.example.com:8443/api/registry/token"},
+		{8880, 8443, store.TLSHTTPOnly, "registry.example.com:8880", "http://registry.example.com:8880/api/registry/token"},
+		{0, 0, "", "registry.example.com", "https://registry.example.com/api/registry/token"},
+	}
+	for _, c := range cases {
+		s := &Service{opts: Options{HTTPPort: c.http, HTTPSPort: c.https}}
+		rs := store.RegistrySettings{Domain: "registry.example.com", TLSMode: c.mode}
+		if got := s.Address(rs); got != c.addr {
+			t.Errorf("%d/%d %q: address = %s, want %s", c.http, c.https, c.mode, got, c.addr)
+		}
+		if got := s.realm(rs); got != c.realm {
+			t.Errorf("%d/%d %q: realm = %s, want %s", c.http, c.https, c.mode, got, c.realm)
+		}
+	}
 }

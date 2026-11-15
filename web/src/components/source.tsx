@@ -109,7 +109,7 @@ function ImageFields({ form, onChange }: { form: SourceForm; onChange: (f: Sourc
     ...(domain ? [{ value: BUILTIN, label: t.source.builtinRegistry(domain) }] : []),
     ...(registries.data ?? []).map((r) => ({ value: r.id, label: `${r.name} · ${r.username}@${r.server}` })),
   ]
-  const pushed: ComboOption[] = (repos.data ?? []).flatMap((r) => r.tags.map((tag) => ({ value: `${domain}/${r.name}:${tag}`, label: `${r.name}:${tag}` })))
+  const pushed: ComboOption[] = (repos.data ?? []).flatMap((r) => r.tags.map((tag) => ({ value: `${domain}/${r.name}:${tag.name}`, label: `${r.name}:${tag.name}` })))
   if (form.registry_id && !options.some((o) => o.value === form.registry_id)) {
     options.push({ value: form.registry_id, label: t.source.registryAccess })
   }
