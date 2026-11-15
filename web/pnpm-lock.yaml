@@ -32,6 +32,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      '@yusufceng1z/ding':
+        specifier: 0.0.5
+        version: 0.0.5
       '@yusufceng1z/ding-react':
         specifier: 0.0.5
         version: 0.0.5(react@19.3.1)

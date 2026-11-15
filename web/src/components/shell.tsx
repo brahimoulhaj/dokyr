@@ -7,6 +7,7 @@ import { useTheme } from '../lib/theme'
 import { LanguagePicker } from './langpicker'
 import { ThemePicker } from './themepicker'
 import { DeployToasts } from './deploy-toasts'
+import { QueueMenu } from './queue-menu'
 import { UpdateCheck } from './update-check'
 import { Badge, cx } from './ui'
 
@@ -67,6 +68,7 @@ export function Shell() {
           >
             <PaletteIcon />
           </button>
+          <QueueMenu />
           <LanguagePicker />
           {me && <UserMenu user={me} onPickTheme={() => setPicking(true)} />}
         </div>

@@ -21,6 +21,14 @@
   --color-danger: #f7768e;
   --color-warn: #e0af68;
 
+  /* A card of the deployment stack arriving. */
+  @keyframes stack-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+  }
+
   --radius-xs: 0;
   --radius-sm: 0;
   --radius-md: 0;
