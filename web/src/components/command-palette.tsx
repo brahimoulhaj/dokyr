@@ -141,6 +141,7 @@ export function CommandPalette() {
       ['databases', t.shell.databases, Database, '/databases'],
       ['activity', t.shell.activity, ClockCounterClockwise, '/activity'],
       ['registry', t.shell.registry, Package, '/registry'],
+      ['storage', t.storage.title, HardDrives, '/storage'],
       ['settings', t.common.settings, GearSix, '/settings'],
     ] as const).map(([id, label, icon, to]) => ({ id, label, icon, group: c.pages, keywords: id, run: () => { setOpen(false); void navigate({ to }) } })),
     ...([

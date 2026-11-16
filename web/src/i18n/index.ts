@@ -20,6 +20,7 @@ import * as settingsTokens from './settingsTokens'
 import * as settingsUpdates from './settingsUpdates'
 import * as settingsBuilds from './settingsBuilds'
 import * as settingsBackup from './settingsBackup'
+import * as storage from './storage'
 import * as settingsStorage from './settingsStorage'
 import * as settingsNotifications from './settingsNotifications'
 import * as registries from './registries'
@@ -62,6 +63,7 @@ const pick = (l: Code) => ({
   settingsUpdates: settingsUpdates[l] as typeof settingsUpdates.en,
   settingsBuilds: settingsBuilds[l] as typeof settingsBuilds.en,
   settingsBackup: settingsBackup[l] as typeof settingsBackup.en,
+  storage: storage[l] as typeof storage.en,
   settingsStorage: settingsStorage[l] as typeof settingsStorage.en,
   settingsNotifications: settingsNotifications[l] as typeof settingsNotifications.en,
   registries: registries[l] as typeof registries.en,

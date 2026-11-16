@@ -30,6 +30,10 @@ type Config struct {
 	// RegistryPort publishes the built-in registry on 127.0.0.1 of the host, for a panel
 	// run off the Docker network (development); 0 = not published (5005 by default then).
 	RegistryPort int
+	S3Image      string // image of the built-in S3 storage (RustFS)
+	// S3Port publishes the built-in S3 storage on 127.0.0.1 of the host, like RegistryPort
+	// (9006 by default off the Docker network).
+	S3Port int
 }
 
 // Proxy configures the Caddy container in front of everything.
@@ -54,6 +58,8 @@ func Load() Config {
 		BuildMemoryMB: int64(envInt("BUILD_MEMORY_MB", 0)),
 		RegistryImage: env("REGISTRY_IMAGE", "registry:3.0.0"),
 		RegistryPort:  envInt("REGISTRY_PORT", 0),
+		S3Image:       env("S3_IMAGE", "rustfs/rustfs:1.0.0-rc.6"),
+		S3Port:        envInt("S3_PORT", 0),
 		Proxy: Proxy{
 			Image:         env("PROXY_IMAGE", "caddy:2.10.2-alpine"),
 			HTTPPort:      envInt("PROXY_HTTP_PORT", 80),

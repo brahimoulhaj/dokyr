@@ -39,6 +39,7 @@ type Server struct {
 	databases     *database.Service
 	notifier      Notifier
 	panelBackups  PanelBackups
+	objectStore   ObjectStore
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
 	stop     chan struct{} // closed when the server shuts down; ends open streams
@@ -116,6 +117,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/registries", s.requireAuth(s.handleListRegistries))
 	mux.HandleFunc("POST /api/registries", s.requireAuth(s.handleAddRegistry))
 	mux.HandleFunc("DELETE /api/registries/{id}", s.requireAuth(s.handleDeleteRegistry))
+	mux.HandleFunc("GET /api/object-store", s.requireAuth(s.handleGetObjectStore))
+	mux.HandleFunc("PUT /api/object-store", s.requireAuth(sessionOnly(s.handlePutObjectStore)))
+	mux.HandleFunc("GET /api/object-store/credentials", s.requireAuth(sessionOnly(s.handleObjectStoreCredentials)))
+	mux.HandleFunc("GET /api/object-store/buckets", s.requireAuth(s.handleListBuckets))
+	mux.HandleFunc("POST /api/object-store/buckets", s.requireAuth(s.handleCreateBucket))
+	mux.HandleFunc("DELETE /api/object-store/buckets/{name}", s.requireAuth(s.handleDeleteBucket))
 	mux.HandleFunc("GET /api/registry/settings", s.requireAuth(s.handleGetRegistrySettings))
 	mux.HandleFunc("PUT /api/registry/settings", s.requireAuth(sessionOnly(s.handlePutRegistrySettings)))
 	mux.HandleFunc("GET /api/registry/tokens", s.requireAuth(s.handleListRegistryTokens))

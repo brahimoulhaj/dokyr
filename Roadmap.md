@@ -320,11 +320,11 @@ Goal: managed Postgres and MariaDB with scheduled S3 backups and restore.
 Goal: optional built-in S3 and image registry.
 
 ### Internal S3
-- [ ] RustFS stability check; ship behind an "experimental" label if needed (open question)
-- [ ] RustFS container lifecycle (start, stop, upgrade, data volume)
-- [ ] Buckets and access keys management
-- [ ] Routed through Caddy with TLS
-- [ ] Usable as a backup target and as the registry backend
+- [x] RustFS stability check; ship behind an "experimental" label if needed — shipped as Experimental: RustFS is at `1.0.0-rc.6` (a release candidate); the Storage page and its setup sheet say so (v0.17.0)
+- [x] RustFS container lifecycle (start, stop, upgrade, data volume) — `internal/objectstore`: off by default; Storage → Turn on runs `rustfs/rustfs:1.0.0-rc.6` (`BERTH_S3_IMAGE`) as `<slug>-s3` with its data in the `<slug>-s3-data` volume, console off, root credentials made once and sealed at rest; supervised every 30 s, recreated when its spec (image included) changes, removed when turned off with the data and credentials kept; published on 127.0.0.1:9006 for a panel on the host (`BERTH_S3_PORT`). `TestLifecycle`, `TestForeignContainer`; checked on real Docker (off and on again keeps the objects)
+- [~] Buckets and access keys management — buckets: list with object count and size (counting stops at 10 000 objects), create (S3 name rules), delete (empty only, refused while a storage connection uses it), checked against real RustFS. Access keys: only the root credentials, revealed in a sheet (session only, audited); per-bucket keys remain
+- [~] Routed through Caddy with TLS — an optional domain of its own adds a proxy route to `<slug>-s3:9000`, kept apart from the panel, registry and app domains, with the HTTP-only option; not yet tried on a real domain
+- [~] Usable as a backup target and as the registry backend — turning it on makes the `panel` bucket and a "Built-in storage" S3 connection (path-style), so it can be picked wherever a storage connection can; the panel backup into it is checked. Database backups and the registry use the same connection code but are not checked against it yet (the registry needs the panel in its container, where the endpoint is `<slug>-s3:9000`)
 
 ### Internal registry (`internal/registry`)
 - [x] Registry container lifecycle, backed by an S3 connection — `internal/registry`: off by default; Registry page → Built-in registry turns it on with a domain of its own and a storage (a Docker volume, or an S3 connection with its folder). CNCF Distribution `registry:3.0.0` (`BERTH_REGISTRY_IMAGE`) in `<slug>-registry`, configuration (0600, may hold the S3 key) and token certificate under `<data>/registry`; recreated when the settings change, removed when turned off (images stay), supervised every 30 s. `TestRealRegistry`, `TestRealRegistryS3` (pushed blobs land in the bucket under the folder)
@@ -335,7 +335,7 @@ Goal: optional built-in S3 and image registry.
 - [x] App source: image from the internal registry — the app form's Registry access offers Built-in registry with a picker of pushed images; deploys pull with the panel's own account
 
 ### UI
-- [ ] Storage page (buckets, keys, usage)
+- [~] Storage page (buckets, keys, usage) — `/storage` (the nav item is live): state, endpoint, public URL, access key, its storage connection; buckets table with usage, New bucket sheet, Delete in the Actions menu with a confirmation; Credentials sheet; Turn off asks first; four languages. Per-bucket keys remain
 - [x] Registry page (images, push and pull instructions) — built-in registry on top (tabs Images and Settings; settings, turn off and tokens are in Settings; the header shows the address docker uses), external registries below
 
 ---
@@ -400,7 +400,7 @@ Multiple servers · teams and roles beyond a single owner · Docker Compose stac
 
 - [ ] Final product name and install domain
 - [ ] License: MIT, Apache 2.0, or AGPL
-- [ ] RustFS: stable enough, or "experimental" label
+- [x] RustFS: stable enough, or "experimental" label — "Experimental" while RustFS is a release candidate
 - [x] Database instances: internal-only by default with an opt-in public port — decided: optional allowlist, TLS required, user-picked port (2026-11-16)
 - [ ] Docker Compose stacks in v1?
 - [x] First Git provider: GitHub App or GitLab token — both: a GitHub App and a GitLab token (2026-11-11)

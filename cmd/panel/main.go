@@ -35,6 +35,7 @@ import (
 	"panel/internal/hostmetrics"
 	containermetrics "panel/internal/metrics"
 	"panel/internal/notify"
+	"panel/internal/objectstore"
 	"panel/internal/proxy"
 	"panel/internal/registry"
 	"panel/internal/secret"
@@ -217,7 +218,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 		Admin:         cfg.Proxy.Admin,
 		AdminPort:     cfg.Proxy.AdminPort,
 		PanelUpstream: panelUpstream(cfg),
-		Source:        proxySource(st, brand.Slug+"-registry:5000"),
+		Source:        proxySource(st, brand.Slug+"-registry:5000", fmt.Sprintf("%s-s3:%d", brand.Slug, objectstore.Port)),
 	})
 	if err != nil {
 		return err
@@ -287,6 +288,17 @@ func serve(ctx context.Context, cfg config.Config) error {
 		<-proxyReady
 		reg.Supervise(ctx, 30*time.Second)
 	}()
+	objects, err := objectstore.New(objectstore.Options{
+		Executor: ex, Store: st, Log: log,
+		Name:        brand.Slug + "-s3",
+		Image:       cfg.S3Image,
+		DataVolume:  brand.Slug + "-s3-data",
+		PublishPort: s3Port(cfg),
+	})
+	if err != nil {
+		return err
+	}
+	go objects.Supervise(ctx, 30*time.Second)
 	deployer := deploy.New(ctx, deploy.Options{
 		DataVolume: cfg.DataVolume, MaxBuilds: cfg.MaxBuilds,
 		Store: st, Executor: ex, Router: px, Builder: builds, GitAuth: git, DataDir: cfg.DataDir, Log: log,
@@ -341,6 +353,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetDeployer(deployer)
 	apiSrv.SetGitSources(git)
 	apiSrv.SetRegistry(reg)
+	apiSrv.SetObjectStore(objects)
 	if updater := newUpdater(ctx, cfg, st, log); updater != nil {
 		updater.Detect(ctx)
 		apiSrv.SetUpdater(updater)
@@ -399,7 +412,7 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 			_, err := st.GetDBInstance(ctx, id)
 			return err == nil
 		}
-		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id)
+		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id) || objectstore.IsObjectStore(kind, id)
 	})
 	if err != nil {
 		log.Error("docker reconcile", "error", err)
@@ -413,7 +426,7 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 
 // proxySource reads the routing state from the database: the panel's own domain and one
 // site per project domain with its path routes, and the built-in registry when on.
-func proxySource(st *store.Store, registryUpstream string) func(context.Context) (proxy.Config, error) {
+func proxySource(st *store.Store, registryUpstream, s3Upstream string) func(context.Context) (proxy.Config, error) {
 	return func(ctx context.Context) (proxy.Config, error) {
 		domain, _, err := st.GetSetting(ctx, store.SettingPanelDomain)
 		if err != nil {
@@ -460,6 +473,16 @@ func proxySource(st *store.Store, registryUpstream string) func(context.Context)
 				Upstreams: []string{registryUpstream}, PanelPaths: []string{registry.TokenPath}}
 			if rs.TLSMode == store.TLSHTTPOnly {
 				route.HTTPOnly = []string{rs.Domain}
+			}
+			cfg.Routes = append(cfg.Routes, route)
+		}
+		// The built-in S3 storage, when it has a domain of its own.
+		if obs, err := st.GetObjectStoreSettings(ctx); err != nil {
+			return proxy.Config{}, err
+		} else if obs.Enabled && obs.Domain != "" {
+			route := proxy.Route{ID: "object-store", Hosts: []string{obs.Domain}, Upstreams: []string{s3Upstream}}
+			if obs.TLSMode == store.TLSHTTPOnly {
+				route.HTTPOnly = []string{obs.Domain}
 			}
 			cfg.Routes = append(cfg.Routes, route)
 		}
@@ -689,6 +712,18 @@ func registryPort(cfg config.Config) int {
 	return 5005
 }
 
+// s3Port is where the built-in S3 storage is published on 127.0.0.1 for a panel on the
+// host (development); 0 in a container.
+func s3Port(cfg config.Config) int {
+	if cfg.S3Port > 0 {
+		return cfg.S3Port
+	}
+	if inContainer() {
+		return 0
+	}
+	return 9006
+}
+
 // configurePublicPorts sets what database public ports need: the gate image (the
 // panel's own image, or <PREFIX>GATE_IMAGE for development), the host clients use,
 // and the ports the panel itself occupies.
@@ -709,6 +744,9 @@ func configurePublicPorts(databases *database.Service, cfg config.Config, log *s
 		}
 	}
 	if p := registryPort(cfg); p > 0 {
+		reserved = append(reserved, p)
+	}
+	if p := s3Port(cfg); p > 0 {
 		reserved = append(reserved, p)
 	}
 	databases.ReservedPorts = reserved

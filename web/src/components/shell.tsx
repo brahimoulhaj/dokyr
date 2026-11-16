@@ -28,12 +28,12 @@ import { useLiveChanges } from '../lib/live'
 type NavKey = 'overview' | 'projects' | 'activity' | 'databases' | 'storage' | 'registry' | 'settings'
 // Registry lists the private registries apps pull from; the built-in registry (M5) joins it later.
 // Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
-const nav: { key: NavKey; icon: Icon; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases'; exact?: boolean }[] = [
+const nav: { key: NavKey; icon: Icon; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage'; exact?: boolean }[] = [
   { key: 'overview', icon: SquaresFour, to: '/', exact: true },
   { key: 'projects', icon: FolderSimple, to: '/projects' },
   { key: 'activity', icon: ClockCounterClockwise, to: '/activity' },
   { key: 'databases', icon: Database, to: '/databases' },
-  { key: 'storage', icon: HardDrives },
+  { key: 'storage', icon: HardDrives, to: '/storage' },
   { key: 'registry', icon: Package, to: '/registry' },
   { key: 'settings', icon: GearSix, to: '/settings' },
 ]

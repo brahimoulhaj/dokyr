@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -109,7 +110,8 @@ func (s *Store) S3Secret(ctx context.Context, connID string) (S3Input, error) {
 	return in, nil
 }
 
-// DeleteS3Connection refuses with ErrConflict while the registry stores its images there.
+// DeleteS3Connection refuses with ErrConflict while the registry stores its images there,
+// backups or backup policies use it, or the panel backs itself up there.
 func (s *Store) DeleteS3Connection(ctx context.Context, connID string) error {
 	if _, err := s.GetS3Connection(ctx, connID); err != nil {
 		return err
@@ -118,6 +120,15 @@ func (s *Store) DeleteS3Connection(ctx context.Context, connID string) error {
 		return err
 	} else if v == connID {
 		return ErrConflict
+	}
+	// Nor while the panel backs itself up there.
+	if raw, ok, err := s.GetSetting(ctx, settingPanelBackup); err != nil {
+		return err
+	} else if ok {
+		var pb storedPanelBackup
+		if json.Unmarshal([]byte(raw), &pb) == nil && pb.S3ConnectionID == connID {
+			return ErrConflict
+		}
 	}
 	var references int
 	if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM db_backups WHERE s3_connection_id=?) + (SELECT COUNT(*) FROM backup_policies WHERE s3_connection_id=?)`, connID, connID).Scan(&references); err != nil {

@@ -15,6 +15,7 @@ import { SettingsPage, settingsTabs, type SettingsTab } from './routes/settings'
 import { SetupPage } from './routes/setup'
 import { DatabasesPage } from './routes/databases'
 import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
+import { StoragePage } from './routes/storage'
 
 type Ctx = { queryClient: QueryClient }
 
@@ -110,6 +111,7 @@ const databaseRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { tab?: DatabaseTab } => (databaseTabs.includes(s.tab as DatabaseTab) ? { tab: s.tab as DatabaseTab } : {}),
 })
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
+const storageRoute = createRoute({ getParentRoute: () => appRoute, path: '/storage', component: StoragePage })
 const builtinRegistryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/registry/builtin',
@@ -130,7 +132,7 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
   onboardingRoute,
-  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute,
+  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute, storageRoute,
     builtinRegistryRoute, settingsRoute, databasesRoute, databaseRoute]),
 ])
 
