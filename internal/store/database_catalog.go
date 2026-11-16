@@ -135,3 +135,52 @@ func (s *Store) DatabaseCatalog(ctx context.Context, instanceID string) (Databas
 	}
 	return out, rows.Err()
 }
+
+// RemoveManagedDatabase forgets a dropped database: its grants cascade, and its
+// backup schedule goes with it. Existing backups stay listed and restorable.
+func (s *Store) RemoveManagedDatabase(ctx context.Context, instanceID, name string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM backup_policies WHERE instance_id = ? AND database_name = ?`, instanceID, name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM db_databases WHERE instance_id = ? AND name = ?`, instanceID, name); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RemoveDatabaseUser forgets a dropped user; its grants cascade.
+func (s *Store) RemoveDatabaseUser(ctx context.Context, instanceID, name string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM db_users WHERE instance_id = ? AND name = ? AND is_initial = 0`, instanceID, name)
+	return err
+}
+
+// SetDatabaseUserPassword stores a rotated password. The initial user's password
+// lives in the instance credentials, which ${db.<name>.URL} references read.
+func (s *Store) SetDatabaseUserPassword(ctx context.Context, instanceID, name, password string) error {
+	u, err := s.GetDatabaseUser(ctx, instanceID, name)
+	if err != nil {
+		return err
+	}
+	if u.Initial {
+		creds, err := s.DBInstanceCredentials(ctx, instanceID)
+		if err != nil {
+			return err
+		}
+		creds["password"] = password
+		sealed, err := s.sealEnvironment(creds)
+		if err != nil {
+			return err
+		}
+		return affected(s.db.ExecContext(ctx, `UPDATE db_instances SET credentials = ?, updated_at = ? WHERE id = ?`, sealed, now(), instanceID))
+	}
+	sealed, err := s.sealEnvironment(map[string]string{"password": password})
+	if err != nil {
+		return err
+	}
+	return affected(s.db.ExecContext(ctx, `UPDATE db_users SET credentials = ?, updated_at = ? WHERE id = ?`, sealed, now(), u.ID))
+}

@@ -20,17 +20,19 @@ type BackupPolicy struct {
 	Minute          int       `json:"minute"`
 	Weekday         int       `json:"weekday"`
 	KeepCount       int       `json:"keep_count"`
+	Cron            string    `json:"cron"`  // 5-field UTC expression when Frequency is "cron"
+	Scope           string    `json:"scope"` // "database", or "instance" with an empty DatabaseName
 	NextRunAt       time.Time `json:"next_run_at"`
 	LastOperationID string    `json:"last_operation_id"`
 	LastError       string    `json:"last_error"`
 }
 
-const policyColumns = `id,instance_id,database_name,s3_connection_id,enabled,frequency,hour,minute,weekday,keep_count,next_run_at,last_operation_id,last_error`
+const policyColumns = `id,instance_id,database_name,s3_connection_id,enabled,frequency,hour,minute,weekday,keep_count,next_run_at,last_operation_id,last_error,cron_expr,scope`
 
 func scanBackupPolicy(row scanner) (BackupPolicy, error) {
 	var p BackupPolicy
 	var next string
-	e := row.Scan(&p.ID, &p.InstanceID, &p.DatabaseName, &p.S3ConnectionID, &p.Enabled, &p.Frequency, &p.Hour, &p.Minute, &p.Weekday, &p.KeepCount, &next, &p.LastOperationID, &p.LastError)
+	e := row.Scan(&p.ID, &p.InstanceID, &p.DatabaseName, &p.S3ConnectionID, &p.Enabled, &p.Frequency, &p.Hour, &p.Minute, &p.Weekday, &p.KeepCount, &next, &p.LastOperationID, &p.LastError, &p.Cron, &p.Scope)
 	if errors.Is(e, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -57,7 +59,7 @@ func (s *Store) GetBackupPolicy(ctx context.Context, id string) (BackupPolicy, e
 	return scanBackupPolicy(s.db.QueryRowContext(ctx, `SELECT `+policyColumns+` FROM backup_policies WHERE id=?`, id))
 }
 func (s *Store) SaveBackupPolicy(ctx context.Context, p BackupPolicy) (BackupPolicy, error) {
-	_, e := s.db.ExecContext(ctx, `INSERT INTO backup_policies(id,instance_id,database_name,s3_connection_id,enabled,frequency,hour,minute,weekday,keep_count,next_run_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(instance_id,database_name) DO UPDATE SET s3_connection_id=excluded.s3_connection_id,enabled=excluded.enabled,frequency=excluded.frequency,hour=excluded.hour,minute=excluded.minute,weekday=excluded.weekday,keep_count=excluded.keep_count,next_run_at=excluded.next_run_at,last_error='',updated_at=excluded.updated_at`, id.New(), p.InstanceID, p.DatabaseName, p.S3ConnectionID, p.Enabled, p.Frequency, p.Hour, p.Minute, p.Weekday, p.KeepCount, p.NextRunAt.UTC().Format(time.RFC3339Nano), now())
+	_, e := s.db.ExecContext(ctx, `INSERT INTO backup_policies(id,instance_id,database_name,s3_connection_id,enabled,frequency,hour,minute,weekday,keep_count,next_run_at,updated_at,cron_expr,scope) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(instance_id,database_name) DO UPDATE SET s3_connection_id=excluded.s3_connection_id,enabled=excluded.enabled,frequency=excluded.frequency,hour=excluded.hour,minute=excluded.minute,weekday=excluded.weekday,keep_count=excluded.keep_count,next_run_at=excluded.next_run_at,cron_expr=excluded.cron_expr,scope=excluded.scope,last_error='',updated_at=excluded.updated_at`, id.New(), p.InstanceID, p.DatabaseName, p.S3ConnectionID, p.Enabled, p.Frequency, p.Hour, p.Minute, p.Weekday, p.KeepCount, p.NextRunAt.UTC().Format(time.RFC3339Nano), now(), p.Cron, p.Scope)
 	if e != nil {
 		return p, conflict(e)
 	}
@@ -85,7 +87,7 @@ func (s *Store) DueBackupPolicies(ctx context.Context, at time.Time) ([]BackupPo
 // QueuePolicyBackup advances the schedule and persists its job in one transaction.
 // A failed transaction leaves the policy due, so busy/stopped instances retry later.
 func (s *Store) QueuePolicyBackup(ctx context.Context, p BackupPolicy, d DBInstance, at, next time.Time) (DBOperation, error) {
-	payload, e := s.sealEnvironment(map[string]string{"database": p.DatabaseName, "s3_connection_id": p.S3ConnectionID, "policy_id": p.ID})
+	payload, e := s.sealEnvironment(map[string]string{"database": p.DatabaseName, "s3_connection_id": p.S3ConnectionID, "policy_id": p.ID, "scope": p.Scope})
 	if e != nil {
 		return DBOperation{}, e
 	}

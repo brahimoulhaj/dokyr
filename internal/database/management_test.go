@@ -37,7 +37,7 @@ func TestManageDatabasesUsersAndGrants(t *testing.T) {
 					t.Fatalf("operation failed: %+v %v", op, err)
 				}
 				if got, _ := svc.st.GetDBInstance(ctx, d.ID); got.Status != "running" {
-					t.Fatal("management changed instance lifecycle status")
+					t.Fatalf("management changed instance lifecycle status: %s %+v", action, got)
 				}
 				return op
 			}
@@ -99,6 +99,58 @@ func TestManageDatabasesUsersAndGrants(t *testing.T) {
 						t.Fatal("initial access was revocable", err)
 					}
 				}
+			}
+			// Rotation applies a new password on the server and stores it, initial user included.
+			appPassword, _ := svc.st.DatabaseUserPassword(ctx, d.ID, d.Username)
+			for _, u := range []store.DatabaseUser{user, initial} {
+				before, _ := svc.st.DatabaseUserPassword(ctx, d.ID, u.Name)
+				op := submit("password_rotate", map[string]string{"user_id": u.ID})
+				after, _ := svc.st.DatabaseUserPassword(ctx, d.ID, u.Name)
+				last := h.commands[len(h.commands)-1].Input
+				if after == before || len(after) < 40 || !strings.Contains(last, after) || !strings.Contains(last, "PASSWORD") && !strings.Contains(last, "IDENTIFIED BY") {
+					t.Fatalf("rotation for %s not applied", u.Name)
+				}
+				if encoded, _ := json.Marshal(op); strings.Contains(string(encoded), after) {
+					t.Fatal("job response exposed rotated password")
+				}
+			}
+			if creds, _ := svc.st.DBInstanceCredentials(ctx, d.ID); creds["password"] == appPassword {
+				t.Fatal("initial user's instance credentials not updated")
+			}
+			// The initial database and user back ${db.<name>.URL} references.
+			for _, v := range catalog.Databases {
+				if v.Name == d.DatabaseName {
+					if _, err := svc.Manage(ctx, d.ID, "database_delete", map[string]string{"database_id": v.ID}); !errors.Is(err, ErrInvalid) {
+						t.Fatal("initial database deletable", err)
+					}
+				}
+			}
+			if _, err := svc.Manage(ctx, d.ID, "user_delete", map[string]string{"user_id": initial.ID}); !errors.Is(err, ErrInvalid) {
+				t.Fatal("initial user deletable", err)
+			}
+			submit("grant_update", map[string]string{"database_id": db.ID, "user_id": user.ID, "access": "full"})
+			submit("user_delete", map[string]string{"user_id": user.ID})
+			if want := "DROP USER IF EXISTS"; engine.name == "postgres" {
+				want = "DROP ROLE IF EXISTS"
+				if !strings.Contains(h.commands[len(h.commands)-2].Input, "REASSIGN OWNED BY") {
+					t.Fatal("postgres user objects not reassigned before drop")
+				}
+				if !strings.Contains(h.commands[len(h.commands)-1].Input, want) {
+					t.Fatal("role not dropped")
+				}
+			} else if !strings.Contains(h.commands[len(h.commands)-1].Input, want) {
+				t.Fatal("user not dropped")
+			}
+			submit("database_delete", map[string]string{"database_id": db.ID})
+			if !strings.Contains(h.commands[len(h.commands)-1].Input, "DROP DATABASE IF EXISTS") {
+				t.Fatal("database not dropped")
+			}
+			catalog, _ = svc.Catalog(ctx, d.ID)
+			if len(catalog.Databases) != 1 || len(catalog.Users) != 1 || len(catalog.Grants) != 1 {
+				t.Fatalf("catalog after deletion: %+v", catalog)
+			}
+			if _, err := svc.Manage(ctx, d.ID, "user_delete", map[string]string{"user_id": user.ID}); !errors.Is(err, store.ErrNotFound) {
+				t.Fatal("deleted user still manageable", err)
 			}
 			svc.acquire(d.ID)
 			if _, err := svc.Manage(ctx, d.ID, "database_create", map[string]string{"name": "another"}); !errors.Is(err, ErrBusy) {

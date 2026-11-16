@@ -83,7 +83,7 @@ export function DeployToasts({ databaseOperations, onDismissDatabase }: { databa
         onDismissDatabase={onDismissDatabase}
         onViewDatabase={(op) => {
           if (op.action === 'delete') navigate({ to: '/databases' })
-          else navigate({ to: '/databases/$databaseId', params: { databaseId: op.instance_id }, search: { tab: ['database_create', 'user_create', 'grant_update'].includes(op.action) ? 'access' : 'logs' } })
+          else navigate({ to: '/databases/$databaseId', params: { databaseId: op.instance_id }, search: { tab: ['database_create', 'user_create', 'grant_update', 'database_delete', 'user_delete', 'password_rotate'].includes(op.action) ? 'access' : 'logs' } })
         }}
       />
       <Toaster position="bottom-center" theme={theme.mode === 'dark' ? 'light' : 'dark'} labels={{ region: t.overview.toasts, dismiss: t.overview.dismiss }} />

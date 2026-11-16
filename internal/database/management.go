@@ -12,7 +12,11 @@ import (
 )
 
 func managementAction(action string) bool {
-	return action == "database_create" || action == "user_create" || action == "grant_update" || action == "backup" || action == "restore"
+	switch action {
+	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate":
+		return true
+	}
+	return false
 }
 
 func validSQLName(name string) bool {
@@ -125,6 +129,42 @@ func (s *Service) Manage(ctx context.Context, id, action string, input map[strin
 		payload["database_id"], payload["user_id"], payload["access"] = db.ID, user.ID, access
 		payload["database"], payload["username"] = db.Name, user.Name
 		detail = user.Name + " → " + db.Name
+	case "database_delete":
+		var db store.ManagedDatabase
+		for _, v := range catalog.Databases {
+			if v.ID == input["database_id"] {
+				db = v
+			}
+		}
+		if db.ID == "" {
+			return store.DBOperation{}, store.ErrNotFound
+		}
+		// ${db.<name>.URL} references and the initial user point at this database.
+		if db.Name == d.DatabaseName {
+			return store.DBOperation{}, fmt.Errorf("%w: the initial database is used by app references and cannot be deleted; delete the instance instead", ErrInvalid)
+		}
+		payload["name"], detail = db.Name, db.Name
+	case "user_delete", "password_rotate":
+		var user store.DatabaseUser
+		for _, v := range catalog.Users {
+			if v.ID == input["user_id"] {
+				user = v
+			}
+		}
+		if user.ID == "" {
+			return store.DBOperation{}, store.ErrNotFound
+		}
+		if action == "user_delete" && user.Initial {
+			return store.DBOperation{}, fmt.Errorf("%w: the initial user is used by app references and cannot be deleted", ErrInvalid)
+		}
+		payload["name"], detail = user.Name, user.Name
+		if action == "password_rotate" {
+			secret, err := password()
+			if err != nil {
+				return store.DBOperation{}, err
+			}
+			payload["password"] = secret
+		}
 	}
 	op, err := s.st.CreateDBOperationPayload(ctx, d, action, detail, payload)
 	if err != nil {
@@ -228,6 +268,50 @@ func (s *Service) manageOperation(ctx context.Context, op store.DBOperation) err
 			return errors.New("Permission update failed. Check the instance; a PostgreSQL user owning objects cannot be downgraded until ownership is transferred")
 		}
 		err = s.st.SetDatabaseGrant(ctx, p["user_id"], p["database_id"], p["access"])
+	case "database_delete":
+		// IF EXISTS keeps a replay after a crash idempotent; FORCE ends open sessions.
+		sql := "DROP DATABASE IF EXISTS " + sqlIdentifier(d.Engine, p["name"]) + " WITH (FORCE);\n"
+		if d.Engine == "mariadb" {
+			sql = "DROP DATABASE IF EXISTS " + sqlIdentifier(d.Engine, p["name"]) + ";\n"
+		}
+		if err := run("postgres", sql); err != nil {
+			return errors.New("Database deletion failed; check the instance and retry")
+		}
+		err = s.st.RemoveManagedDatabase(ctx, d.ID, p["name"])
+	case "user_delete":
+		if d.Engine == "postgres" {
+			// Objects the user owns are kept and handed to the administrator, so
+			// deleting a user never deletes data; its privileges go with it.
+			role := pgIdentifier(p["name"])
+			cleanup := "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=" + sqlLiteral(p["name"]) + ") THEN EXECUTE 'REASSIGN OWNED BY ' || quote_ident(" + sqlLiteral(p["name"]) + ") || ' TO postgres'; EXECUTE 'DROP OWNED BY ' || quote_ident(" + sqlLiteral(p["name"]) + "); END IF; END $$;\n"
+			names := []string{"postgres"}
+			for _, db := range catalog.Databases {
+				names = append(names, db.Name)
+			}
+			for _, name := range names {
+				if err := run(name, cleanup); err != nil {
+					return errors.New("The user's privileges could not be removed from database " + name)
+				}
+			}
+			if err := run("postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename="+sqlLiteral(p["name"])+";\nDROP ROLE IF EXISTS "+role+";\n"); err != nil {
+				return errors.New("User deletion failed; check the instance and retry")
+			}
+		} else if err := run("postgres", "DROP USER IF EXISTS "+mariaAccount(p["name"])+";\n"); err != nil {
+			return errors.New("User deletion failed; check the instance and retry")
+		}
+		err = s.st.RemoveDatabaseUser(ctx, d.ID, p["name"])
+	case "password_rotate":
+		sql := "ALTER ROLE " + pgIdentifier(p["name"]) + " PASSWORD " + sqlLiteral(p["password"]) + ";\n"
+		if d.Engine == "mariadb" {
+			sql = "ALTER USER " + mariaAccount(p["name"]) + " IDENTIFIED BY " + sqlLiteral(p["password"]) + ";\n"
+		}
+		if err := run("postgres", sql); err != nil {
+			return errors.New("Password rotation failed; the previous password still works")
+		}
+		if err = s.st.SetDatabaseUserPassword(ctx, d.ID, p["name"], p["password"]); err != nil {
+			// The server already uses the new password: fail loudly, a retry re-applies it.
+			return errors.New("The password changed on the server, but could not be saved; retry the rotation now")
+		}
 	}
 	if err != nil {
 		return errors.New("The SQL operation completed, but the panel catalog could not be saved")

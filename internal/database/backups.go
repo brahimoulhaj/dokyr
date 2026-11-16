@@ -83,7 +83,7 @@ func (s *Service) BackupAction(ctx context.Context, id, action string, input map
 	payload := map[string]string{}
 	detail := input["database"]
 	if action == "backup" {
-		found := false
+		found := input["scope"] == "instance"
 		for _, name := range names {
 			if name == input["database"] {
 				found = true
@@ -92,11 +92,16 @@ func (s *Service) BackupAction(ctx context.Context, id, action string, input map
 		if !found {
 			return store.DBOperation{}, store.ErrNotFound
 		}
+		if input["scope"] == "instance" {
+			payload["scope"], detail = "instance", "all databases"
+		} else {
+			payload["database"] = input["database"]
+		}
 		c, e := s.st.GetS3Connection(ctx, input["s3_connection_id"])
 		if e != nil {
 			return store.DBOperation{}, e
 		}
-		payload["database"], payload["s3_connection_id"] = input["database"], c.ID
+		payload["s3_connection_id"] = c.ID
 	} else {
 		b, e := s.st.GetDBBackup(ctx, id, input["backup_id"])
 		if e != nil {
@@ -104,6 +109,9 @@ func (s *Service) BackupAction(ctx context.Context, id, action string, input map
 		}
 		if !b.Ready || b.Status != "succeeded" {
 			return store.DBOperation{}, fmt.Errorf("%w: select a completed backup", ErrInvalid)
+		}
+		if b.Scope == "instance" {
+			return store.DBOperation{}, fmt.Errorf("%w: whole-instance backups are restored into a new instance", ErrInvalid)
 		}
 		if !validSQLName(input["name"]) {
 			return store.DBOperation{}, fmt.Errorf("%w: choose a valid new database name", ErrInvalid)
@@ -138,14 +146,13 @@ func (s *Service) backupOperation(ctx context.Context, op store.DBOperation) err
 	if e != nil {
 		return errors.New("Database credentials could not be read")
 	}
-	stream, ok := s.ex.(executor.StreamExecutor)
-	if !ok {
-		return errors.New("Streaming database commands are unavailable")
-	}
 	if op.Action == "backup" {
 		c, e := s.st.GetS3Connection(ctx, p["s3_connection_id"])
 		if e != nil {
 			return errors.New("The S3 connection could not be read")
+		}
+		if p["scope"] == "instance" {
+			return s.backupInstance(ctx, op, d, credentials, p, c)
 		}
 		key := path.Join(strings.Trim(c.Prefix, "/"), "database-backups", d.ID, op.ID+".sql.gz")
 		b := store.DBBackup{ID: op.ID, InstanceID: d.ID, DatabaseName: p["database"], S3ConnectionID: c.ID, ObjectKey: key, PolicyID: p["policy_id"]}
@@ -156,29 +163,12 @@ func (s *Service) backupOperation(ctx context.Context, op store.DBOperation) err
 		if e != nil {
 			return errors.New("The S3 connection is unavailable")
 		}
-		reader, writer := io.Pipe()
-		defer reader.Close()
-		dumpCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		done := make(chan error, 1)
-		go func() {
-			z := gzip.NewWriter(writer)
-			err := stream.ExecStream(dumpCtx, ContainerName(d.ID), dumpCommand(d, credentials, p["database"]), nil, z)
-			closeErr := z.Close()
-			if err == nil {
-				err = closeErr
-			}
-			writer.CloseWithError(err)
-			done <- err
-		}()
-		size, uploadErr := objects.Upload(dumpCtx, key, reader)
-		reader.CloseWithError(uploadErr)
-		if uploadErr != nil {
-			cancel()
+		if e = s.st.AddDBBackupFile(ctx, op.ID, key); e != nil {
+			return errors.New("The backup record could not be saved")
 		}
-		dumpErr := <-done
-		if uploadErr != nil || dumpErr != nil {
-			return errors.New("Backup dump or S3 upload failed; check storage access and available space, then retry")
+		size, e := s.uploadDump(ctx, objects, key, d, dumpCommand(d, credentials, p["database"]))
+		if e != nil {
+			return e
 		}
 		if e = s.st.CompleteDBBackup(ctx, op.ID, size); e != nil {
 			return errors.New("Backup uploaded, but its completion could not be saved")
@@ -193,44 +183,20 @@ func (s *Service) backupOperation(ctx context.Context, op store.DBOperation) err
 	if e != nil {
 		return errors.New("The S3 connection is unavailable")
 	}
-	source, e := objects.Download(ctx, b.ObjectKey)
-	if e != nil {
-		return errors.New("The backup could not be downloaded")
-	}
-	defer source.Close()
-	z, e := gzip.NewReader(source)
-	if e != nil {
-		return errors.New("The backup is not a valid gzip file")
-	}
-	defer z.Close()
-	// Validate the entire gzip (including checksum) before creating a database. Spool
-	// with 0600 permissions, a bounded size and automatic cleanup, rather than RAM.
-	f, e := os.CreateTemp("", brand.Slug+"-restore-*.sql")
-	if e != nil {
-		return errors.New("Restore temporary storage is unavailable")
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	const limit = int64(20 << 30)
-	n, e := io.Copy(f, io.LimitReader(z, limit+1))
-	if e != nil || n > limit {
-		return errors.New("Backup validation failed or the uncompressed dump exceeds 20 GiB")
-	}
-	if _, e = f.Seek(0, io.SeekStart); e != nil {
-		return errors.New("The restore file could not be read")
-	}
 	name := p["name"]
 	run := func(db, sql string) error {
 		return s.ex.Exec(ctx, ContainerName(d.ID), adminCommand(d, credentials, db, sql))
 	}
+	// Validate the whole download before creating the database it goes into.
+	spool, e := spoolBackup(ctx, objects, b.ObjectKey)
+	if e != nil {
+		return e
+	}
+	defer spool.Close()
 	if e = run("postgres", "CREATE DATABASE "+sqlIdentifier(d.Engine, name)+";\n"); e != nil {
 		return errors.New("The new database could not be created; its name may already exist")
 	}
-	cmd := adminCommand(d, credentials, name, "")
-	if d.Engine == "postgres" {
-		cmd.Args = append(cmd.Args, "--single-transaction")
-	}
-	if e = stream.ExecStream(ctx, ContainerName(d.ID), cmd, f, io.Discard); e != nil {
+	if e = s.loadSpool(ctx, d, credentials, name, spool); e != nil {
 		return errors.New("Restore failed. The new database may contain partial data; inspect it and retry using a different name")
 	}
 	catalog, e := s.Catalog(ctx, d.ID)
@@ -259,4 +225,128 @@ func dumpCommand(d store.DBInstance, c map[string]string, name string) executor.
 		return executor.Command{Args: []string{"pg_dump", "-h", "127.0.0.1", "-U", "postgres", "--no-owner", "--no-acl", "--no-tablespaces", "--dbname", name}, Env: map[string]string{"PGPASSWORD": c["root_password"]}}
 	}
 	return executor.Command{Args: []string{"mariadb-dump", "--user=root", "--single-transaction", "--quick", "--routines", "--events", "--triggers", "--skip-add-locks", name}, Env: map[string]string{"MYSQL_PWD": c["root_password"]}}
+}
+
+// DeleteBackup removes one finished backup (manual or scheduled): exactly its recorded
+// S3 object first, then its metadata, so a failed S3 call never orphans an object.
+// It holds the instance lock, so it can never race a restore reading the same backup.
+func (s *Service) DeleteBackup(ctx context.Context, instanceID, backupID string) (store.DBBackup, error) {
+	if !s.acquire(instanceID) {
+		return store.DBBackup{}, ErrBusy
+	}
+	defer s.release(instanceID)
+	b, e := s.st.GetDBBackup(ctx, instanceID, backupID)
+	if e != nil {
+		return b, e
+	}
+	if b.Status != "succeeded" && b.Status != "failed" {
+		return b, ErrBusy
+	}
+	if e = s.deleteBackupObjects(ctx, b); e != nil {
+		return b, fmt.Errorf("%w: the backup could not be removed from S3; check storage access and retry", ErrInvalid)
+	}
+	return b, s.st.RemovePrunedBackup(ctx, b.ID)
+}
+
+// uploadDump streams one dump through gzip to S3 without buffering it in memory.
+func (s *Service) uploadDump(ctx context.Context, objects BackupObjects, key string, d store.DBInstance, cmd executor.Command) (int64, error) {
+	stream, ok := s.ex.(executor.StreamExecutor)
+	if !ok {
+		return 0, errors.New("Streaming database commands are unavailable")
+	}
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	dumpCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		z := gzip.NewWriter(writer)
+		err := stream.ExecStream(dumpCtx, ContainerName(d.ID), cmd, nil, z)
+		closeErr := z.Close()
+		if err == nil {
+			err = closeErr
+		}
+		writer.CloseWithError(err)
+		done <- err
+	}()
+	size, uploadErr := objects.Upload(dumpCtx, key, reader)
+	reader.CloseWithError(uploadErr)
+	if uploadErr != nil {
+		cancel()
+	}
+	dumpErr := <-done
+	if uploadErr != nil || dumpErr != nil {
+		return 0, errors.New("Backup dump or S3 upload failed; check storage access and available space, then retry")
+	}
+	return size, nil
+}
+
+// restoreLimit bounds the uncompressed size of one database dump.
+const restoreLimit = int64(20 << 30)
+
+// spoolBackup downloads one gzip dump and validates it completely (including the
+// checksum) into a 0600 temporary file, before any SQL is issued.
+func spoolBackup(ctx context.Context, objects BackupObjects, key string) (*os.File, error) {
+	source, e := objects.Download(ctx, key)
+	if e != nil {
+		return nil, errors.New("The backup could not be downloaded")
+	}
+	defer source.Close()
+	z, e := gzip.NewReader(source)
+	if e != nil {
+		return nil, errors.New("The backup is not a valid gzip file")
+	}
+	defer z.Close()
+	f, e := os.CreateTemp("", brand.Slug+"-restore-*.sql")
+	if e != nil {
+		return nil, errors.New("Restore temporary storage is unavailable")
+	}
+	// Unlinked at once: the open handle keeps the data until Close.
+	os.Remove(f.Name())
+	n, e := io.Copy(f, io.LimitReader(z, restoreLimit+1))
+	if e != nil || n > restoreLimit {
+		f.Close()
+		return nil, errors.New("Backup validation failed or the uncompressed dump exceeds 20 GiB")
+	}
+	if _, e = f.Seek(0, io.SeekStart); e != nil {
+		f.Close()
+		return nil, errors.New("The restore file could not be read")
+	}
+	return f, nil
+}
+
+// loadSpool feeds a validated dump into one database as the administrator.
+func (s *Service) loadSpool(ctx context.Context, d store.DBInstance, credentials map[string]string, name string, f io.Reader) error {
+	stream, ok := s.ex.(executor.StreamExecutor)
+	if !ok {
+		return errors.New("Streaming database commands are unavailable")
+	}
+	cmd := adminCommand(d, credentials, name, "")
+	if d.Engine == "postgres" {
+		cmd.Args = append(cmd.Args, "--single-transaction")
+	}
+	return stream.ExecStream(ctx, ContainerName(d.ID), cmd, f, io.Discard)
+}
+
+// deleteBackupObjects removes exactly the objects a backup recorded (all dumps and
+// the manifest of an instance backup), never listing or clearing a prefix.
+func (s *Service) deleteBackupObjects(ctx context.Context, b store.DBBackup) error {
+	objects, e := s.backupObjects(ctx, b.S3ConnectionID)
+	if e != nil {
+		return e
+	}
+	keys := append([]string{}, b.Files...)
+	found := false
+	for _, k := range keys {
+		found = found || k == b.ObjectKey
+	}
+	if !found {
+		keys = append(keys, b.ObjectKey) // backups made before keys were recorded
+	}
+	for _, k := range keys {
+		if e = objects.Delete(ctx, k); e != nil {
+			return e
+		}
+	}
+	return nil
 }

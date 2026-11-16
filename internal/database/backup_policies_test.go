@@ -199,3 +199,44 @@ func TestBackupSchedulerShutdown(t *testing.T) {
 		t.Fatal("scheduler did not stop")
 	}
 }
+
+func TestCronBackupPolicies(t *testing.T) {
+	at, _ := time.Parse(time.RFC3339, "2026-11-15T03:10:00+01:00")
+	if got := NextBackupRun(store.BackupPolicy{Frequency: "cron", Cron: "30 2 * * 1-5"}, at); got.Format(time.RFC3339) != "2026-11-16T02:30:00Z" {
+		t.Fatal("cron runs in UTC on the next weekday", got)
+	}
+	if got := NextBackupRun(store.BackupPolicy{Frequency: "cron", Cron: "0 */6 * * *"}, at); got.Format(time.RFC3339) != "2026-11-15T06:00:00Z" {
+		t.Fatal(got)
+	}
+	for _, expr := range []string{"", "* * * * *", "*/30 * * * *", "0,30 2 * * *", "@every 1s", "@daily", "CRON_TZ=Europe/Paris 0 2 * * *", "0 2 * *", "0 2 * * * *", "61 2 * * *", "0 0 30 2 *"} {
+		if _, err := parseBackupCron(expr); !errors.Is(err, ErrInvalid) {
+			t.Errorf("accepted %q: %v", expr, err)
+		}
+	}
+	for _, expr := range []string{"0 * * * *", "15 3 1 * *", "0 4 * * 0", "0 0 29 2 *"} {
+		if _, err := parseBackupCron(expr); err != nil {
+			t.Errorf("rejected %q: %v", expr, err)
+		}
+	}
+
+	s, _, project := testService(t)
+	ctx := context.Background()
+	d, e := s.Create(ctx, input(project, "postgres", "18"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.Wait()
+	connection, e := s.st.CreateS3Connection(ctx, store.S3Input{S3Connection: store.S3Connection{Name: "cron", Endpoint: "s3.example", Bucket: "bucket"}, SecretKey: "secret"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	p, e := s.SaveBackupPolicy(ctx, store.BackupPolicy{InstanceID: d.ID, DatabaseName: "app", S3ConnectionID: connection.ID, Enabled: true, Frequency: "cron", Cron: "  0   */6 * * * ", KeepCount: 3})
+	if e != nil || p.Cron != "0 */6 * * *" || p.Frequency != "cron" || p.NextRunAt.Minute() != 0 || p.NextRunAt.Hour()%6 != 0 {
+		t.Fatalf("cron policy %+v %v", p, e)
+	}
+	// Switching back to daily clears the expression.
+	p, e = s.SaveBackupPolicy(ctx, store.BackupPolicy{InstanceID: d.ID, DatabaseName: "app", S3ConnectionID: connection.ID, Enabled: true, Frequency: "daily", Hour: 1, Cron: "0 * * * *", KeepCount: 3})
+	if e != nil || p.Cron != "" || p.Frequency != "daily" {
+		t.Fatalf("daily policy %+v %v", p, e)
+	}
+}

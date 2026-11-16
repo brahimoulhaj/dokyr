@@ -25,7 +25,12 @@ func (s *Server) handleDatabaseManage(action string) http.HandlerFunc {
 			return
 		}
 		payload := map[string]string{}
-		if action == "grant_update" {
+		switch action {
+		case "database_delete":
+			payload["database_id"] = r.PathValue("database")
+		case "user_delete", "password_rotate":
+			payload["user_id"] = r.PathValue("user")
+		case "grant_update":
 			var in struct {
 				UserID     string `json:"user_id"`
 				DatabaseID string `json:"database_id"`
@@ -35,7 +40,7 @@ func (s *Server) handleDatabaseManage(action string) http.HandlerFunc {
 				return
 			}
 			payload["user_id"], payload["database_id"], payload["access"] = in.UserID, in.DatabaseID, in.Access
-		} else {
+		default:
 			var in struct {
 				Name string `json:"name"`
 			}

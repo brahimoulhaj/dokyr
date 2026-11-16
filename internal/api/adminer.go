@@ -74,7 +74,10 @@ func adminerProxy(target *url.URL, key, connection, prefix string) *httputil.Rev
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Set("Cache-Control", "no-store")
-			resp.Header.Set("Referrer-Policy", "no-referrer")
+			// Not "no-referrer": with it, browsers send "Origin: null" on Adminer's form
+			// POSTs (edit, delete) and sameOrigin rejects them as cross-origin.
+			// "same-origin" still keeps Adminer URLs from leaking to other sites.
+			resp.Header.Set("Referrer-Policy", "same-origin")
 			cookies := resp.Cookies()
 			resp.Header.Del("Set-Cookie")
 			for _, c := range cookies {

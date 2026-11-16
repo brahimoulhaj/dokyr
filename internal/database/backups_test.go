@@ -172,3 +172,53 @@ func TestBackupAndRestore(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteBackup(t *testing.T) {
+	s, h, p := testService(t)
+	s.ex = &backupTestHost{testHost: h}
+	objects := &memoryBackups{data: map[string][]byte{}}
+	s.BackupTarget = func(store.S3Input) (BackupObjects, error) { return objects, nil }
+	ctx := context.Background()
+	d, e := s.Create(ctx, input(p, "postgres", "18"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.Wait()
+	c, e := s.st.CreateS3Connection(ctx, store.S3Input{S3Connection: store.S3Connection{Name: "backups", Endpoint: "s3.example", Bucket: "bucket"}, SecretKey: "private"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.BackupAction(ctx, d.ID, "backup", map[string]string{"database": "app", "s3_connection_id": c.ID}); e != nil {
+		t.Fatal(e)
+	}
+	s.Wait()
+	backups, _ := s.st.ListDBBackups(ctx, d.ID)
+	b := backups[0]
+	// A busy instance (e.g. a restore in progress) must not lose the backup underneath it.
+	s.acquire(d.ID)
+	if _, e = s.DeleteBackup(ctx, d.ID, b.ID); !errors.Is(e, ErrBusy) {
+		t.Fatal("deleted during another operation", e)
+	}
+	s.release(d.ID)
+	// An S3 failure keeps the record so the deletion can be retried.
+	objects.failDelete = true
+	if _, e = s.DeleteBackup(ctx, d.ID, b.ID); e == nil {
+		t.Fatal("S3 failure ignored")
+	}
+	if _, e = s.st.GetDBBackup(ctx, d.ID, b.ID); e != nil {
+		t.Fatal("record lost after S3 failure", e)
+	}
+	objects.failDelete = false
+	if _, e = s.DeleteBackup(ctx, d.ID, b.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, ok := objects.data[b.ObjectKey]; ok {
+		t.Fatal("S3 object kept")
+	}
+	if _, e = s.st.GetDBBackup(ctx, d.ID, b.ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("record kept", e)
+	}
+	if _, e = s.DeleteBackup(ctx, d.ID, "missing"); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("missing backup", e)
+	}
+}

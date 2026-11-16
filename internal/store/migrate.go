@@ -54,7 +54,11 @@ func loadMigrations() ([]migration, error) {
 // Migrate applies pending migrations, each in its own transaction. If the database
 // already holds data, a consistent copy is written to the backup directory first.
 // It returns the versions it applied.
-func (s *Store) Migrate(ctx context.Context) ([]int, error) {
+func (s *Store) Migrate(ctx context.Context) ([]int, error) { return s.migrate(ctx, 0) }
+
+// migrate applies pending migrations up to version limit (0 = all); tests use a
+// limit to seed an older schema and then check the upgrade.
+func (s *Store) migrate(ctx context.Context, limit int) ([]int, error) {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
 		return nil, err
@@ -69,7 +73,7 @@ func (s *Store) Migrate(ctx context.Context) ([]int, error) {
 	}
 	var pending []migration
 	for _, m := range all {
-		if m.version > current {
+		if m.version > current && (limit == 0 || m.version <= limit) {
 			pending = append(pending, m)
 		}
 	}

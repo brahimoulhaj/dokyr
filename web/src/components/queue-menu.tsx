@@ -142,5 +142,5 @@ function DatabaseQueueItem({ op, position, onOpen }: { op: DatabaseOperation; po
   const className = 'flex items-center gap-3 px-4 py-2.5 hover:bg-raised focus-visible:bg-raised focus-visible:outline-none'
   return <li>{op.action === 'delete'
     ? <Link to="/databases" onClick={onOpen} className={className}>{content}</Link>
-    : <Link to="/databases/$databaseId" params={{ databaseId: op.instance_id }} search={{ tab: ['database_create', 'user_create', 'grant_update'].includes(op.action) ? 'access' : 'logs' }} onClick={onOpen} className={className}>{content}</Link>}</li>
+    : <Link to="/databases/$databaseId" params={{ databaseId: op.instance_id }} search={{ tab: ['database_create', 'user_create', 'grant_update', 'database_delete', 'user_delete', 'password_rotate'].includes(op.action) ? 'access' : 'logs' }} onClick={onOpen} className={className}>{content}</Link>}</li>
 }

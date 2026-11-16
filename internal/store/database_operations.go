@@ -72,7 +72,9 @@ func (s *Store) CreateDBOperationPayload(ctx context.Context, d DBInstance, acti
 		return DBOperation{}, conflict(err)
 	}
 	desired, status := StateRunning, "provisioning"
-	if action == "database_create" || action == "user_create" || action == "grant_update" || action == "backup" || action == "restore" {
+	switch action {
+	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate":
+		// SQL work on a running instance leaves its lifecycle state alone.
 		desired, status = d.DesiredState, d.Status
 	}
 	if action == "stop" || action == "delete" || action == "restart" {
@@ -85,6 +87,16 @@ func (s *Store) CreateDBOperationPayload(ctx context.Context, d DBInstance, acti
 		return DBOperation{}, err
 	}
 	return s.GetDBOperation(ctx, oid)
+}
+
+// SetDBOperationPayload replaces an operation's encrypted input, e.g. to record
+// which phase a long job reached before a restart.
+func (s *Store) SetDBOperationPayload(ctx context.Context, oid string, payload map[string]string) error {
+	sealed, err := s.sealEnvironment(payload)
+	if err != nil {
+		return err
+	}
+	return affected(s.db.ExecContext(ctx, `UPDATE db_operations SET payload = ?, updated_at = ? WHERE id = ?`, sealed, now(), oid))
 }
 
 // DBOperationPayload is never part of an operation's public JSON.

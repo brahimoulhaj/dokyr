@@ -43,6 +43,10 @@ func TestAdminerProxyIsolation(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "panel_adminer", Value: "php-session"})
 	rec := httptest.NewRecorder()
 	proxy.ServeHTTP(rec, req)
+	// "no-referrer" would make browsers send "Origin: null" on Adminer's POSTs.
+	if rec.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatalf("referrer policy %q breaks same-origin POSTs", rec.Header().Get("Referrer-Policy"))
+	}
 	if rec.Code != 302 || rec.Header().Get("Location") != prefix+"?server=db&username=app" || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("unsafe response: %d %v", rec.Code, rec.Header())
 	}

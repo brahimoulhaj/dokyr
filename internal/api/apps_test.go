@@ -90,7 +90,7 @@ func TestProjectsAPI(t *testing.T) {
 	e.must(404, "PATCH", "/api/projects/missing", map[string]any{"name": "x"})
 
 	app := e.must(201, "POST", "/api/projects/"+id+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})
-	if c := e.must(409, "DELETE", "/api/projects/"+id, nil); !strings.Contains(c["error"].(map[string]any)["message"].(string), "apps first") {
+	if c := e.must(409, "DELETE", "/api/projects/"+id, nil); !strings.Contains(c["error"].(map[string]any)["message"].(string), "apps and database instances first") {
 		t.Errorf("delete with apps = %v", c)
 	}
 	if code, _ := e.raw("DELETE", "/api/apps/"+app["id"].(string), nil); code != 204 {

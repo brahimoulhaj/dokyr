@@ -164,7 +164,7 @@ func (s *Service) launch(op store.DBOperation) {
 	go func() {
 		defer s.wg.Done()
 		defer s.release(op.InstanceID)
-		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		ctx, cancel := context.WithTimeout(s.ctx, s.operationTimeout(op))
 		defer cancel()
 		_ = s.runOperation(ctx, op)
 	}()
@@ -178,6 +178,9 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 	switch op.Action {
 	case "create", "start":
 		err = s.provision(ctx, op.InstanceID)
+		if err == nil && op.Action == "create" {
+			err = s.restoreAfterCreate(ctx, op)
+		}
 	case "stop":
 		err = s.stop(ctx, op.InstanceID)
 	case "restart":
@@ -196,7 +199,7 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 		err = s.deleteInstance(ctx, op.InstanceID)
 	case "backup", "restore":
 		err = s.backupOperation(ctx, op)
-	case "database_create", "user_create", "grant_update":
+	case "database_create", "user_create", "grant_update", "database_delete", "user_delete", "password_rotate":
 		err = s.manageOperation(ctx, op)
 	}
 	// Keep interrupted work unfinished: startup resumes the same operation ID.
@@ -306,6 +309,20 @@ func (s *Service) Recover(ctx context.Context) error {
 	}
 	pending := map[string]bool{}
 	for _, op := range ops {
+		if op.Action == "create" && op.Status == "running" {
+			// A restore into a new instance never replays over partially loaded data.
+			if p, err := s.st.DBOperationPayload(ctx, op.ID); err == nil && p["phase"] == "restoring" {
+				reason := "Restore was interrupted. This instance may contain partial data; delete it and restore the backup again."
+				if err := s.st.FinishDBOperation(ctx, op.ID, reason); err != nil {
+					return err
+				}
+				if d, err := s.st.GetDBInstance(ctx, op.InstanceID); err == nil {
+					_ = s.st.SetDBInstanceState(ctx, d.ID, d.DesiredState, "failed", reason)
+				}
+				pending[op.InstanceID] = true
+				continue
+			}
+		}
 		if op.Action == "restore" && op.Status == "running" {
 			if err := s.st.FinishDBOperation(ctx, op.ID, "Restore was interrupted. Its new database may contain partial data; inspect it and restore again using a different name."); err != nil {
 				return err
@@ -414,4 +431,38 @@ func (s *Service) Logs(ctx context.Context, id string) ([]executor.LogLine, erro
 	lines := []executor.LogLine{}
 	err := s.ex.Logs(ctx, ContainerName(id), executor.LogOptions{Tail: 200}, func(l executor.LogLine) { lines = append(lines, l) })
 	return lines, err
+}
+
+// operationTimeout gives dumps and restores hours; lifecycle and SQL work minutes.
+func (s *Service) operationTimeout(op store.DBOperation) time.Duration {
+	switch op.Action {
+	case "backup", "restore":
+		return 6 * time.Hour
+	case "create":
+		if p, err := s.st.DBOperationPayload(s.ctx, op.ID); err == nil && p["restore_backup_id"] != "" {
+			return 6 * time.Hour
+		}
+	}
+	return 10 * time.Minute
+}
+
+// restoreAfterCreate loads a whole-instance backup once a new instance is running.
+// The phase is recorded first, so a restart fails the job instead of replaying it.
+func (s *Service) restoreAfterCreate(ctx context.Context, op store.DBOperation) error {
+	p, err := s.st.DBOperationPayload(ctx, op.ID)
+	if err != nil {
+		return errors.New("operation input could not be decrypted")
+	}
+	if p["restore_backup_id"] == "" {
+		return nil
+	}
+	p["phase"] = "restoring"
+	if err := s.st.SetDBOperationPayload(ctx, op.ID, p); err != nil {
+		return errors.New("restore progress could not be saved")
+	}
+	d, err := s.st.GetDBInstance(ctx, op.InstanceID)
+	if err != nil {
+		return errors.New("the database record could not be read")
+	}
+	return s.restoreInstance(ctx, d, p)
 }
