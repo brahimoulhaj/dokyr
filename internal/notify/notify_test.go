@@ -239,3 +239,87 @@ func TestDispatch(t *testing.T) {
 		t.Fatalf("disk alerts %d, sent %d", high, failing.count())
 	}
 }
+
+func TestUsageRules(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if _, err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var got received
+	srv := got.server(t, 200)
+	n := New(ctx, st, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	st.SetEventHook(n.Handle)
+	ch, _ := st.CreateNotificationChannel(ctx, "ops", "webhook", map[string]string{"url": srv.URL})
+	p, _ := st.CreateProject(ctx, "shop", "")
+	app, _ := st.CreateApp(ctx, p.ID, store.AppInput{Name: "web", Image: "nginx", Port: 80})
+	other, _ := st.CreateApp(ctx, p.ID, store.AppInput{Name: "api", Image: "nginx", Port: 80})
+	cpu, _ := st.CreateAlertRule(ctx, store.AlertRule{Event: UsageCPU, TargetID: app.ID, ChannelID: ch.ID, Enabled: true, Threshold: 1, Duration: 300})
+	if _, err := st.CreateAlertRule(ctx, store.AlertRule{Event: UsageMemory, ChannelID: ch.ID, Enabled: true, Threshold: 90, Duration: 120}); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	// sample writes 10-second samples from..to (seconds after base) for an app.
+	sample := func(appID string, from, to int, cpu float64, memory int64) {
+		for s := from; s < to; s += 10 {
+			_ = st.AddMetricSamples(ctx, base.Add(time.Duration(s)*time.Second).Unix(), []store.MetricSample{{Kind: "app", ResourceID: appID, CPU: cpu, Memory: memory, MemoryLimit: 1000}})
+		}
+	}
+	bodies := func() []string {
+		got.mu.Lock()
+		defer got.mu.Unlock()
+		var out []string
+		for _, b := range got.body {
+			var m map[string]any
+			_ = json.Unmarshal(b, &m)
+			out = append(out, m["title"].(string))
+		}
+		return out
+	}
+	fired := map[string]bool{}
+	check := func(at int) { n.checkUsage(ctx, base.Add(time.Duration(at)*time.Second), fired); n.Wait() }
+
+	// Only 2 minutes of high CPU: a 5-minute rule waits; one low sample in the window holds it back.
+	sample(app.ID, 0, 120, 1.5, 100)
+	check(120)
+	sample(app.ID, 120, 130, 0.2, 100)
+	sample(app.ID, 130, 310, 1.5, 100)
+	check(310)
+	if len(bodies()) != 0 {
+		t.Fatalf("fired too early: %v", bodies())
+	}
+	sample(app.ID, 310, 440, 1.5, 100)
+	check(440) // 300 s window from 140 s: all high
+	check(450) // still high: no repeat
+	if b := bodies(); len(b) != 1 || b[0] != "High CPU: web" {
+		t.Fatalf("cpu alert %v", b)
+	}
+	sample(app.ID, 440, 450, 0.3, 100)
+	check(450)
+	if b := bodies(); len(b) != 2 || b[1] != "CPU back to normal: web" {
+		t.Fatalf("cpu recovery %v", b)
+	}
+	// The memory rule covers every app: api at 95% of its limit for 2 minutes fires.
+	sample(other.ID, 330, 460, 0.1, 950)
+	check(460)
+	if b := bodies(); len(b) != 3 || b[2] != "High memory: api" {
+		t.Fatalf("memory alert %v", b)
+	}
+	// Recorded in Activity, and never re-sent through the event hook.
+	events, _ := st.ListEvents(ctx, 20)
+	if len(events) != 3 || events[0].Action != UsageMemory || events[1].Action != "usage.cpu_normal" {
+		t.Fatalf("events %+v", events)
+	}
+	// A deleted rule stops its alerts.
+	_ = st.DeleteAlertRule(ctx, cpu.ID)
+	check(470)
+	for k := range fired {
+		if strings.HasPrefix(k, cpu.ID) {
+			t.Fatal("state of a deleted rule kept")
+		}
+	}
+}

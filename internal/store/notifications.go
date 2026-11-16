@@ -27,6 +27,9 @@ type AlertRule struct {
 	TargetID  string `json:"target_id"`
 	ChannelID string `json:"channel_id"`
 	Enabled   bool   `json:"enabled"`
+	// Usage rules only: cores (CPU) or percent of the memory limit, and for how long.
+	Threshold float64 `json:"threshold"`
+	Duration  int     `json:"duration_s"`
 }
 
 const channelCols = `id,name,kind,config,last_sent_at,last_error,created_at`
@@ -109,13 +112,20 @@ func (s *Store) RecordNotificationResult(ctx context.Context, cid, errMsg string
 	return err
 }
 
+const ruleCols = `id,event,target_id,channel_id,enabled,threshold,duration_s`
+
+// EnabledAlertRules returns the enabled rules for an event, whatever their target.
+func (s *Store) EnabledAlertRules(ctx context.Context, event string) ([]AlertRule, error) {
+	return s.alertRules(ctx, `SELECT `+ruleCols+` FROM alert_rules WHERE enabled=1 AND event=?`, event)
+}
+
 func (s *Store) ListAlertRules(ctx context.Context) ([]AlertRule, error) {
-	return s.alertRules(ctx, `SELECT id,event,target_id,channel_id,enabled FROM alert_rules ORDER BY event,target_id,channel_id`)
+	return s.alertRules(ctx, `SELECT `+ruleCols+` FROM alert_rules ORDER BY event,target_id,channel_id`)
 }
 
 // MatchingAlertRules returns the enabled rules for an event on a target.
 func (s *Store) MatchingAlertRules(ctx context.Context, event, targetID string) ([]AlertRule, error) {
-	return s.alertRules(ctx, `SELECT id,event,target_id,channel_id,enabled FROM alert_rules WHERE enabled=1 AND event=? AND (target_id='' OR target_id=?)`, event, targetID)
+	return s.alertRules(ctx, `SELECT `+ruleCols+` FROM alert_rules WHERE enabled=1 AND event=? AND (target_id='' OR target_id=?)`, event, targetID)
 }
 
 func (s *Store) alertRules(ctx context.Context, query string, args ...any) ([]AlertRule, error) {
@@ -127,7 +137,7 @@ func (s *Store) alertRules(ctx context.Context, query string, args ...any) ([]Al
 	out := []AlertRule{}
 	for rows.Next() {
 		var r AlertRule
-		if err := rows.Scan(&r.ID, &r.Event, &r.TargetID, &r.ChannelID, &r.Enabled); err != nil {
+		if err := rows.Scan(&r.ID, &r.Event, &r.TargetID, &r.ChannelID, &r.Enabled, &r.Threshold, &r.Duration); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -138,7 +148,7 @@ func (s *Store) alertRules(ctx context.Context, query string, args ...any) ([]Al
 func (s *Store) CreateAlertRule(ctx context.Context, r AlertRule) (AlertRule, error) {
 	r.ID = id.New()
 	ts := now()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO alert_rules(id,event,target_id,channel_id,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, r.ID, r.Event, r.TargetID, r.ChannelID, r.Enabled, ts, ts); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO alert_rules(id,event,target_id,channel_id,enabled,threshold,duration_s,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, r.ID, r.Event, r.TargetID, r.ChannelID, r.Enabled, r.Threshold, r.Duration, ts, ts); err != nil {
 		return r, conflict(err)
 	}
 	return r, nil

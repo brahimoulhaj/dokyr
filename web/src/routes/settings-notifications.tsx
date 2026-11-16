@@ -13,7 +13,7 @@ import { DatabaseSelect } from './databases'
 
 type Kind = { id: string; fields: string[]; secret: string[]; required: string[] }
 type Channel = { id: string; name: string; kind: string; config: Record<string, string | boolean>; last_sent_at: string | null; last_error: string; created_at: string }
-type Rule = { id: string; event: string; target_id: string; channel_id: string; enabled: boolean }
+type Rule = { id: string; event: string; target_id: string; channel_id: string; enabled: boolean; threshold: number; duration_s: number }
 
 const kindsQuery = { queryKey: ['notifications', 'kinds'], queryFn: () => api<{ kinds: Kind[]; events: string[] }>('/notifications/kinds'), staleTime: Infinity }
 const channelsQuery = { queryKey: ['notifications', 'channels'], queryFn: () => api<Channel[]>('/notification-channels') }
@@ -121,9 +121,12 @@ function Rules() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['notifications', 'rules'] })
   const toggle = useMutation({ mutationFn: (r: Rule) => api(`/alert-rules/${r.id}`, { method: 'PUT', body: { enabled: !r.enabled } }), onSettled: refresh })
   const remove = useMutation({ mutationFn: (r: Rule) => api(`/alert-rules/${r.id}`, { method: 'DELETE' }), onSettled: refresh })
+  const cores = useT().metrics.usage.cores
   const targetName = (r: Rule) => r.target_id
     ? targets.apps.find((a) => a.id === r.target_id)?.name ?? targets.databases.find((d) => d.id === r.target_id)?.name ?? r.target_id
-    : r.event === 'disk.high' ? t.server : r.event === 'backup.failed' ? t.allDatabases : t.allApps
+    : r.event === 'disk.high' ? t.server : r.event === 'backup.failed' ? t.allDatabases : r.event.startsWith('usage.') ? t.allResources : t.allApps
+  // "at or above 1.5 cores for 5 min" for usage rules.
+  const usage = (r: Rule) => !r.event.startsWith('usage.') ? '' : ` · ${t.usageSummary(r.event === 'usage.cpu_high' ? cores(String(r.threshold)) : `${r.threshold}%`, Math.round(r.duration_s / 60))}`
   return <>
     <QueryState loading={rules.isPending} error={rules.error ?? toggle.error ?? remove.error} what={t.rules} />
     {rules.data && <Panel title={<span className="inline-flex items-center gap-2">{t.rules}<HelpTip label={t.rules}>{t.ruleHint}</HelpTip></span>}
@@ -132,7 +135,7 @@ function Rules() {
         <ul className="divide-y divide-line">{rules.data.map((r) => <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2 text-sm"><span>{t.events[r.event] ?? r.event}</span>{!r.enabled && <Badge tone="warn">{t.paused}</Badge>}</div>
-            <p className="text-xs text-muted">{targetName(r)} → {channels.data?.find((c) => c.id === r.channel_id)?.name ?? r.channel_id}</p>
+            <p className="text-xs text-muted">{targetName(r)}{usage(r)} → {channels.data?.find((c) => c.id === r.channel_id)?.name ?? r.channel_id}</p>
           </div>
           <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${t.events[r.event] ?? r.event}`} items={[
             { label: r.enabled ? t.disable : t.enable, disabled: toggle.isPending, onSelect: () => toggle.mutate(r) },
@@ -140,7 +143,7 @@ function Rules() {
           ]} />
         </li>)}</ul>}
     </Panel>}
-    <Sheet open={adding} onOpenChange={setAdding} title={t.addRule} description={t.ruleHint}>
+    <Sheet open={adding} onOpenChange={setAdding} title={t.addRule} description={`${t.ruleHint} ${t.usageHint}`}>
       {adding && <RuleForm channels={channels.data ?? []} targets={targets} onDone={() => { setAdding(false); refresh() }} />}
     </Sheet>
   </>
@@ -164,17 +167,38 @@ function RuleForm({ channels, targets, onDone }: { channels: Channel[]; targets:
   const [event, setEvent] = useState('deployment.failed')
   const [target, setTarget] = useState(EVERY)
   const [channel, setChannel] = useState(channels[0]?.id ?? '')
-  const save = useMutation({ mutationFn: () => api('/alert-rules', { method: 'POST', body: { event, target_id: target === EVERY ? '' : target, channel_id: channel } }), onSuccess: onDone })
+  const [threshold, setThreshold] = useState('')
+  const [minutes, setMinutes] = useState('5')
+  const usage = event.startsWith('usage.')
+  const save = useMutation({
+    mutationFn: () => api('/alert-rules', { method: 'POST', body: {
+      event, target_id: target === EVERY ? '' : target, channel_id: channel,
+      ...(usage ? { threshold: Number(threshold), duration_s: Number(minutes) * 60 } : {}),
+    } }),
+    onSuccess: onDone,
+  })
   const forApps = event.startsWith('deployment.') || event.startsWith('app.')
   const forDatabases = event === 'backup.failed'
   return <form className="space-y-5 p-5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
-    <DatabaseSelect label={t.event} value={event} onChange={(v) => { setEvent(v); setTarget(EVERY) }}>
+    <DatabaseSelect label={t.event} value={event} onChange={(v) => { setEvent(v); setTarget(EVERY); setThreshold(v === 'usage.memory_high' ? '90' : v === 'usage.cpu_high' ? '1' : '') }}>
       {(kinds.data?.events ?? [event]).map((e) => <option key={e} value={e}>{t.events[e] ?? e}</option>)}
     </DatabaseSelect>
     {(forApps || forDatabases) && <DatabaseSelect label={t.target} value={target} onChange={setTarget}>
       <option value={EVERY}>{forApps ? t.allApps : t.allDatabases}</option>
       {(forApps ? targets.apps : targets.databases).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
     </DatabaseSelect>}
+    {usage && <>
+      <DatabaseSelect label={t.target} value={target} onChange={setTarget}>
+        <option value={EVERY}>{t.allResources}</option>
+        <optgroup label={t.appsGroup}>{targets.apps.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>
+        <optgroup label={t.databasesGroup}>{targets.databases.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>
+      </DatabaseSelect>
+      <div className="grid grid-cols-2 gap-4">
+        <Field name="rule-threshold" type="number" required step="any" min={event === 'usage.cpu_high' ? 0.01 : 1} max={event === 'usage.cpu_high' ? 1024 : 100}
+          label={event === 'usage.cpu_high' ? t.thresholdCores : t.thresholdPercent} value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+        <Field name="rule-minutes" type="number" required min={1} max={60} label={t.durationMinutes} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+      </div>
+    </>}
     <DatabaseSelect label={t.channel} value={channel} onChange={setChannel}>
       {channels.map((c) => <option key={c.id} value={c.id}>{c.name} · {t.kinds[c.kind] ?? c.kind}</option>)}
     </DatabaseSelect>

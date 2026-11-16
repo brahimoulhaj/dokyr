@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -169,10 +170,35 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	usage := strings.HasPrefix(in.Event, "usage.")
+	if usage {
+		max := 1024.0 // cores
+		if in.Event == notify.UsageMemory {
+			max = 100 // percent of the limit
+		}
+		if in.Threshold <= 0 || in.Threshold > max {
+			invalid(w, fmt.Sprintf("the threshold must be above 0 and at most %g", max))
+			return
+		}
+		if in.Duration < 60 || in.Duration > 3600 {
+			invalid(w, "the duration must be 1 to 60 minutes")
+			return
+		}
+	} else {
+		in.Threshold, in.Duration = 0, 0
+	}
 	target := ""
 	if in.TargetID != "" {
 		var err error
 		switch {
+		case usage: // one app or one database instance
+			if a, aerr := s.store.GetApp(r.Context(), in.TargetID); aerr == nil {
+				target = a.Name
+			} else if d, derr := s.store.GetDBInstance(r.Context(), in.TargetID); derr == nil {
+				target = d.Name
+			} else {
+				err = store.ErrNotFound
+			}
 		case strings.HasPrefix(in.Event, "deployment.") || strings.HasPrefix(in.Event, "app."):
 			var a store.App
 			a, err = s.store.GetApp(r.Context(), in.TargetID)

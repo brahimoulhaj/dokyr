@@ -302,6 +302,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	go metrics.Run(ctx)
 	apiSrv.SetHostMetrics(metrics)
 	go notifier.WatchDisk(ctx, metrics.Snapshot, time.Minute)
+	go notifier.WatchUsage(ctx, time.Minute)
 	apiSrv.SetNotifier(notifier)
 	metricsClient, err := client.New(client.FromEnv)
 	if err != nil {

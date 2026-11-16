@@ -94,3 +94,41 @@ FROM metrics_samples WHERE kind=? AND resource_id=? AND resolution=? AND ts>=? A
 	}
 	return out, rows.Err()
 }
+
+// MetricWindow sums up one resource's raw samples since a time: how many there are,
+// and the lowest CPU and memory share of the limit among them (usage alerts fire
+// when even the lowest is above the threshold), plus the latest sample's values.
+type MetricWindow struct {
+	Kind         string
+	ResourceID   string
+	Samples      int
+	MinCPU       float64
+	MinMemoryPct float64
+	LastCPU      float64
+	LastMemPct   float64
+}
+
+// MetricWindows returns a window per resource of kind ("" = apps and databases),
+// or of one resource when resourceID is set, over raw samples at or after from.
+func (s *Store) MetricWindows(ctx context.Context, kind, resourceID string, from int64) ([]MetricWindow, error) {
+	rows, err := s.db.QueryContext(ctx, `WITH w AS (
+ SELECT kind,resource_id,ts,cpu,CASE WHEN memory_limit>0 THEN 100.0*memory/memory_limit ELSE 0 END AS pct
+ FROM metrics_samples WHERE resolution=? AND ts>=? AND (?='' OR kind=?) AND (?='' OR resource_id=?))
+SELECT kind,resource_id,COUNT(*),MIN(cpu),MIN(pct),
+ (SELECT cpu FROM w l WHERE l.kind=w.kind AND l.resource_id=w.resource_id ORDER BY ts DESC LIMIT 1),
+ (SELECT pct FROM w l WHERE l.kind=w.kind AND l.resource_id=w.resource_id ORDER BY ts DESC LIMIT 1)
+FROM w GROUP BY kind,resource_id`, MetricRaw, from, kind, kind, resourceID, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MetricWindow{}
+	for rows.Next() {
+		var m MetricWindow
+		if err := rows.Scan(&m.Kind, &m.ResourceID, &m.Samples, &m.MinCPU, &m.MinMemoryPct, &m.LastCPU, &m.LastMemPct); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

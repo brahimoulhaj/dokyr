@@ -14,7 +14,7 @@ import (
 
 // Events that alert rules can name. Rules for deployment.failed also match a
 // deployment that failed and was rolled back.
-var Events = []string{"deployment.started", "deployment.succeeded", "deployment.failed", "app.health_failing", "app.health_recovered", "app.crashed", "backup.failed", "disk.high"}
+var Events = []string{"deployment.started", "deployment.succeeded", "deployment.failed", "app.health_failing", "app.health_recovered", "app.crashed", "backup.failed", "disk.high", UsageCPU, UsageMemory}
 
 // DiskHigh and DiskClear: the disk alert fires at DiskHigh percent and re-arms
 // only once usage falls under DiskClear, so it does not repeat every minute.
@@ -51,8 +51,8 @@ func ruleEvent(action string) string {
 // Handle is the store's event hook: it matches rules and sends in the background.
 func (s *Service) Handle(e store.Event) {
 	event := ruleEvent(e.Action)
-	if !contains(Events, event) {
-		return
+	if !contains(Events, event) || strings.HasPrefix(event, "usage.") {
+		return // usage rules are sent by checkUsage, each to its own channel
 	}
 	s.wg.Add(1)
 	go func() {

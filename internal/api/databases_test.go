@@ -244,6 +244,12 @@ func TestDatabaseAPI(t *testing.T) {
 	call("POST", "/api/alert-rules", map[string]string{"event": "disk.high", "channel_id": channel.ID, "target_id": d.ID}, "session", 422)
 	call("POST", "/api/alert-rules", map[string]string{"event": "deployment.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 422)
 	rule := call("POST", "/api/alert-rules", map[string]string{"event": "backup.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 201)
+	call("POST", "/api/alert-rules", map[string]any{"event": "usage.memory_high", "channel_id": channel.ID, "threshold": 120, "duration_s": 300}, "session", 422)
+	call("POST", "/api/alert-rules", map[string]any{"event": "usage.cpu_high", "channel_id": channel.ID, "threshold": 1, "duration_s": 10}, "session", 422)
+	usageRule := call("POST", "/api/alert-rules", map[string]any{"event": "usage.memory_high", "channel_id": channel.ID, "target_id": d.ID, "threshold": 90, "duration_s": 300}, "session", 201)
+	if !strings.Contains(usageRule.Body.String(), `"threshold":90`) || !strings.Contains(usageRule.Body.String(), `"duration_s":300`) {
+		t.Fatalf("usage rule %s", usageRule.Body.String())
+	}
 	call("POST", "/api/alert-rules", map[string]string{"event": "backup.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 409)
 	var r struct{ ID string }
 	_ = json.Unmarshal(rule.Body.Bytes(), &r)
