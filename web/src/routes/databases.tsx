@@ -3,7 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState, type ReactNode } from 'react'
 import { DeletedInstanceBackups } from '../components/deleted-instance-backups'
 import { ListToolbar, Pager, SearchBox, ToolbarSelect, fold, usePages } from '../components/list-controls'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
 import { api, projectsQuery, type Project } from '../lib/api'
 import { timeAgo } from '../lib/format'
@@ -168,6 +168,6 @@ export function NewDatabase({ onDone, projectId }: { onDone: () => void; project
       <p className="text-xs text-muted">{t.databases.privateHint} {t.databases.passwords}</p>
     </>}
     {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-    <div className="flex gap-2"><Button disabled={create.isPending || !projects.data?.length || !engines.data?.length}>{create.isPending ? t.common.creating : t.common.create}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></div>
+    <SheetActions><Button disabled={create.isPending || !projects.data?.length || !engines.data?.length}>{create.isPending ? t.common.creating : t.common.create}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></SheetActions>
   </form>
 }

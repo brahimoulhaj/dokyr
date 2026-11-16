@@ -8,7 +8,7 @@ import { useT } from '../lib/i18n'
 import { DatabaseSelect } from '../routes/databases'
 import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
-import { Sheet } from './sheet'
+import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, ErrorNote, Field, Panel } from './ui'
 
 type OrphanBackup = {
@@ -91,7 +91,7 @@ export function DeletedInstanceBackups() {
               <Field name="orphan-database-name" autoFocus label={t.newDatabase} value={name} onChange={(e) => setName(e.target.value)} pattern="[a-z][a-z0-9_]*" maxLength={48} required />
             </>}
         {restore.error && <ErrorNote>{restore.error.message}</ErrorNote>}
-        <Button disabled={restore.isPending || !name || (instanceRestore ? !selectedProject : !selectedTarget)}>{instanceRestore ? t.restoreInstance : t.restoreBackup}</Button>
+        <SheetActions><Button disabled={restore.isPending || !name || (instanceRestore ? !selectedProject : !selectedTarget)}>{instanceRestore ? t.restoreInstance : t.restoreBackup}</Button></SheetActions>
       </form>
     </Sheet>
   </>

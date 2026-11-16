@@ -33,9 +33,20 @@ export function Sheet(props: {
               ×
             </Dialog.Close>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">{props.children}</div>
+          {/* The content fills the sheet so SheetActions can sit at its bottom, short form or long. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [&>*]:flex [&>*]:grow [&>*]:flex-col">{props.children}</div>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+/** The action buttons of a sheet's form, kept at the bottom of the sheet and outside the
+ * scrolling content. Goes last inside a form padded with p-5. */
+export function SheetActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-auto flex flex-wrap gap-2 border-t border-line bg-surface px-5 py-4">
+      {children}
+    </div>
   )
 }

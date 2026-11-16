@@ -4,7 +4,7 @@ import { api, s3ConnectionsQuery } from '../lib/api'
 import { WHOLE_INSTANCE, databaseCatalogQuery, type DatabaseInstance } from '../lib/databases'
 import { useT } from '../lib/i18n'
 import { DatabaseSelect } from '../routes/databases'
-import { Sheet } from './sheet'
+import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
 import { poll } from '../lib/live'
 
@@ -62,6 +62,6 @@ function PolicyEditor({ d, busy, policy, onDone }: { d: DatabaseInstance; busy: 
     <Field name="backup-retention" type="number" min={1} max={365} required label={t.retentionCount} value={keep} onChange={(e) => setKeep(Number(e.target.value))} />
     <p className="text-xs leading-relaxed text-muted">{t.retentionHint}</p>
     {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-    <Button disabled={busy || save.isPending || !selectedStorage}>{t.saveSchedule}</Button>
+    <SheetActions><Button disabled={busy || save.isPending || !selectedStorage}>{t.saveSchedule}</Button></SheetActions>
   </form>
 }

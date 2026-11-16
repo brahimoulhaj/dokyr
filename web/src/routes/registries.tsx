@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { BuiltinForm, StateBadge } from '../components/builtin-registry'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
 import { api, registriesQuery, registrySettingsQuery, registryTokensQuery, s3ConnectionsQuery, type Registry, type RegistrySettings } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
@@ -160,12 +160,12 @@ export function AddExternal({ onDone }: { onDone: () => void }) {
         value={form.password} onChange={set('password')} autoComplete="new-password" />
       <Field label={tr.name} name="registry-name" maxLength={64} value={form.name} onChange={set('name')} autoComplete="off" />
       {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={add.isPending || !form.server.trim() || !form.username.trim() || !form.password}>
           {add.isPending ? tr.checking : tr.save}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@yusufceng1z/ding-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Button, CheckOption, Empty, ErrorNote, Field, Panel, QueryState } from '../components/ui'
 import { api, metaQuery, s3ConnectionsQuery } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
@@ -249,10 +249,10 @@ function BackupForm({ current, onDone }: { current: PanelBackup; onDone: () => v
         </p>
       )}
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={save.isPending || mismatch || !connection}>{save.isPending ? t.common.saving : t.common.save}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }

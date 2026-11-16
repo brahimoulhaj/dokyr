@@ -6,7 +6,7 @@ import { Button, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } fr
 import { api, appProblemsQuery, projectsQuery, type Project } from '../lib/api'
 import { timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 
 export function ProjectsPage() {
   const t = useT()
@@ -142,14 +142,14 @@ export function NewProject({ onDone }: { onDone: () => void }) {
       <Field label={t.common.name} name="name" required autoFocus maxLength={64} value={name} onChange={(e) => setName(e.target.value)} />
       <Field label={`${t.common.description} (${t.common.optional})`} name="description" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
       {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={create.isPending}>
           {create.isPending ? t.common.creating : t.projects.createProject}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           {t.common.cancel}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }

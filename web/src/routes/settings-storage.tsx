@@ -4,7 +4,7 @@ import { Button, CheckOption, ConfirmButton, Empty, ErrorNote, Field, Panel, Que
 import { api, s3ConnectionsQuery, type S3Connection } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 
 /** Settings → Storage: S3-compatible connections — add (checked by writing a small file),
  * test again, remove. */
@@ -76,14 +76,14 @@ function AddS3({ onDone }: { onDone: () => void }) {
       </div>
       <CheckOption checked={pathStyle} onChange={setPathStyle} label={t.pathStyle} hint={t.pathStyleHint} />
       {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={add.isPending || !ready}>
           {add.isPending ? t.checking : t.save}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           {tt.common.cancel}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }

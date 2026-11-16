@@ -9,7 +9,7 @@ import { DatabaseSelect } from '../routes/databases'
 import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
 import { DatabaseBackupPolicies } from './database-backup-policies'
-import { Sheet } from './sheet'
+import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
 import { poll } from '../lib/live'
 
@@ -85,7 +85,7 @@ export function DatabaseBackups({ d, busy }: { d: DatabaseInstance; busy: boolea
         </DatabaseSelect>
         <DatabaseSelect label={t.backupStorage} value={selectedStorage} onChange={setConnection}>{storage.data?.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.bucket}</option>)}</DatabaseSelect>
         {submit.error && <ErrorNote>{submit.error.message}</ErrorNote>}
-        <Button disabled={busy || !ready || submit.isPending || !selectedStorage}>{t.backupNow}</Button>
+        <SheetActions><Button disabled={busy || !ready || submit.isPending || !selectedStorage}>{t.backupNow}</Button></SheetActions>
       </form>
     </Sheet>
     <Sheet open={!!restoring} onOpenChange={(open) => { if (!open) setRestoring(null) }} title={instanceRestore ? t.restoreInstance : t.restoreBackup} description={instanceRestore ? t.restoreInstanceHint : t.restoreHint}>
@@ -94,7 +94,7 @@ export function DatabaseBackups({ d, busy }: { d: DatabaseInstance; busy: boolea
           ? <Field name="restore-instance-name" autoFocus label={t.newInstanceName} value={name} onChange={(e) => setName(e.target.value)} pattern="[a-z][a-z0-9\-]*" maxLength={48} required />
           : <Field name="restore-name" autoFocus label={t.newDatabase} value={name} onChange={(e) => setName(e.target.value)} pattern="[a-z][a-z0-9_]*" maxLength={48} required />}
         {restoreMutation.error && <ErrorNote>{restoreMutation.error.message}</ErrorNote>}
-        <Button disabled={busy || (!instanceRestore && !ready) || restoreMutation.isPending || !name}>{instanceRestore ? t.restoreInstance : t.restoreBackup}</Button>
+        <SheetActions><Button disabled={busy || (!instanceRestore && !ready) || restoreMutation.isPending || !name}>{instanceRestore ? t.restoreInstance : t.restoreBackup}</Button></SheetActions>
       </form>
     </Sheet>
   </div>

@@ -7,7 +7,7 @@ import { useT } from '../lib/i18n'
 import { DatabaseSelect } from '../routes/databases'
 import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
-import { Sheet } from './sheet'
+import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
 
 const levels: DatabaseAccessLevel[] = ['none', 'read_only', 'read_write', 'full']
@@ -97,7 +97,7 @@ function NewResource({ d, action, busy, onDone }: { d: DatabaseInstance; action:
     <Field name="resource-name" autoFocus label={t.common.name} hint={t.databases.sqlHint} required maxLength={48} pattern="[a-z][a-z0-9_]*" value={name} onChange={(e) => setName(e.target.value)} />
     {action === 'user_create' && <p className="text-xs text-muted">{t.databases.generatedPassword}</p>}
     {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-    <div className="flex gap-2"><Button disabled={busy || create.isPending}>{create.isPending ? t.common.creating : t.common.create}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></div>
+    <SheetActions><Button disabled={busy || create.isPending}>{create.isPending ? t.common.creating : t.common.create}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></SheetActions>
   </form>
 }
 
@@ -120,7 +120,7 @@ function GrantEditor({ d, user, catalog, busy, onDone }: { d: DatabaseInstance; 
     <p className="text-xs leading-relaxed text-muted">{protectedAccess ? t.databases.protectedAccess : t.databases.permissionHint}</p>
     {!protectedAccess && d.engine === 'postgres' && <p className="text-xs leading-relaxed text-muted">{t.databases.grantCaution}</p>}
     {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-    <div className="flex gap-2"><Button disabled={busy || save.isPending || protectedAccess || !database || access === saved(database)}>{save.isPending ? t.common.saving : t.databases.grantSave}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></div>
+    <SheetActions><Button disabled={busy || save.isPending || protectedAccess || !database || access === saved(database)}>{save.isPending ? t.common.saving : t.databases.grantSave}</Button><Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button></SheetActions>
   </form>
 }
 

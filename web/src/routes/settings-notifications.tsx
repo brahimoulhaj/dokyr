@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
 import { ConfirmModal } from '../components/confirm-dialog'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, Empty, ErrorNote, Field, HelpTip, Panel, QueryState } from '../components/ui'
 import { api, appsQuery, projectsQuery } from '../lib/api'
 import { databasesQuery } from '../lib/databases'
@@ -104,10 +104,10 @@ function ChannelForm({ channel, onDone }: { channel: Channel | null; onDone: () 
         hint={hint(f)} hintTooltip value={config[f] ?? ''} onChange={set(f)} />
     })}
     {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-    <div className="flex gap-2">
+    <SheetActions>
       <Button type="submit" disabled={save.isPending || !name.trim() || !kind}>{save.isPending ? tc.working : t.save}</Button>
       <Button type="button" variant="ghost" onClick={onDone}>{tc.cancel}</Button>
-    </div>
+    </SheetActions>
   </form>
 }
 
@@ -203,9 +203,9 @@ function RuleForm({ channels, targets, onDone }: { channels: Channel[]; targets:
       {channels.map((c) => <option key={c.id} value={c.id}>{c.name} · {t.kinds[c.kind] ?? c.kind}</option>)}
     </DatabaseSelect>
     {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-    <div className="flex gap-2">
+    <SheetActions>
       <Button type="submit" disabled={save.isPending || !channel}>{save.isPending ? tc.working : t.addRule}</Button>
       <Button type="button" variant="ghost" onClick={onDone}>{tc.cancel}</Button>
-    </div>
+    </SheetActions>
   </form>
 }

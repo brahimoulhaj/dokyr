@@ -15,7 +15,7 @@ import {
 } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
-import { Sheet } from './sheet'
+import { Sheet, SheetActions } from './sheet'
 import { withToast } from '../lib/toasts'
 
 /** The built-in registry's settings: to turn it on (in a sheet), or to change it once on
@@ -39,6 +39,11 @@ export function BuiltinForm({ saved, mode, onDone }: { saved: RegistrySettings; 
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['registry'] }),
   })
   const dirty = mode === 'enable' || form.domain !== saved.domain || form.s3_connection_id !== saved.s3_connection_id || form.build_cache !== saved.build_cache || form.tls_mode !== (saved.tls_mode || 'auto')
+  const submit = (
+    <Button type="submit" disabled={!dirty || save.isPending}>
+      {mode === 'enable' ? (save.isPending ? t.enabling : t.enableSave) : save.isPending ? t.saving : t.save}
+    </Button>
+  )
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
       <Field label={t.domain} name="registry-domain" dir="ltr" placeholder={suggested} hint={t.domainHint}
@@ -63,9 +68,7 @@ export function BuiltinForm({ saved, mode, onDone }: { saved: RegistrySettings; 
       </label>
       <CheckOption checked={form.build_cache} onChange={(v) => setForm({ ...form, build_cache: v })} label={t.buildCache} hint={t.buildCacheHint} />
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-      <Button type="submit" disabled={!dirty || save.isPending}>
-        {mode === 'enable' ? (save.isPending ? t.enabling : t.enableSave) : save.isPending ? t.saving : t.save}
-      </Button>
+      {mode === 'enable' ? <SheetActions>{submit}</SheetActions> : submit}
     </form>
   )
 }
@@ -169,10 +172,10 @@ function CreateToken({ onDone }: { onDone: () => void }) {
         </select>
       </label>
       {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={!name.trim() || create.isPending}>{create.isPending ? t.creating : t.create}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>{tt.common.cancel}</Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }
@@ -194,7 +197,7 @@ function NewToken({ token, onDone }: { token: RegistryToken; onDone: () => void 
           {copied ? tt.common.copied : tt.common.copy}
         </Button>
       </div>
-      <Button type="button" onClick={onDone}>{tt.common.done}</Button>
+      <SheetActions><Button type="button" onClick={onDone}>{tt.common.done}</Button></SheetActions>
     </div>
   )
 }

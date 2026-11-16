@@ -4,7 +4,7 @@ import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
 import { ConfirmModal } from '../components/confirm-dialog'
-import { Sheet } from '../components/sheet'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, Empty, ErrorNote, Field, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
 import { api } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
@@ -150,10 +150,10 @@ function SetupForm({ current, onDone }: { current: ObjectStore; onDone: () => vo
       {domain.trim() !== '' && <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />}
       {!current.enabled && <p className="border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg">{ts.experimentalWarning}</p>}
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={save.isPending}>{save.isPending ? t.common.working : current.enabled ? ts.save : ts.turnOn}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }
@@ -253,10 +253,10 @@ function NewBucket({ onDone }: { onDone: () => void }) {
       <Field name="bucket-name" dir="ltr" required label={ts.name} hint={ts.bucketHint} hintTooltip pattern="[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]"
         value={name} onChange={(e) => setName(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
       {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={create.isPending}>{create.isPending ? t.common.working : ts.create}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }
