@@ -64,6 +64,8 @@ export function useDatabaseOperations() {
         qc.invalidateQueries({ queryKey: ['databases'] })
         qc.invalidateQueries({ queryKey: ['database-catalog', op.instance_id] })
         qc.invalidateQueries({ queryKey: databaseOperationsQuery.queryKey })
+        // A deleted instance's backups move to "Backups of deleted instances".
+        if (op.action === 'delete') qc.invalidateQueries({ queryKey: ['database-backups', 'orphaned'] })
       }
       if (op.status === 'succeeded' && !timers.current.has(op.id)) {
         timers.current.set(op.id, setTimeout(() => { timers.current.delete(op.id); dismiss(op.id) }, 8000))

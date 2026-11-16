@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
+import { DeletedInstanceBackups } from '../components/deleted-instance-backups'
 import { Sheet } from '../components/sheet'
 import { Badge, Button, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
 import { api, projectsQuery } from '../lib/api'
@@ -34,6 +35,7 @@ export function DatabasesPage() {
         </Link>
       </li>)}</ul>}
     </Panel>}
+    <DeletedInstanceBackups />
   </div>
 }
 

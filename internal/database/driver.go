@@ -99,3 +99,13 @@ func (mariaDB) Ready(ctx context.Context, ex executor.CommandExecutor, cid strin
 func (mariaDB) Initialize(context.Context, executor.CommandExecutor, string, store.DBInstance, map[string]string) error {
 	return nil // The image creates the database and scoped application user on its first run.
 }
+
+// engineName returns an engine's display name ("PostgreSQL"), or its ID if unknown.
+func engineName(id string) string {
+	for _, e := range Engines() {
+		if e.ID == id {
+			return e.Name
+		}
+	}
+	return id
+}

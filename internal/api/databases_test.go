@@ -199,6 +199,15 @@ func TestDatabaseAPI(t *testing.T) {
 	call("GET", "/api/databases/missing/backups", nil, "session", 404)
 	call("POST", path+"/backups", map[string]string{"database": "missing", "s3_connection_id": "missing"}, "session", 404)
 	call("POST", path+"/restore", map[string]string{"backup_id": "missing", "name": "restored"}, "session", 404)
+	orphans := "/api/database-backups/orphaned"
+	call("GET", orphans, nil, "", 401)
+	if got := call("GET", orphans, nil, "session", 200); strings.TrimSpace(got.Body.String()) != "[]" {
+		t.Fatalf("orphaned backups: %s", got.Body.String())
+	}
+	call("DELETE", orphans+"/missing", nil, "token", 403)
+	call("DELETE", orphans+"/missing", nil, "session", 404)
+	call("POST", orphans+"/missing/restore", map[string]string{"name": "copy"}, "token", 403)
+	call("POST", orphans+"/missing/restore", map[string]string{"name": "copy"}, "session", 404)
 	call("GET", path+"/catalog", nil, "", 401)
 	call("POST", path+"/users", map[string]string{"name": "reader"}, "token", 403)
 	call("POST", path+"/databases", map[string]string{"name": "analytics"}, "session", 202)

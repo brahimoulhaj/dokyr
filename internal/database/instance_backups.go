@@ -190,6 +190,8 @@ func readManifest(ctx context.Context, objects BackupObjects, key string) (insta
 // instance takes engine, version and initial names from the manifest, so it works
 // even when the source instance is gone; the source is never modified.
 func (s *Service) RestoreInstance(ctx context.Context, sourceID, backupID string, in store.DBInstance) (store.DBInstance, store.DBOperation, error) {
+	s.claimBackup(backupID)
+	defer s.unclaimBackup(backupID)
 	b, e := s.st.GetDBBackup(ctx, sourceID, backupID)
 	if e != nil {
 		return store.DBInstance{}, store.DBOperation{}, e

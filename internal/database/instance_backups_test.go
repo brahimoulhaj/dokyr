@@ -202,3 +202,105 @@ func TestInstanceBackupPolicy(t *testing.T) {
 		t.Fatal("unknown scope accepted", e)
 	}
 }
+
+// orphanTestHost also takes single-database dumps (made with --no-owner).
+type orphanTestHost struct{ *instanceTestHost }
+
+func (h *orphanTestHost) ExecStream(ctx context.Context, name string, c executor.Command, in io.Reader, out io.Writer) error {
+	if in == nil && strings.Contains(strings.Join(c.Args, " "), "--no-owner") {
+		_, e := io.WriteString(out, "-- dump of "+c.Args[len(c.Args)-1]+"\n")
+		return e
+	}
+	return h.instanceTestHost.ExecStream(ctx, name, c, in, out)
+}
+
+// Backups of a deleted instance stay listed, restore into another instance of the
+// same engine (or a new instance) and can be deleted, never while a restore reads them.
+func TestOrphanBackups(t *testing.T) {
+	s, h, p := testService(t)
+	host := &orphanTestHost{&instanceTestHost{testHost: h, loaded: map[string]string{}}}
+	s.ex = host
+	objects := &memoryBackups{data: map[string][]byte{}}
+	s.BackupTarget = func(store.S3Input) (BackupObjects, error) { return objects, nil }
+	ctx := context.Background()
+	run := func(op store.DBOperation, e error) {
+		t.Helper()
+		if e != nil {
+			t.Fatal(e)
+		}
+		s.Wait()
+		if op, _ = s.st.GetDBOperation(ctx, op.ID); op.Status != "succeeded" {
+			t.Fatalf("operation failed: %+v", op)
+		}
+	}
+	create := func(name, engine, version string) store.DBInstance {
+		t.Helper()
+		in := input(p, engine, version)
+		in.Name = name
+		d, e := s.Create(ctx, in)
+		if e != nil {
+			t.Fatal(e)
+		}
+		s.Wait()
+		return d
+	}
+	gone := create("gone", "postgres", "18")
+	pg := create("pg", "postgres", "17")
+	maria := create("maria", "mariadb", "11.8")
+	c, _ := s.st.CreateS3Connection(ctx, store.S3Input{S3Connection: store.S3Connection{Name: "s3", Endpoint: "s3.example", Bucket: "b"}, SecretKey: "k"})
+	run(s.BackupAction(ctx, gone.ID, "backup", map[string]string{"database": "app", "s3_connection_id": c.ID}))
+	run(s.BackupAction(ctx, gone.ID, "backup", map[string]string{"scope": "instance", "s3_connection_id": c.ID}))
+	run(s.BackupAction(ctx, pg.ID, "backup", map[string]string{"database": "app", "s3_connection_id": c.ID}))
+	if list, _ := s.st.ListOrphanDBBackups(ctx); len(list) != 0 {
+		t.Fatalf("backups of live instances listed as orphaned: %+v", list)
+	}
+	run(s.Enqueue(ctx, gone.ID, "delete"))
+
+	list, e := s.st.ListOrphanDBBackups(ctx)
+	if e != nil || len(list) != 2 || list[0].Scope != "instance" || list[1].DatabaseName != "app" {
+		t.Fatalf("orphaned backups %+v %v", list, e)
+	}
+	o := list[1]
+	if o.InstanceName != "gone" || o.Engine != "postgres" || o.Version != "18" || o.ProjectID != p.ID {
+		t.Fatalf("orphan snapshot %+v", o)
+	}
+	live, _ := s.st.ListDBBackups(ctx, pg.ID)
+	if _, e = s.st.GetOrphanDBBackup(ctx, live[0].ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("backup of a live instance treated as orphaned", e)
+	}
+	// Another live instance's backup cannot be borrowed through source_id.
+	if _, e = s.BackupAction(ctx, maria.ID, "restore", map[string]string{"backup_id": live[0].ID, "name": "x", "source_id": pg.ID}); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("restored a live instance's backup into another instance", e)
+	}
+	if _, e = s.BackupAction(ctx, maria.ID, "restore", map[string]string{"backup_id": o.ID, "name": "x", "source_id": gone.ID}); !errors.Is(e, ErrInvalid) {
+		t.Fatal("restored a PostgreSQL backup into MariaDB", e)
+	}
+	run(s.BackupAction(ctx, pg.ID, "restore", map[string]string{"backup_id": o.ID, "name": "recovered", "source_id": gone.ID}))
+	if names, _ := s.st.DBInstanceDatabaseNames(ctx, pg.ID); len(names) != 2 || !strings.Contains(host.loaded["recovered"], "dump of app") {
+		t.Fatalf("restore into another instance: %v %v", names, host.loaded)
+	}
+
+	copyInstance, op, e := s.RestoreInstance(ctx, gone.ID, list[0].ID, store.DBInstance{ProjectID: p.ID, Name: "copy", CPULimit: .5, MemoryMB: 256})
+	run(op, e)
+	if copyInstance, _ = s.st.GetDBInstance(ctx, copyInstance.ID); copyInstance.Status != "running" || copyInstance.Version != "18" {
+		t.Fatalf("restored instance %+v", copyInstance)
+	}
+
+	s.claimBackup(o.ID)
+	if _, e = s.DeleteOrphanBackup(ctx, o.ID); !errors.Is(e, ErrBusy) {
+		t.Fatal("deleted a backup a restore is reading", e)
+	}
+	s.unclaimBackup(o.ID)
+	before := len(objects.data)
+	for _, b := range list {
+		if _, e = s.DeleteOrphanBackup(ctx, b.ID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if left, _ := s.st.ListOrphanDBBackups(ctx); len(left) != 0 || len(objects.data) != 1 || objects.data[live[0].ObjectKey] == nil {
+		t.Fatalf("orphans left %+v, objects %d → %d", left, before, len(objects.data))
+	}
+	if _, e = s.DeleteOrphanBackup(ctx, live[0].ID); !errors.Is(e, store.ErrNotFound) {
+		t.Fatal("deleted a live instance's backup as an orphan", e)
+	}
+}

@@ -103,7 +103,24 @@ func (s *Service) BackupAction(ctx context.Context, id, action string, input map
 		}
 		payload["s3_connection_id"] = c.ID
 	} else {
-		b, e := s.st.GetDBBackup(ctx, id, input["backup_id"])
+		// A backup of a deleted instance restores into any instance of its engine.
+		source := input["source_id"]
+		if source == "" {
+			source = id
+		}
+		s.claimBackup(input["backup_id"])
+		defer s.unclaimBackup(input["backup_id"])
+		if source != id {
+			o, e := s.st.GetOrphanDBBackup(ctx, input["backup_id"])
+			if e != nil || o.InstanceID != source {
+				return store.DBOperation{}, store.ErrNotFound
+			}
+			if o.Engine != d.Engine {
+				return store.DBOperation{}, fmt.Errorf("%w: this backup needs a %s instance", ErrInvalid, engineName(o.Engine))
+			}
+			payload["source_id"] = source
+		}
+		b, e := s.st.GetDBBackup(ctx, source, input["backup_id"])
 		if e != nil {
 			return store.DBOperation{}, e
 		}
@@ -175,7 +192,11 @@ func (s *Service) backupOperation(ctx context.Context, op store.DBOperation) err
 		}
 		return nil
 	}
-	b, e := s.st.GetDBBackup(ctx, d.ID, p["backup_id"])
+	source := p["source_id"]
+	if source == "" {
+		source = d.ID
+	}
+	b, e := s.st.GetDBBackup(ctx, source, p["backup_id"])
 	if e != nil || !b.Ready {
 		return errors.New("The backup is unavailable")
 	}
@@ -242,10 +263,23 @@ func (s *Service) DeleteBackup(ctx context.Context, instanceID, backupID string)
 	if b.Status != "succeeded" && b.Status != "failed" {
 		return b, ErrBusy
 	}
+	if s.backupInUse(b.ID) {
+		return b, fmt.Errorf("%w: a restore is reading this backup", ErrBusy)
+	}
 	if e = s.deleteBackupObjects(ctx, b); e != nil {
 		return b, fmt.Errorf("%w: the backup could not be removed from S3; check storage access and retry", ErrInvalid)
 	}
 	return b, s.st.RemovePrunedBackup(ctx, b.ID)
+}
+
+// DeleteOrphanBackup deletes a backup whose instance was deleted.
+func (s *Service) DeleteOrphanBackup(ctx context.Context, backupID string) (store.OrphanDBBackup, error) {
+	o, e := s.st.GetOrphanDBBackup(ctx, backupID)
+	if e != nil {
+		return o, e
+	}
+	_, e = s.DeleteBackup(ctx, o.InstanceID, backupID)
+	return o, e
 }
 
 // uploadDump streams one dump through gzip to S3 without buffering it in memory.

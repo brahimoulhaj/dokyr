@@ -131,3 +131,75 @@ func (s *Server) handleRestoreInstance(w http.ResponseWriter, r *http.Request) {
 	out.Operation = &op
 	writeJSON(w, 202, out)
 }
+
+// Backups of deleted instances stay in S3 and in the panel's records; these
+// handlers list them, restore them elsewhere and delete them.
+
+func (s *Server) handleOrphanBackups(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDatabases(w) {
+		return
+	}
+	list, e := s.store.ListOrphanDBBackups(r.Context())
+	if s.storeError(w, "list backups of deleted instances", e, "") {
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (s *Server) handleDeleteOrphanBackup(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDatabases(w) {
+		return
+	}
+	o, e := s.databases.DeleteOrphanBackup(r.Context(), r.PathValue("backup"))
+	if s.databaseError(w, e) {
+		return
+	}
+	target := o.DatabaseName
+	if o.Scope == "instance" {
+		target = "all databases"
+	}
+	s.audit(r, "database.backup_delete", "database", o.InstanceID, o.InstanceName, "Deleted backup of "+target+" ("+o.ID+") of a deleted instance")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRestoreOrphanBackup restores a whole-instance backup into a new instance,
+// or a single-database backup into a new database on an existing instance.
+func (s *Server) handleRestoreOrphanBackup(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDatabases(w) {
+		return
+	}
+	var in struct {
+		ProjectID string  `json:"project_id"`
+		Name      string  `json:"name"`
+		CPULimit  float64 `json:"cpu_limit"`
+		MemoryMB  int64   `json:"memory_mb"`
+		TargetID  string  `json:"target_id"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	o, e := s.store.GetOrphanDBBackup(r.Context(), r.PathValue("backup"))
+	if s.storeError(w, "get backup", e, "") {
+		return
+	}
+	if o.Scope == "instance" {
+		if in.ProjectID == "" {
+			in.ProjectID = o.ProjectID
+		}
+		d, op, e := s.databases.RestoreInstance(r.Context(), o.InstanceID, o.ID, store.DBInstance{ProjectID: in.ProjectID, Name: in.Name, CPULimit: in.CPULimit, MemoryMB: in.MemoryMB})
+		if s.databaseError(w, e) {
+			return
+		}
+		s.audit(r, "database.restore_instance", "database", d.ID, d.Name, "Restored from backup "+o.ID+" of deleted instance "+o.InstanceName)
+		out := s.databaseJSON(r.Context(), d)
+		out.Operation = &op
+		writeJSON(w, 202, out)
+		return
+	}
+	op, e := s.databases.BackupAction(r.Context(), in.TargetID, "restore", map[string]string{"backup_id": o.ID, "name": in.Name, "source_id": o.InstanceID})
+	if s.databaseError(w, e) {
+		return
+	}
+	s.audit(r, "database.restore", "database", op.InstanceID, op.InstanceName, op.Detail+" (backup of deleted instance "+o.InstanceName+")")
+	writeJSON(w, 202, map[string]any{"operation": op})
+}

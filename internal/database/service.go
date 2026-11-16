@@ -30,11 +30,14 @@ type Host interface {
 }
 
 type Service struct {
-	ctx           context.Context
-	st            *store.Store
-	ex            Host
-	mu            sync.Mutex
-	busy          map[string]bool
+	ctx  context.Context
+	st   *store.Store
+	ex   Host
+	mu   sync.Mutex
+	busy map[string]bool
+	// reading counts the restores using each backup, so it cannot be deleted
+	// while a restore into another instance (which holds a different lock) reads it.
+	reading       map[string]int
 	wg            sync.WaitGroup
 	adminerMu     sync.Mutex
 	schedulerOnce sync.Once
@@ -54,7 +57,7 @@ type Service struct {
 }
 
 func New(ctx context.Context, st *store.Store, ex Host) *Service {
-	return &Service{ctx: ctx, st: st, ex: ex, busy: map[string]bool{}, Poll: time.Second}
+	return &Service{ctx: ctx, st: st, ex: ex, busy: map[string]bool{}, reading: map[string]int{}, Poll: time.Second}
 }
 
 func ContainerName(id string) string { return brand.Slug + "-db-" + strings.ToLower(id) }
@@ -150,6 +153,45 @@ func (s *Service) acquire(id string) bool {
 }
 func (s *Service) release(id string) { s.mu.Lock(); delete(s.busy, id); s.mu.Unlock() }
 
+// claimBackup marks a backup as read by a restore; unclaimBackup undoes one claim.
+func (s *Service) claimBackup(id string) {
+	if id != "" {
+		s.mu.Lock()
+		s.reading[id]++
+		s.mu.Unlock()
+	}
+}
+func (s *Service) unclaimBackup(id string) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reading[id]--; s.reading[id] <= 0 {
+		delete(s.reading, id)
+	}
+}
+func (s *Service) backupInUse(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reading[id] > 0
+}
+
+// restoredBackup names the backup an operation reads, if it is a restore.
+func (s *Service) restoredBackup(op store.DBOperation) string {
+	if op.Action != "restore" && op.Action != "create" {
+		return ""
+	}
+	p, err := s.st.DBOperationPayload(s.ctx, op.ID)
+	if err != nil {
+		return ""
+	}
+	if op.Action == "restore" {
+		return p["backup_id"]
+	}
+	return p["restore_backup_id"]
+}
+
 // MoveProject is an immediate metadata change serialized with SQL/lifecycle work.
 func (s *Service) MoveProject(ctx context.Context, id, projectID string) (store.DBInstance, error) {
 	if strings.TrimSpace(projectID) == "" {
@@ -167,9 +209,12 @@ func (s *Service) MoveProject(ctx context.Context, id, projectID string) (store.
 }
 
 func (s *Service) launch(op store.DBOperation) {
+	backup := s.restoredBackup(op)
+	s.claimBackup(backup)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer s.unclaimBackup(backup)
 		defer s.release(op.InstanceID)
 		ctx, cancel := context.WithTimeout(s.ctx, s.operationTimeout(op))
 		defer cancel()
