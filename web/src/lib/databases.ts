@@ -6,6 +6,7 @@ export type DatabaseInstance = {
   database_name: string; username: string; cpu_limit: number; memory_mb: number
   desired_state: string; status: string; runtime: string; error: string
   host: string; volume: string; created_at: string; updated_at: string
+  public_port: number; public_allow: string
 }
 export type DatabaseOperation = {
   id: string; instance_id: string; project_id: string; instance_name: string; engine: string; version: string
@@ -54,3 +55,6 @@ export const enginesQuery = {
 
 /** Select value for "every database" (a whole-instance backup): never a valid database name. */
 export const WHOLE_INSTANCE = '*'
+
+export type PublicAccess = { port: number; allow: string; suggested_port: number; host: string; available: boolean; gate: string }
+export const databasePublicQuery = (id: string) => ({ queryKey: ['databases', id, 'public'], queryFn: () => api<PublicAccess>(`/databases/${id}/public`) })

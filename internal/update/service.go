@@ -105,6 +105,16 @@ func New(opts Options) *Service {
 	return s
 }
 
+// SelfImage is the exact image (ID) the panel's container runs. Helper containers
+// such as database gates use it, so they always match this panel's version.
+func (s *Service) SelfImage(ctx context.Context) (string, error) {
+	res, err := s.self(ctx)
+	if err != nil {
+		return "", err
+	}
+	return res.Image, nil
+}
+
 // ResultPath is where the helper records how a swap ended.
 func ResultPath(dataDir string) string { return filepath.Join(dataDir, "update-result.json") }
 

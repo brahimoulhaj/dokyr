@@ -131,8 +131,9 @@ func TestOperationsRebuildKeepsBackupReference(t *testing.T) {
 func TestPolicyRebuildKeepsBackupLinks(t *testing.T) {
 	s, ctx := openAt(t, 26), context.Background()
 	p, _ := s.CreateProject(ctx, "shop", "")
-	d, err := s.CreateDBInstance(ctx, DBInstance{ProjectID: p.ID, Name: "main", Engine: "postgres", Version: "18", DatabaseName: "app", Username: "app", CPULimit: .5, MemoryMB: 512}, map[string]string{"password": "x"})
-	if err != nil {
+	// Raw SQL: the current instance queries expect columns added after version 26.
+	d := DBInstance{ID: "inst", ProjectID: p.ID, Name: "main", Engine: "postgres", Version: "18", DatabaseName: "app", Username: "app", DesiredState: "running", Status: "running"}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO db_instances (id, project_id, name, engine, version, database_name, username, credentials, status, created_at, updated_at) VALUES ('inst', ?, 'main', 'postgres', '18', 'app', 'app', '{}', 'running', 'now', 'now')`, p.ID); err != nil {
 		t.Fatal(err)
 	}
 	c, err := s.CreateS3Connection(ctx, S3Input{S3Connection: S3Connection{Name: "s3", Endpoint: "s3.example", Bucket: "b"}, SecretKey: "k"})

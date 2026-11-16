@@ -10,6 +10,7 @@ import { withToast } from '../lib/toasts'
 import { DatabaseSelect, DatabaseStatus } from './databases'
 import { DatabaseBackups } from '../components/database-backups'
 import { DatabaseAccess } from '../components/database-access'
+import { DatabasePublicAccess, PublicConnection } from '../components/database-public'
 
 export const databaseTabs = ['overview', 'access', 'connection', 'backups', 'logs', 'settings'] as const
 export type DatabaseTab = typeof databaseTabs[number]
@@ -67,6 +68,7 @@ export function DatabasePage() {
       {tab === 'logs' && <DatabaseLogs id={d.id} />}
       {tab === 'settings' && <div className="space-y-5">
         <DatabaseProject key={`${d.id}:${d.project_id}`} d={d} busy={busy} />
+        <DatabasePublicAccess d={d} busy={busy} />
         <RemoveDatabase d={d} busy={busy} />
       </div>}
     </>}
@@ -102,6 +104,7 @@ function Connection({ d }: { d: DatabaseInstance }) {
       {reveal.error && <ErrorNote>{reveal.error.message}</ErrorNote>}
       {details && <div className="space-y-4">{Object.entries(details).map(([key, value]) => <div key={key}><p className="mb-1 text-xs text-muted">{key}</p><CopyValue value={value} /></div>)}</div>}
     </div></Panel>
+    <PublicConnection d={d} copy={(value) => <CopyValue value={value} />} />
   </div>
 }
 

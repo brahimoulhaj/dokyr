@@ -44,6 +44,13 @@ type Service struct {
 	AdminerPort int
 	// Shorter intervals are useful for tests; production waits for SQL readiness.
 	Poll time.Duration
+	// GateImage returns the image public-port gates run (the panel's own image);
+	// nil or an error means public ports are unavailable.
+	GateImage func(context.Context) (string, error)
+	// PublicHost is the server's address shown to clients and put in certificates.
+	PublicHost string
+	// ReservedPorts are host ports a public database port may not take.
+	ReservedPorts []int
 }
 
 func New(ctx context.Context, st *store.Store, ex Host) *Service {
@@ -181,6 +188,9 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 		if err == nil && op.Action == "create" {
 			err = s.restoreAfterCreate(ctx, op)
 		}
+		if err == nil {
+			err = s.syncGate(ctx, op.InstanceID)
+		}
 	case "stop":
 		err = s.stop(ctx, op.InstanceID)
 	case "restart":
@@ -190,6 +200,9 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 		}
 		if err == nil {
 			err = s.provision(ctx, op.InstanceID)
+		}
+		if err == nil {
+			err = s.syncGate(ctx, op.InstanceID)
 		}
 	case "delete":
 		// Deletion may have completed just before shutdown, leaving the job unfinished.
@@ -343,6 +356,10 @@ func (s *Service) Recover(ctx context.Context) error {
 			continue
 		}
 		runtime := s.Runtime(ctx, d.ID)
+		if d.PublicPort > 0 && d.DesiredState == store.StateRunning && runtime == "running" {
+			// Recreates the gate after a panel update (new image) or a lost container.
+			_ = s.syncGate(ctx, d.ID)
+		}
 		if d.DesiredState == store.StateRunning && d.Status != "failed" && (d.Status == "provisioning" || runtime == "missing" || runtime == "exited" || runtime == "dead") {
 			if _, err := s.Enqueue(ctx, d.ID, "start"); err != nil && !errors.Is(err, ErrBusy) {
 				return err
@@ -371,6 +388,10 @@ func (s *Service) Action(ctx context.Context, id, action string) error {
 func (s *Service) stop(ctx context.Context, id string) error {
 	if err := s.st.SetDBInstanceState(ctx, id, store.StateStopped, "stopping", ""); err != nil {
 		return err
+	}
+	// The public gate goes first, so nothing is accepted for a stopping database.
+	if err := s.ex.RemoveContainer(ctx, GateName(id), true); err != nil {
+		return errors.New("the public gate could not be removed")
 	}
 	c, err := s.ex.InspectContainer(ctx, ContainerName(id))
 	if err != nil && !errors.Is(err, executor.ErrNotFound) {
@@ -465,4 +486,18 @@ func (s *Service) restoreAfterCreate(ctx context.Context, op store.DBOperation) 
 		return errors.New("the database record could not be read")
 	}
 	return s.restoreInstance(ctx, d, p)
+}
+
+// syncGate starts or refreshes the public gate of a running instance.
+func (s *Service) syncGate(ctx context.Context, id string) error {
+	d, err := s.st.GetDBInstance(ctx, id)
+	if err != nil || d.PublicPort == 0 {
+		return nil
+	}
+	// A gate problem never fails the database itself: it is shown on the instance.
+	if err := s.ensureGate(ctx, d, false); err != nil {
+		reason := "The database is running, but its public port could not be opened: " + strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": ")
+		_ = s.st.SetDBInstanceState(ctx, id, d.DesiredState, d.Status, reason)
+	}
+	return nil
 }

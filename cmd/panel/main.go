@@ -11,9 +11,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -89,6 +91,8 @@ func run(args []string) error {
 		return serve(ctx, cfg)
 	case "update":
 		return updateCmd(ctx, cfg, args[1:])
+	case "db-gate": // run in a database's public-port container, not by people
+		return dbGate(ctx)
 	case "update-apply": // run by the update helper container, not by people
 		return updateApply(ctx, cfg, args[1:])
 	case "setup-token":
@@ -277,6 +281,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	if !inContainer() {
 		databases.AdminerPort = 18081
 	}
+	configurePublicPorts(databases, cfg, log)
 	if err := databases.Recover(ctx); err != nil {
 		return err
 	}
@@ -647,4 +652,29 @@ func registryPort(cfg config.Config) int {
 		return 0
 	}
 	return 5005
+}
+
+// configurePublicPorts sets what database public ports need: the gate image (the
+// panel's own image, or <PREFIX>GATE_IMAGE for development), the host clients use,
+// and the ports the panel itself occupies.
+func configurePublicPorts(databases *database.Service, cfg config.Config, log *slog.Logger) {
+	if image := os.Getenv(brand.EnvPrefix() + "GATE_IMAGE"); image != "" {
+		databases.GateImage = func(context.Context) (string, error) { return image, nil }
+	} else if cli, err := client.New(client.FromEnv); err == nil {
+		self := update.New(update.Options{Docker: cli, Version: version, Log: log})
+		databases.GateImage = self.SelfImage
+	}
+	if u, err := url.Parse(cfg.PublicURL); err == nil {
+		databases.PublicHost = u.Hostname()
+	}
+	reserved := []int{cfg.Proxy.HTTPPort, cfg.Proxy.HTTPSPort, 8080, 18081}
+	if _, p, err := net.SplitHostPort(cfg.Addr); err == nil {
+		if n, err := strconv.Atoi(p); err == nil {
+			reserved = append(reserved, n)
+		}
+	}
+	if p := registryPort(cfg); p > 0 {
+		reserved = append(reserved, p)
+	}
+	databases.ReservedPorts = reserved
 }

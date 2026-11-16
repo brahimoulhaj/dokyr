@@ -26,16 +26,19 @@ type DBInstance struct {
 	Error        string    `json:"error"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	// PublicPort is the host port of the public gate; 0 means internal only.
+	PublicPort  int    `json:"public_port"`
+	PublicAllow string `json:"public_allow"` // comma-separated IPs/CIDRs; empty = anyone
 }
 
 const dbInstanceCols = `id, project_id, name, engine, version, database_name, username,
- cpu_limit, memory_mb, desired_state, status, error, created_at, updated_at`
+ cpu_limit, memory_mb, desired_state, status, error, created_at, updated_at, public_port, public_allow`
 
 func scanDBInstance(row scanner) (DBInstance, error) {
 	var d DBInstance
 	var created, updated string
 	err := row.Scan(&d.ID, &d.ProjectID, &d.Name, &d.Engine, &d.Version, &d.DatabaseName, &d.Username,
-		&d.CPULimit, &d.MemoryMB, &d.DesiredState, &d.Status, &d.Error, &created, &updated)
+		&d.CPULimit, &d.MemoryMB, &d.DesiredState, &d.Status, &d.Error, &created, &updated, &d.PublicPort, &d.PublicAllow)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, ErrNotFound
 	}
@@ -177,4 +180,38 @@ func (s *Store) SetDBInstanceState(ctx context.Context, did, desired, status, re
 
 func (s *Store) DeleteDBInstance(ctx context.Context, did string) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM db_instances WHERE id = ?`, did))
+}
+
+// SetDBInstancePublic saves public access settings; port 0 turns it off.
+func (s *Store) SetDBInstancePublic(ctx context.Context, did string, port int, allow string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE db_instances SET public_port = ?, public_allow = ?, updated_at = ? WHERE id = ?`, port, allow, now(), did)
+	return conflict(err)
+}
+
+// UsedPublicPorts lists public ports of other instances.
+func (s *Store) UsedPublicPorts(ctx context.Context, except string) (map[int]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT public_port FROM db_instances WHERE public_port > 0 AND id <> ?`, except)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	used := map[int]bool{}
+	for rows.Next() {
+		var p int
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		used[p] = true
+	}
+	return used, rows.Err()
+}
+
+// SetDBInstanceCredentials replaces the encrypted credentials (e.g. to add the
+// public gate's certificate).
+func (s *Store) SetDBInstanceCredentials(ctx context.Context, did string, credentials map[string]string) error {
+	sealed, err := s.sealEnvironment(credentials)
+	if err != nil {
+		return err
+	}
+	return affected(s.db.ExecContext(ctx, `UPDATE db_instances SET credentials = ?, updated_at = ? WHERE id = ?`, sealed, now(), did))
 }
