@@ -33,6 +33,7 @@ import (
 	"panel/internal/executor"
 	"panel/internal/gitsource"
 	"panel/internal/hostmetrics"
+	containermetrics "panel/internal/metrics"
 	"panel/internal/proxy"
 	"panel/internal/registry"
 	"panel/internal/secret"
@@ -302,6 +303,12 @@ func serve(ctx context.Context, cfg config.Config) error {
 	dockerMetrics := dockermetrics.New(metricsClient)
 	go dockerMetrics.Run(ctx)
 	apiSrv.SetDockerMetrics(dockerMetrics)
+	sampler := containermetrics.New(st, ex, log)
+	// A database's public-port gate shares its resource ID; only the engine container counts.
+	sampler.Include = func(c executor.Container) bool {
+		return c.Kind != executor.KindDatabase || c.Name == database.ContainerName(c.ResourceID)
+	}
+	go sampler.Run(ctx)
 	apiSrv.SetProxy(px)
 	apiSrv.SetDeployer(deployer)
 	apiSrv.SetGitSources(git)

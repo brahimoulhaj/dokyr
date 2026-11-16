@@ -1,3 +1,4 @@
+import { ResourceMetrics } from '../components/resource-metrics'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -12,7 +13,7 @@ import { DatabaseBackups } from '../components/database-backups'
 import { DatabaseAccess } from '../components/database-access'
 import { DatabasePublicAccess, PublicConnection } from '../components/database-public'
 
-export const databaseTabs = ['overview', 'access', 'connection', 'backups', 'logs', 'settings'] as const
+export const databaseTabs = ['overview', 'access', 'connection', 'backups', 'logs', 'metrics', 'settings'] as const
 export type DatabaseTab = typeof databaseTabs[number]
 
 export function DatabasePage() {
@@ -66,6 +67,7 @@ export function DatabasePage() {
       {tab === 'connection' && <Connection key={d.id} d={d} />}
       {tab === 'access' && <DatabaseAccess d={d} busy={busy} />}
       {tab === 'logs' && <DatabaseLogs id={d.id} />}
+      {tab === 'metrics' && <ResourceMetrics kind="databases" id={d.id} />}
       {tab === 'settings' && <div className="space-y-5">
         <DatabaseProject key={`${d.id}:${d.project_id}`} d={d} busy={busy} />
         <DatabasePublicAccess d={d} busy={busy} />

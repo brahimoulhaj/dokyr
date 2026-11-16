@@ -11,7 +11,7 @@ type ContextBreadcrumbProps = {
   projectTab?: 'apps' | 'databases' | 'domains' | 'environment' | 'settings'
   appId?: string
   appName?: string
-  appTab?: 'overview' | 'deployments' | 'logs' | 'terminal' | 'settings'
+  appTab?: 'overview' | 'deployments' | 'logs' | 'metrics' | 'terminal' | 'settings'
 }
 
 /** Compact breadcrumb with quick switches for the current project and app. */

@@ -507,3 +507,18 @@ func short(id string) string {
 	}
 	return id
 }
+
+// ContainerStats reads one usage sample of a container (no previous sample, so
+// it returns at once); callers compute rates from their own earlier readings.
+func (d *Docker) ContainerStats(ctx context.Context, id string) (container.StatsResponse, error) {
+	var s container.StatsResponse
+	res, err := d.cli.ContainerStats(ctx, id, client.ContainerStatsOptions{})
+	if err != nil {
+		return s, fmt.Errorf("container stats: %w", err)
+	}
+	defer res.Body.Close()
+	if err := json.NewDecoder(res.Body).Decode(&s); err != nil {
+		return s, fmt.Errorf("container stats: %w", err)
+	}
+	return s, nil
+}

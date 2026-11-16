@@ -1,3 +1,4 @@
+import { ResourceMetrics } from '../components/resource-metrics'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { MountSettings } from '../components/mounts'
 import { EnvironmentSettings } from '../components/environment'
@@ -33,7 +34,7 @@ import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, durat
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
-export const appTabs = ['overview', 'deployments', 'logs', 'terminal', 'settings'] as const
+export const appTabs = ['overview', 'deployments', 'logs', 'metrics', 'terminal', 'settings'] as const
 export type AppTab = (typeof appTabs)[number]
 
 export function AppPage() {
@@ -198,6 +199,7 @@ export function AppPage() {
         />
       )}
       {tab === 'logs' && <RuntimeLogs app={a} />}
+      {tab === 'metrics' && <ResourceMetrics kind="apps" id={a.id} />}
       {(tab === 'terminal' || terminalAppId === a.id) && (
         <div hidden={tab !== 'terminal'}>
           <Suspense fallback={<p className="p-4 text-sm text-muted">{t.terminal.connecting}</p>}>

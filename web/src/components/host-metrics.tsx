@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { hostMetricsQuery, type HostMetrics as Metrics } from '../lib/api'
 import { locale, useT } from '../lib/i18n'
 import { formatBytes as bytes } from '../lib/format'
@@ -13,27 +13,13 @@ function Meter({ value, label }: { value: number | null | undefined; label: stri
   </div>
 }
 
-function Sparkline({ history, field, label, second }: { history: Metrics['history']; field: 'cpu' | 'memory' | 'receive_rate'; label: string; second?: 'send_rate' }) {
-  const series = history.map((p) => p[field])
-  const peak = field === 'receive_rate' ? Math.max(1, ...series.map((n) => n ?? 0), ...history.map((p) => p.send_rate ?? 0)) : 100
-  const newest = history.length ? Date.parse(history[history.length - 1].at) : 0
-  const path = (key: typeof field | 'send_rate') => {
-    let drawing = false
-    return history.map((p) => {
-      const value = p[key]
-      if (value == null) { drawing = false; return '' }
-      const x = Math.max(0, 200 - (newest - Date.parse(p.at)) / 600_000 * 200)
-      const y = 29 - Math.min(1, Math.max(0, value / peak)) * 26
-      const instruction = `${drawing ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
-      drawing = true
-      return instruction
-    }).join(' ')
-  }
-  return <svg viewBox="0 0 200 32" preserveAspectRatio="none" role="img" aria-label={label} className="h-8 w-full overflow-visible">
-    <path d="M0,29 H200" className="stroke-line" fill="none" />
-    {second && <path d={path(second)} className="stroke-muted" strokeWidth="1.5" fill="none" vectorEffect="non-scaling-stroke" />}
-    <path d={path(field)} className="stroke-accent" strokeWidth="1.5" fill="none" vectorEffect="non-scaling-stroke" />
-  </svg>
+const SparklineChart = lazy(() => import('./sparkline-chart'))
+
+function Sparkline({ history, field, label, second, format, max }: { history: Metrics['history']; field: 'cpu' | 'memory' | 'receive_rate'; label: string; second?: { key: 'send_rate'; label: string }; format: (n: number) => string; max?: number }) {
+  const lines = [{ key: field, label }, ...(second ? [second] : [])]
+  return <Suspense fallback={<div className="h-10" />}>
+    <SparklineChart history={history} lines={lines} max={max} format={format} label={label} />
+  </Suspense>
 }
 
 function Metric({ label, value, children }: { label: string; value: ReactNode; children: ReactNode }) {
@@ -71,12 +57,12 @@ export function HostMetrics() {
       <div className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
         <Metric label={t.cpu} value={percent(m.cpu.percent)}>
           <Meter label={t.cpu} value={m.cpu.percent} />
-          <Sparkline history={history} field="cpu" label={`${t.cpu} · ${t.history}`} />
+          <Sparkline history={history} field="cpu" label={t.cpu} format={percent} max={100} />
           <p className="truncate text-xs text-muted" title={m.cpu.model}>{cpuHint}</p>
         </Metric>
         <Metric label={t.ram} value={percent(m.memory?.percent)}>
           <Meter label={t.ram} value={m.memory?.percent} />
-          <Sparkline history={history} field="memory" label={`${t.ram} · ${t.history}`} />
+          <Sparkline history={history} field="memory" label={t.ram} format={percent} max={100} />
           <p className="text-xs text-muted" dir="ltr">{m.memory ? t.usedOf(bytes(m.memory.used), bytes(m.memory.total)) : t.unavailable}</p>
         </Metric>
         <Metric label={t.disk} value={percent(m.disk?.percent)}>
@@ -86,7 +72,7 @@ export function HostMetrics() {
         </Metric>
         <Metric label={t.network} value={<span className="text-xl"><span className="text-accent" aria-hidden="true">↓ </span>{bytes(m.network?.receive_rate, true)}</span>}>
           <p className="text-xs text-muted" aria-label={t.send} dir="ltr">↑ {bytes(m.network?.send_rate, true)}</p>
-          <Sparkline history={history} field="receive_rate" second="send_rate" label={`${t.network} · ${t.history}`} />
+          <Sparkline history={history} field="receive_rate" label={t.receive} second={{ key: 'send_rate', label: t.send }} format={(n) => bytes(n, true)} />
           <p className="text-xs text-muted">{m.network ? m.network.receive_rate == null ? t.sampling : t.history : t.unavailable}</p>
         </Metric>
       </div>

@@ -1,4 +1,11 @@
 export const en = {
+  usage: {
+    title: 'Resource usage', range: 'Time range', ranges: { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days', '30d': '30 days' },
+    cpu: 'CPU', memory: 'Memory', network: 'Network', disk: 'Disk I/O', received: 'Received', sent: 'Sent', read: 'Read', written: 'Written',
+    cores: (n: string) => `${n} cores`, limit: 'Limit', peak: 'Peak', average: 'Average', latest: 'Latest',
+    empty: 'No usage recorded in this range yet. Samples are taken every 10 seconds while a container runs.',
+    help: 'Measured every 10 seconds from Docker. CPU is in cores (1 = one full core). Memory excludes reclaimable cache. Kept for 24 hours at 10 s, 7 days per minute and 30 days per hour.',
+  },
   title: 'Host metrics',
   live: 'Live · every 5s',
   stale: 'Updates paused',
@@ -35,6 +42,13 @@ export const en = {
 }
 
 export const fr: typeof en = {
+  usage: {
+    title: 'Utilisation des ressources', range: 'Période', ranges: { '1h': '1 heure', '6h': '6 heures', '24h': '24 heures', '7d': '7 jours', '30d': '30 jours' },
+    cpu: 'CPU', memory: 'Mémoire', network: 'Réseau', disk: 'E/S disque', received: 'Reçu', sent: 'Envoyé', read: 'Lu', written: 'Écrit',
+    cores: (n) => `${n} cœurs`, limit: 'Limite', peak: 'Pic', average: 'Moyenne', latest: 'Dernière valeur',
+    empty: 'Aucune mesure sur cette période. Les mesures sont prises toutes les 10 secondes quand un conteneur tourne.',
+    help: 'Mesuré toutes les 10 secondes via Docker. Le CPU est en cœurs (1 = un cœur entier). La mémoire exclut le cache récupérable. Conservé 24 heures à 10 s, 7 jours par minute et 30 jours par heure.',
+  },
   title: 'Métriques du serveur', live: 'En direct · toutes les 5 s', stale: 'Mises à jour en pause', history: '10 dernières minutes',
   cpu: 'CPU', ram: 'RAM', disk: 'Disque de données', network: 'Réseau', cores: (n) => `${n} CPU logiques`,
   usedOf: (u, t) => `${u} / ${t} utilisés`, available: (v) => `${v} disponibles`, receive: 'Réception', send: 'Envoi', received: 'Reçu', sent: 'Envoyé',
@@ -47,6 +61,13 @@ export const fr: typeof en = {
 }
 
 export const ar: typeof en = {
+  usage: {
+    title: 'استخدام الموارد', range: 'الفترة', ranges: { '1h': 'ساعة', '6h': '6 ساعات', '24h': '24 ساعة', '7d': '7 أيام', '30d': '30 يوما' },
+    cpu: 'المعالج', memory: 'الذاكرة', network: 'الشبكة', disk: 'قراءة/كتابة القرص', received: 'المستلم', sent: 'المرسل', read: 'قراءة', written: 'كتابة',
+    cores: (n) => `${n} نواة`, limit: 'الحد', peak: 'الذروة', average: 'المتوسط', latest: 'آخر قيمة',
+    empty: 'لا توجد قياسات في هذه الفترة بعد. تؤخذ القياسات كل 10 ثوان أثناء عمل الحاوية.',
+    help: 'يُقاس كل 10 ثوان من Docker. المعالج بعدد الأنوية (1 = نواة كاملة). الذاكرة دون ذاكرة التخزين المؤقت القابلة للاسترداد. تُحفظ 24 ساعة بدقة 10 ثوان و7 أيام بالدقيقة و30 يوما بالساعة.',
+  },
   title: 'مقاييس الخادم', live: 'مباشر · كل 5 ثوانٍ', stale: 'التحديثات متوقفة', history: 'آخر 10 دقائق',
   cpu: 'المعالج', ram: 'الذاكرة', disk: 'قرص البيانات', network: 'الشبكة', cores: (n) => `${n} معالجات منطقية`,
   usedOf: (u, t) => `${u} / ${t} مستخدم`, available: (v) => `${v} متاح`, receive: 'تنزيل', send: 'رفع', received: 'المستلم', sent: 'المرسل',
@@ -59,6 +80,13 @@ export const ar: typeof en = {
 }
 
 export const es: typeof en = {
+  usage: {
+    title: 'Uso de recursos', range: 'Periodo', ranges: { '1h': '1 hora', '6h': '6 horas', '24h': '24 horas', '7d': '7 días', '30d': '30 días' },
+    cpu: 'CPU', memory: 'Memoria', network: 'Red', disk: 'E/S de disco', received: 'Recibido', sent: 'Enviado', read: 'Leído', written: 'Escrito',
+    cores: (n) => `${n} núcleos`, limit: 'Límite', peak: 'Pico', average: 'Media', latest: 'Último valor',
+    empty: 'Aún no hay mediciones en este periodo. Se toman cada 10 segundos mientras un contenedor está en marcha.',
+    help: 'Medido cada 10 segundos desde Docker. La CPU se expresa en núcleos (1 = un núcleo completo). La memoria excluye la caché recuperable. Se guarda 24 horas a 10 s, 7 días por minuto y 30 días por hora.',
+  },
   title: 'Métricas del servidor', live: 'En directo · cada 5 s', stale: 'Actualizaciones en pausa', history: 'Últimos 10 minutos',
   cpu: 'CPU', ram: 'RAM', disk: 'Disco de datos', network: 'Red', cores: (n) => `${n} CPU lógicas`,
   usedOf: (u, t) => `${u} / ${t} usados`, available: (v) => `${v} disponibles`, receive: 'Descarga', send: 'Subida', received: 'Recibido', sent: 'Enviado',

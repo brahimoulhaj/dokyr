@@ -199,6 +199,24 @@ func TestDatabaseAPI(t *testing.T) {
 	call("GET", "/api/databases/missing/backups", nil, "session", 404)
 	call("POST", path+"/backups", map[string]string{"database": "missing", "s3_connection_id": "missing"}, "session", 404)
 	call("POST", path+"/restore", map[string]string{"backup_id": "missing", "name": "restored"}, "session", 404)
+	call("GET", path+"/metrics", nil, "", 401)
+	call("GET", path+"/metrics?range=2y", nil, "session", 422)
+	call("GET", "/api/databases/missing/metrics", nil, "session", 404)
+	now := time.Now().Unix()
+	if err := st.AddMetricSamples(ctx, now-now%10, []store.MetricSample{{Kind: "database", ResourceID: d.ID, CPU: .25, Memory: 4096}}); err != nil {
+		t.Fatal(err)
+	}
+	var series struct {
+		Range  string               `json:"range"`
+		Step   int64                `json:"step"`
+		Points []store.MetricSample `json:"points"`
+	}
+	if err := json.Unmarshal(call("GET", path+"/metrics", nil, "token", 200).Body.Bytes(), &series); err != nil || series.Range != "1h" || series.Step != 10 || len(series.Points) != 1 || series.Points[0].CPU != .25 || series.Points[0].Memory != 4096 {
+		t.Fatalf("metrics %+v %v", series, err)
+	}
+	if call("GET", path+"/metrics?range=30d", nil, "session", 200).Body.String() == "" {
+		t.Fatal("empty 30d answer")
+	}
 	orphans := "/api/database-backups/orphaned"
 	call("GET", orphans, nil, "", 401)
 	if got := call("GET", orphans, nil, "session", 200); strings.TrimSpace(got.Body.String()) != "[]" {

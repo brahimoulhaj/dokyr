@@ -21,7 +21,8 @@
     "@yusufceng1z/ding": "0.0.5",
     "@yusufceng1z/ding-react": "0.0.5",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "recharts": "3.10.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
