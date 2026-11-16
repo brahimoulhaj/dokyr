@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
+// Per-icon imports keep the bundle to the icons used.
+import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
+import { Database } from '@phosphor-icons/react/dist/csr/Database'
+import { FolderSimple } from '@phosphor-icons/react/dist/csr/FolderSimple'
+import { GearSix } from '@phosphor-icons/react/dist/csr/GearSix'
+import { HardDrives } from '@phosphor-icons/react/dist/csr/HardDrives'
+import { Package } from '@phosphor-icons/react/dist/csr/Package'
+import { SquaresFour } from '@phosphor-icons/react/dist/csr/SquaresFour'
+import type { Icon } from '@phosphor-icons/react'
 import { api, meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
@@ -15,14 +24,15 @@ import { useDatabaseOperations } from '../lib/database-operations'
 // Sections light up as their milestone lands; until then they show as "soon".
 type NavKey = 'overview' | 'projects' | 'activity' | 'databases' | 'storage' | 'registry' | 'settings'
 // Registry lists the private registries apps pull from; the built-in registry (M5) joins it later.
-const nav: { key: NavKey; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases'; exact?: boolean }[] = [
-  { key: 'overview', to: '/', exact: true },
-  { key: 'projects', to: '/projects' },
-  { key: 'activity', to: '/activity' },
-  { key: 'databases', to: '/databases' },
-  { key: 'storage' },
-  { key: 'registry', to: '/registry' },
-  { key: 'settings', to: '/settings' },
+// Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
+const nav: { key: NavKey; icon: Icon; to?: '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases'; exact?: boolean }[] = [
+  { key: 'overview', icon: SquaresFour, to: '/', exact: true },
+  { key: 'projects', icon: FolderSimple, to: '/projects' },
+  { key: 'activity', icon: ClockCounterClockwise, to: '/activity' },
+  { key: 'databases', icon: Database, to: '/databases' },
+  { key: 'storage', icon: HardDrives },
+  { key: 'registry', icon: Package, to: '/registry' },
+  { key: 'settings', icon: GearSix, to: '/settings' },
 ]
 
 // The page itself never scrolls: the navbar and the sidebar stay put and only <main> scrolls.
@@ -85,17 +95,20 @@ export function Shell() {
                   key={item.key}
                   to={item.to}
                   activeOptions={{ exact: !!item.exact }}
-                  className="border border-transparent px-3 py-1.5 text-sm whitespace-nowrap text-muted hover:text-fg"
+                  className="flex items-center gap-2.5 border border-transparent px-3 py-1.5 text-sm whitespace-nowrap text-muted hover:text-fg"
                   activeProps={{ className: 'border-line! bg-raised text-fg!' }}
                 >
-                  {label(item.key)}
+                  {({ isActive }) => <>
+                    <item.icon aria-hidden size={16} weight={isActive ? 'fill' : 'regular'} className={cx('shrink-0', isActive && 'text-accent')} />
+                    {label(item.key)}
+                  </>}
                 </Link>
               ) : (
                 <span
                   key={item.key}
                   className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm whitespace-nowrap text-muted/50 md:whitespace-normal"
                 >
-                  {label(item.key)}
+                  <span className="flex items-center gap-2.5"><item.icon aria-hidden size={16} className="shrink-0" />{label(item.key)}</span>
                   <Badge tone="muted">{t.shell.soon}</Badge>
                 </span>
               ),
