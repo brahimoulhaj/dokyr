@@ -97,7 +97,7 @@ func TestRealRegistryS3(t *testing.T) {
 	st.SetRegistrySettings(ctx, store.RegistrySettings{Enabled: true, Domain: "registry.example.com"})
 	port := freePort(t)
 	s, err := New(Options{Executor: d, Store: st, Log: slog.New(slog.DiscardHandler), Name: name + "-registry", Image: "registry:3.0.0",
-		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "berth", PublishPort: port, PanelUpstream: "host.docker.internal:1"})
+		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "dokyr", PublishPort: port, PanelUpstream: "host.docker.internal:1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestRealRegistryS3(t *testing.T) {
 	}
 	base := s.baseURL()
 	waitUp(t, base+"/v2/")
-	tok, _ := s.Token(ctx, "berth", s.system, "registry.example.com", []string{"repository:shop/api:pull,push"})
+	tok, _ := s.Token(ctx, "dokyr", s.system, "registry.example.com", []string{"repository:shop/api:pull,push"})
 	config := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`)
 	upload(t, base, tok, config)
 

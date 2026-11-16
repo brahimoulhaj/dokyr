@@ -13,15 +13,15 @@ import (
 func TestRewriteComposeImage(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "compose.yaml")
-	in := "name: berth\n\nservices:\n  berth:\n    image: ghcr.io/me/berth:0.1.0 # pinned\n    container_name: berth\n"
+	in := "name: dokyr\n\nservices:\n  dokyr:\n    image: ghcr.io/me/dokyr:0.1.0 # pinned\n    container_name: dokyr\n"
 	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := rewriteComposeImage(p, "ghcr.io/me/berth:0.2.0"); err != nil {
+	if err := rewriteComposeImage(p, "ghcr.io/me/dokyr:0.2.0"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(p)
-	want := strings.Replace(in, "berth:0.1.0", "berth:0.2.0", 1)
+	want := strings.Replace(in, "dokyr:0.1.0", "dokyr:0.2.0", 1)
 	if string(b) != want {
 		t.Fatalf("got\n%s\nwant\n%s", b, want)
 	}
@@ -32,14 +32,14 @@ func TestRewriteComposeImage(t *testing.T) {
 
 func TestUserAliasesAndHealthURL(t *testing.T) {
 	id := "0123456789abcdef0123"
-	got := userAliases([]string{"berth", "0123456789ab", "panel"}, id)
-	if strings.Join(got, ",") != "berth,panel" {
+	got := userAliases([]string{"dokyr", "0123456789ab", "panel"}, id)
+	if strings.Join(got, ",") != "dokyr,panel" {
 		t.Fatalf("aliases = %v", got)
 	}
-	if u := healthURL("berth", []string{"PATH=/bin"}); u != "http://berth:8080/api/health" {
+	if u := healthURL("dokyr", []string{"PATH=/bin"}); u != "http://dokyr:8080/api/health" {
 		t.Fatalf("default = %s", u)
 	}
-	if u := healthURL("berth", []string{"BERTH_ADDR=:9090"}); u != "http://berth:9090/api/health" {
+	if u := healthURL("dokyr", []string{"DOKYR_ADDR=:9090"}); u != "http://dokyr:9090/api/health" {
 		t.Fatalf("custom port = %s", u)
 	}
 }
@@ -72,19 +72,19 @@ func TestContainerOwnConfig(t *testing.T) {
 	img.Labels = map[string]string{"org.opencontainers.image.version": "0.1.0"}
 	c := container.Config{
 		Hostname:   "abc123",
-		Env:        []string{"PATH=/usr/bin", "BERTH_PUBLIC_URL=http://1.2.3.4"},
+		Env:        []string{"PATH=/usr/bin", "DOKYR_PUBLIC_URL=http://1.2.3.4"},
 		Entrypoint: []string{"/usr/local/bin/panel"},
 		Cmd:        []string{"serve"},
-		Labels:     map[string]string{"org.opencontainers.image.version": "0.1.0", "com.docker.compose.project": "berth"},
+		Labels:     map[string]string{"org.opencontainers.image.version": "0.1.0", "com.docker.compose.project": "dokyr"},
 	}
 	got := containerOwnConfig(c, img)
 	if got.Hostname != "" || got.Entrypoint != nil || got.Cmd != nil {
 		t.Fatalf("image-level fields kept: %+v", got)
 	}
-	if len(got.Env) != 1 || got.Env[0] != "BERTH_PUBLIC_URL=http://1.2.3.4" {
+	if len(got.Env) != 1 || got.Env[0] != "DOKYR_PUBLIC_URL=http://1.2.3.4" {
 		t.Fatalf("env = %v", got.Env)
 	}
-	if len(got.Labels) != 1 || got.Labels["com.docker.compose.project"] != "berth" {
+	if len(got.Labels) != 1 || got.Labels["com.docker.compose.project"] != "dokyr" {
 		t.Fatalf("labels = %v", got.Labels)
 	}
 	// An explicit override on the container survives.

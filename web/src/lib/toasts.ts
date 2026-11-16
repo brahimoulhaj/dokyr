@@ -20,7 +20,7 @@ export async function withToast<T>(
   }
 }
 
-const updatedKey = 'berth.updatedTo'
+const updatedKey = 'dokyr.updatedTo'
 
 /** Remembers across the reload into the new panel that an update just succeeded. */
 export function rememberUpdated(version: string) {

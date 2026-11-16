@@ -21,7 +21,7 @@ type fakeRegistry struct {
 
 func (f *fakeRegistry) Apply(context.Context) error              { f.applies++; return nil }
 func (f *fakeRegistry) State(context.Context) string             { return "running" }
-func (f *fakeRegistry) SystemUser() string                       { return "berth" }
+func (f *fakeRegistry) SystemUser() string                       { return "dokyr" }
 func (f *fakeRegistry) Address(rs store.RegistrySettings) string { return rs.Domain }
 func (f *fakeRegistry) CheckEvents(auth string) bool             { return auth == "Bearer events" }
 func (f *fakeRegistry) Repositories(context.Context) ([]string, error) {
@@ -96,7 +96,7 @@ func TestRegistryAPI(t *testing.T) {
 	e.must(409, "PUT", "/api/settings/panel", map[string]any{"domain": "registry.example.com"})
 
 	// Tokens: shown once, then only their name.
-	e.must(422, "POST", "/api/registry/tokens", map[string]any{"name": "berth", "scope": "push"})
+	e.must(422, "POST", "/api/registry/tokens", map[string]any{"name": "dokyr", "scope": "push"})
 	e.must(422, "POST", "/api/registry/tokens", map[string]any{"name": "ci", "scope": "admin"})
 	tok := e.must(201, "POST", "/api/registry/tokens", map[string]any{"name": "CI", "scope": "push"})
 	secret, _ := tok["token"].(string)

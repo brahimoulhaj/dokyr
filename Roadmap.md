@@ -1,8 +1,8 @@
-# Berth — Roadmap
+# Dokyr — Roadmap
 
 Implementation tracker for the single-node PaaS panel. Source of truth for the design is the
-architecture doc ("Single-node PaaS panel: architecture and data model"). "Berth" is the working
-name; it lives only in `internal/brand/brand.go`.
+architecture doc ("Single-node PaaS panel: architecture and data model"). The product is named
+Dokyr (dokyr.com, earlier working name Berth); the name lives only in `internal/brand/brand.go`.
 
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
@@ -26,7 +26,7 @@ Everything needed before the first feature: repo layout, tooling, and the shared
 ### Repository and tooling
 - [x] Go module (`panel`, brand-neutral so a rename never touches imports), `cmd/panel` entrypoint, package layout from the doc
 - [x] `internal/brand` — `Name` and `Slug` constants; every path, network, env prefix derives from them
-- [x] `internal/config` — data dir, listen address, env vars with the `BERTH_` prefix
+- [x] `internal/config` — data dir, listen address, env vars with the `DOKYR_` prefix
 - [x] Makefile: `deps`, `dev-api`, `dev-web`, `web`, `build`, `test`, `image`
 - [ ] Linting (golangci-lint, eslint)
 - [x] Multi-stage `Dockerfile` (web build → Go build → slim runtime image) — `make image`, 36 MB, runs on a fresh Ubuntu 24.04 arm64 VM
@@ -75,23 +75,23 @@ Goal: install on a real VPS, create the owner, deploy a public image, attach a d
 - [x] Cookie sessions (HttpOnly, SameSite, Secure when on HTTPS), expiry and cleanup
 - [x] Auth middleware; CSRF protection for cookie-authenticated writes (same-origin check)
 - [x] Login and setup rate limiting (per IP, in memory; the client IP comes from Caddy's `X-Forwarded-For` when the peer is private)
-- [x] API tokens: create, list, revoke, bearer auth (`/api/tokens`, `Authorization: Bearer berth_…`); token management needs the browser session; last use recorded at most once a minute; events name the token. Checked by `internal/api/tokens_test.go` and in a browser against the dev stack
+- [x] API tokens: create, list, revoke, bearer auth (`/api/tokens`, `Authorization: Bearer dokyr_…`); token management needs the browser session; last use recorded at most once a minute; events name the token. Checked by `internal/api/tokens_test.go` and in a browser against the dev stack
 
 ### CLI (same binary)
-- [x] `berth serve`
-- [x] `berth owner create`
-- [x] `berth owner reset-password`
-- [x] `berth setup-token`
-- [x] `berth version`
+- [x] `dokyr serve`
+- [x] `dokyr owner create`
+- [x] `dokyr owner reset-password`
+- [x] `dokyr setup-token`
+- [x] `dokyr version`
 
 ### Executor (`internal/executor`)
 Verified by `internal/executor/docker_test.go` against a real daemon (skipped with `-short` or when no daemon answers).
 
 - [x] `Executor` interface — the seam for multi-server later
 - [x] Local Docker implementation over the mounted socket (`github.com/moby/moby/client`, API version negotiated)
-- [x] Ensure the `berth` Docker network exists (at `serve` startup)
+- [x] Ensure the `dokyr` Docker network exists (at `serve` startup)
 - [x] Image pull with progress
-- [x] Container create / start / stop / remove / inspect, with labels identifying panel-managed containers (`berth.managed`, `berth.kind`, `berth.resource`); json-file log rotation 10 MB × 3
+- [x] Container create / start / stop / remove / inspect, with labels identifying panel-managed containers (`dokyr.managed`, `dokyr.kind`, `dokyr.resource`); json-file log rotation 10 MB × 3
 - [x] Container log streaming (follow, tail, since), stdout and stderr demultiplexed
 - [x] CPU and memory limits
 - [x] Reconcile on startup: adopt running managed containers (proxy and apps), log orphans; unfinished deployments are resumed (see Jobs and queue)
@@ -134,14 +134,14 @@ Verified by API tests (with the race detector) and in a browser against a real n
 - [x] `install.sh` generated from the brand constants — `make installer` fills `install/install.sh.tmpl`; shellcheck clean (hooking it into a release pipeline is under Cross-cutting)
 - [x] Checks: root, OS, architecture, ports 80 and 443 free (skipped on a re-run, which finds its own proxy there)
 - [x] Docker Engine check and install from Docker's official script — verified on a VM without Docker (installed 29.9.3 with Compose)
-- [x] Create `/var/lib/berth` and the Docker network
-- [x] Pull and start the panel image with the socket and data dir mounted — Compose project in `/var/lib/berth/compose.yaml`; installed on a real VPS from `ghcr.io/brahimoulhaj/paas` with the one-command install (2026-11-11)
-- [x] Print the setup URL with the one-time token; `berth` host command wraps the CLI in the container
+- [x] Create `/var/lib/dokyr` and the Docker network
+- [x] Pull and start the panel image with the socket and data dir mounted — Compose project in `/var/lib/dokyr/compose.yaml`; installed on a real VPS from `ghcr.io/brahimoulhaj/paas` with the one-command install (2026-11-11)
+- [x] Print the setup URL with the one-time token; `dokyr` host command wraps the CLI in the container
 - [~] Under 60 seconds on a server that already has Docker — 2 s with the images already local; image download time from a registry still to measure
 
 ### Updates
 - [x] Short-lived updater container that pulls the new image and recreates the panel — `internal/update` (registry check by semver tag or digest, helper runs `update-apply` to swap the container, result recorded as an event); registry and compose-rewrite logic unit-tested; on a real VPS the panel updated itself 0.1.x → 0.2.0 → 0.2.1 from GHCR (2026-11-11)
-- [x] `berth update` and an update button with the available version — Settings → Updates: check, update now, hourly automatic updates (wait while a deploy runs); `berth update [--check] [--yes]` (same check and helper; refuses while a helper is already swapping); on the VPS the CLI swapped the panel to 0.2.4 (2026-11-11)
+- [x] `dokyr update` and an update button with the available version — Settings → Updates: check, update now, hourly automatic updates (wait while a deploy runs); `dokyr update [--check] [--yes]` (same check and helper; refuses while a helper is already swapping); on the VPS the CLI swapped the panel to 0.2.4 (2026-11-11)
 
 ### UI
 Checked in a browser against a real deploy (create project and app, add domain, deploy, failed redeploy, stop/start, delete), desktop and phone width.
@@ -177,7 +177,7 @@ Goal: push-to-deploy from a repository with any of the builders.
 - [x] Builder interface: source dir in, tagged local image out — `internal/builder` (`Fetch`, `Build`); the deploy pipeline builds instead of pulling for Git apps (`internal/deploy`, fake builder tests)
 - [x] Auto-detect: Dockerfile if present, otherwise Railpack — builder `auto`, the default for new Git apps; checks the configured Dockerfile path inside the build context and says in the deploy log which builder it picked (`TestBuildAutoPicksBuilder`)
 - [x] Dockerfile — `docker buildx build --load` with build context and Dockerfile path checked to stay inside the repository (symlinks followed); image labelled `<slug>.build=<app id>`; checked against a real daemon in `internal/builder/builder_test.go` and on a real VPS (2026-11-13)
-- [x] Railpack — `railpack prepare` writes a plan beside the workspace, `docker buildx build` runs it through the pinned `railpack-frontend` on the same daemon (no separate BuildKit); the frontend drops `--label`, so a one-line `FROM` build re-tags with the build label that pruning relies on; Git apps get `PORT` set to the app port unless their env sets it. Real build in `TestBuildRailpack` (needs `railpack` on PATH or `BERTH_TEST_RAILPACK`); an app without a Dockerfile built by Railpack on a real VPS with v0.6.0 (2026-11-14)
+- [x] Railpack — `railpack prepare` writes a plan beside the workspace, `docker buildx build` runs it through the pinned `railpack-frontend` on the same daemon (no separate BuildKit); the frontend drops `--label`, so a one-line `FROM` build re-tags with the build label that pruning relies on; Git apps get `PORT` set to the app port unless their env sets it. Real build in `TestBuildRailpack` (needs `railpack` on PATH or `DOKYR_TEST_RAILPACK`); an app without a Dockerfile built by Railpack on a real VPS with v0.6.0 (2026-11-14)
 - [x] Start command override — per app (image or Git), replaces the image's entrypoint and command with `/bin/sh -c <command>` so `$PORT` and `$(…)` expand; empty keeps the image's own; shown on the overview, set in Settings (`0008_app_start_command.sql`, `TestStartCommand`, `TestDockerEntrypointOverride`). Needed for single-module Gradle apps: Railpack 0.43.0 starts them with `*/build/libs/*jar`, which only matches subprojects (seen on a Spring Boot app from GitLab, 2026-11-13)
 - [ ] Nixpacks — `nixpacks build`
 - [ ] Cloud Native Buildpacks — `pack build --builder <image>` (Heroku / Paketo)
@@ -188,8 +188,8 @@ Goal: push-to-deploy from a repository with any of the builders.
 
 ### Jobs and queue (`internal/jobs`)
 - [x] SQLite-backed job queue with retries and resume after restart — the `deployments` table is the queue (a generic jobs table can come with backups and cron). On startup, queued deploys start again; a running one that had not switched traffic starts over, its half-made container removed; one that had switched is finished (old containers removed, succeeded); at most 3 starts per deploy (`attempts`, `0009_deployment_attempts.sql`). A shutdown puts running and waiting deploys back in the queue instead of failing them. Resumed deploys wait for the proxy. Clone, pull and Git credentials are retried twice (2 s, 5 s) on network errors; builds are not. `TestRecoverResumesDeployments`, `TestShutdownRequeues`, `TestRetryTemporaryFailures`, `TestTemporary`; checked against real Docker and Caddy: panel stopped mid-clone, deploy resumed at attempt 2 and succeeded (2026-11-13); panel restarted mid-deploy, deploy resumed and succeeded on a real VPS with v0.6.0 (2026-11-14)
-- [x] One build at a time by default, configurable — `BERTH_MAX_BUILDS`; a Git deploy waits, still `queued`, for a build slot and says so in its log; the slot is released once the image exists (pulls take none). Queued deploys survive a restart (below) (`TestBuildsRunOneAtATime`, `TestMaxBuildsRunsInParallel`)
-- [x] CPU and memory caps on builds — Settings → Builds (`GET/PUT/DELETE /api/settings/builds`, `TestBuildSettings`; checked in a browser: save, invalid memory, reset), defaults from `BERTH_BUILD_CPUS`, `BERTH_BUILD_MEMORY_MB` (unset = no cap); read at the start of every build, shared by all builds; Docker's built-in BuildKit ignores per-build limits, so capped builds run on a buildx `docker-container` builder (`moby/buildkit:v0.34.2`) created with the limits on first use and replaced when they change (an old one is removed once no build runs on it); Railpack's label step stays on the daemon's builder, which holds the loaded image. `TestBuildLimits` (stub), `TestBuildMemoryCapEnforced` (real daemon: a 400 MB step killed under a 256 MB cap); a Git app deployed under a build cap on a real VPS with v0.6.0 (2026-11-14)
+- [x] One build at a time by default, configurable — `DOKYR_MAX_BUILDS`; a Git deploy waits, still `queued`, for a build slot and says so in its log; the slot is released once the image exists (pulls take none). Queued deploys survive a restart (below) (`TestBuildsRunOneAtATime`, `TestMaxBuildsRunsInParallel`)
+- [x] CPU and memory caps on builds — Settings → Builds (`GET/PUT/DELETE /api/settings/builds`, `TestBuildSettings`; checked in a browser: save, invalid memory, reset), defaults from `DOKYR_BUILD_CPUS`, `DOKYR_BUILD_MEMORY_MB` (unset = no cap); read at the start of every build, shared by all builds; Docker's built-in BuildKit ignores per-build limits, so capped builds run on a buildx `docker-container` builder (`moby/buildkit:v0.34.2`) created with the limits on first use and replaced when they change (an old one is removed once no build runs on it); Railpack's label step stays on the daemon's builder, which holds the loaded image. `TestBuildLimits` (stub), `TestBuildMemoryCapEnforced` (real daemon: a 400 MB step killed under a 256 MB cap); a Git app deployed under a build cap on a real VPS with v0.6.0 (2026-11-14)
 - [x] Cancel a queued or running build — `POST /api/deployments/{id}/cancel` and a Cancel button on the deployment log; works until traffic switches (then 409 `not_cancellable`); the build or pull is killed, a new container removed, the live version keeps serving; status `cancelled`, event `deployment.cancelled` (`TestCancelDeployment`); build cancelled from the browser on a real VPS with v0.6.0 (2026-11-14)
 - [ ] Cron scheduler (`robfig/cron`)
 
@@ -321,13 +321,13 @@ Goal: optional built-in S3 and image registry.
 
 ### Internal S3
 - [x] RustFS stability check; ship behind an "experimental" label if needed — shipped as Experimental: RustFS is at `1.0.0-rc.6` (a release candidate); the Storage page and its setup sheet say so (v0.17.0)
-- [x] RustFS container lifecycle (start, stop, upgrade, data volume) — `internal/objectstore`: off by default; Storage → Turn on runs `rustfs/rustfs:1.0.0-rc.6` (`BERTH_S3_IMAGE`) as `<slug>-s3` with its data in the `<slug>-s3-data` volume, console off, root credentials made once and sealed at rest; supervised every 30 s, recreated when its spec (image included) changes, removed when turned off with the data and credentials kept; published on 127.0.0.1:9006 for a panel on the host (`BERTH_S3_PORT`). `TestLifecycle`, `TestForeignContainer`; checked on real Docker (off and on again keeps the objects)
+- [x] RustFS container lifecycle (start, stop, upgrade, data volume) — `internal/objectstore`: off by default; Storage → Turn on runs `rustfs/rustfs:1.0.0-rc.6` (`DOKYR_S3_IMAGE`) as `<slug>-s3` with its data in the `<slug>-s3-data` volume, console off, root credentials made once and sealed at rest; supervised every 30 s, recreated when its spec (image included) changes, removed when turned off with the data and credentials kept; published on 127.0.0.1:9006 for a panel on the host (`DOKYR_S3_PORT`). `TestLifecycle`, `TestForeignContainer`; checked on real Docker (off and on again keeps the objects)
 - [~] Buckets and access keys management — buckets: list with object count and size (counting stops at 10 000 objects), create (S3 name rules), delete (empty only, refused while a storage connection uses it), checked against real RustFS. Access keys: only the root credentials, revealed in a sheet (session only, audited); per-bucket keys remain
 - [~] Routed through Caddy with TLS — an optional domain of its own adds a proxy route to `<slug>-s3:9000`, kept apart from the panel, registry and app domains, with the HTTP-only option; not yet tried on a real domain
 - [~] Usable as a backup target and as the registry backend — turning it on makes the `panel` bucket and a "Built-in storage" S3 connection (path-style), so it can be picked wherever a storage connection can; the panel backup into it is checked. Database backups and the registry use the same connection code but are not checked against it yet (the registry needs the panel in its container, where the endpoint is `<slug>-s3:9000`)
 
 ### Internal registry (`internal/registry`)
-- [x] Registry container lifecycle, backed by an S3 connection — `internal/registry`: off by default; Registry page → Built-in registry turns it on with a domain of its own and a storage (a Docker volume, or an S3 connection with its folder). CNCF Distribution `registry:3.0.0` (`BERTH_REGISTRY_IMAGE`) in `<slug>-registry`, configuration (0600, may hold the S3 key) and token certificate under `<data>/registry`; recreated when the settings change, removed when turned off (images stay), supervised every 30 s. `TestRealRegistry`, `TestRealRegistryS3` (pushed blobs land in the bucket under the folder)
+- [x] Registry container lifecycle, backed by an S3 connection — `internal/registry`: off by default; Registry page → Built-in registry turns it on with a domain of its own and a storage (a Docker volume, or an S3 connection with its folder). CNCF Distribution `registry:3.0.0` (`DOKYR_REGISTRY_IMAGE`) in `<slug>-registry`, configuration (0600, may hold the S3 key) and token certificate under `<data>/registry`; recreated when the settings change, removed when turned off (images stay), supervised every 30 s. `TestRealRegistry`, `TestRealRegistryS3` (pushed blobs land in the bucket under the folder)
 - [x] Auth for push and pull — the panel is the token server (`/api/registry/token`, on the registry's domain): registry tokens (`0018_registry.sql`, Registry page → Tokens, shown once, stored hashed) with push+pull or pull-only scope; docker login user = token name. JWTs signed ES256 with a key in the data dir, certificate in x5c. Both docker's Basic auth GET and containerd's OAuth2 password POST are accepted; failed logins rate limited. The panel's own account pulls for deploys and pushes builds. Real `docker login` / `push` / pull in `TestDockerCLI` (a pull token cannot push); `TestTokenGrants`, `TestRegistryAPI`
 - [x] Routed through Caddy with TLS — a route for the registry domain, `/api/registry/token` to the panel (`PanelPaths`, `TestBuildPanelPaths`); the domain is kept apart from app domains and the panel's. An HTTP-only option (like the panel's and project domains') serves it behind Cloudflare "Flexible" without a redirect loop; the form warns about the CDN's upload cap (100 MB per request on Cloudflare Free). Tried on a real domain behind Cloudflare (2026-11-15): docker login, push, and deploy on push work
 - [x] Push notification endpoint → auto-deploy on a new tag — the registry reports pushes to `/api/registry/events` (shared secret); image apps whose image is that tag on the built-in registry deploy (trigger `registry`) unless deploy on push is off (app Source settings, `PUT /api/apps/{id}/push-deploy`). Real push report in `TestRealRegistry`; `TestRegistryAPI`

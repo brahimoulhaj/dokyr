@@ -1,5 +1,5 @@
 # Live reload for `make dev-api`: rebuilds and restarts the panel when Go code changes.
-# The BERTH_* environment comes from the Makefile.
+# The DOKYR_* environment comes from the Makefile.
 root = "."
 tmp_dir = "tmp"
 

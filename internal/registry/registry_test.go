@@ -74,7 +74,7 @@ func claims(t *testing.T, tok string) map[string]any {
 func TestTokenGrants(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
-	s, err := New(Options{Executor: nopExecutor{}, Store: st, Log: slog.New(slog.DiscardHandler), Name: "r", Image: "registry:3", Dir: t.TempDir(), Issuer: "berth"})
+	s, err := New(Options{Executor: nopExecutor{}, Store: st, Log: slog.New(slog.DiscardHandler), Name: "r", Image: "registry:3", Dir: t.TempDir(), Issuer: "dokyr"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestTokenGrants(t *testing.T) {
 			t.Fatalf("%s: %v", user, err)
 		}
 		c := claims(t, tok)
-		if c["aud"] != "registry.example.com" || c["iss"] != "berth" {
+		if c["aud"] != "registry.example.com" || c["iss"] != "dokyr" {
 			t.Errorf("claims = %v", c)
 		}
 		a, _ := c["access"].([]any)
@@ -112,19 +112,19 @@ func TestTokenGrants(t *testing.T) {
 	if a := access("", "", "repository:shop/api:pull"); len(a) != 0 {
 		t.Errorf("anonymous = %v", a)
 	}
-	if a := access("berth", s.system, "registry:catalog:*", "repository:x:delete"); len(a) != 2 {
+	if a := access("dokyr", s.system, "registry:catalog:*", "repository:x:delete"); len(a) != 2 {
 		t.Errorf("system = %v", a)
 	}
 	if _, err := s.Token(ctx, "ci", "wrong", "", nil); err != ErrDenied {
 		t.Errorf("wrong secret: %v", err)
 	}
-	if _, err := s.Token(ctx, "berth", "wrong", "", nil); err != ErrDenied {
+	if _, err := s.Token(ctx, "dokyr", "wrong", "", nil); err != ErrDenied {
 		t.Errorf("wrong system secret: %v", err)
 	}
 	if _, err := s.Token(ctx, "ci", "push-secret", "other.example.com", nil); err == nil {
 		t.Error("another service accepted")
 	}
-	if got := s.PullAuth(ctx, "registry.example.com/shop/api:1"); got == nil || got.Username != "berth" {
+	if got := s.PullAuth(ctx, "registry.example.com/shop/api:1"); got == nil || got.Username != "dokyr" {
 		t.Errorf("pull auth = %+v", got)
 	}
 	if got := s.PullAuth(ctx, "ghcr.io/shop/api:1"); got != nil {
@@ -179,7 +179,7 @@ func TestRealRegistry(t *testing.T) {
 	st := newStore(t)
 	s, err := New(Options{
 		Executor: d, Store: st, Log: slog.New(slog.DiscardHandler), Name: name + "-registry", Image: "registry:3.0.0",
-		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "berth", PublishPort: port,
+		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "dokyr", PublishPort: port,
 		PanelUpstream: fmt.Sprintf("host.docker.internal:%d", ln.Addr().(*net.TCPAddr).Port),
 	})
 	if err != nil {

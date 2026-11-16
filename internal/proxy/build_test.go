@@ -42,7 +42,7 @@ func dig(t *testing.T, v any, path ...any) any {
 }
 
 func TestBuildFreshInstall(t *testing.T) {
-	cfg := build(t, Config{AdminListen: "unix//run/caddy/admin.sock", PanelUpstream: "berth:8080"})
+	cfg := build(t, Config{AdminListen: "unix//run/caddy/admin.sock", PanelUpstream: "dokyr:8080"})
 
 	if got := dig(t, cfg, "admin", "listen"); got != "unix//run/caddy/admin.sock" {
 		t.Errorf("admin listen = %v", got)
@@ -58,7 +58,7 @@ func TestBuildFreshInstall(t *testing.T) {
 	if _, has := routes[0].(map[string]any)["match"]; has {
 		t.Error("the panel catch-all has a matcher")
 	}
-	if got := dig(t, routes[0], "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+	if got := dig(t, routes[0], "handle", 0, "upstreams", 0, "dial"); got != "dokyr:8080" {
 		t.Errorf("catch-all upstream = %v", got)
 	}
 	if _, has := dig(t, cfg, "apps").(map[string]any)["tls"]; has {
@@ -69,7 +69,7 @@ func TestBuildFreshInstall(t *testing.T) {
 func TestBuildRoutes(t *testing.T) {
 	cfg := build(t, Config{
 		AdminListen:   ":2019",
-		PanelUpstream: "berth:8080",
+		PanelUpstream: "dokyr:8080",
 		PanelDomain:   "panel.example.com",
 		ACMEEmail:     "ops@example.com",
 		Routes: []Route{
@@ -86,7 +86,7 @@ func TestBuildRoutes(t *testing.T) {
 	if strings.Join(ids, ",") != "route-panel,route-a,route-b" {
 		t.Errorf("https route order = %v", ids)
 	}
-	if got := dig(t, https[0], "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+	if got := dig(t, https[0], "handle", 0, "upstreams", 0, "dial"); got != "dokyr:8080" {
 		t.Errorf("panel route upstream = %v", got)
 	}
 	if ups := dig(t, https[1], "handle", 0, "upstreams").([]any); len(ups) != 0 {
@@ -128,10 +128,10 @@ func TestBuildRoutes(t *testing.T) {
 }
 
 func TestBuildRejects(t *testing.T) {
-	base := Config{AdminListen: ":2019", PanelUpstream: "berth:8080"}
+	base := Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080"}
 	for name, mutate := range map[string]func(*Config){
 		"no admin":      func(c *Config) { c.AdminListen = "" },
-		"bad upstream":  func(c *Config) { c.PanelUpstream = "berth" },
+		"bad upstream":  func(c *Config) { c.PanelUpstream = "dokyr" },
 		"bad host":      func(c *Config) { c.Routes = []Route{{ID: "a", Hosts: []string{"Not A Host"}}} },
 		"no hosts":      func(c *Config) { c.Routes = []Route{{ID: "a"}} },
 		"empty id":      func(c *Config) { c.Routes = []Route{{Hosts: []string{"a.example.com"}}} },
@@ -178,7 +178,7 @@ func TestValidHost(t *testing.T) {
 func TestBuildHTTPOnlyHosts(t *testing.T) {
 	cfg := build(t, Config{
 		AdminListen:   "localhost:2019",
-		PanelUpstream: "berth:8080",
+		PanelUpstream: "dokyr:8080",
 		ACMEEmail:     "ops@example.com",
 		Routes: []Route{
 			{ID: "app1", Hosts: []string{"secure.example.com", "flex.example.com"}, HTTPOnly: []string{"flex.example.com"}, Upstreams: []string{"app-1:80"}},
@@ -225,20 +225,20 @@ func TestBuildHTTPOnlyHosts(t *testing.T) {
 	}
 
 	// Everything HTTP-only: no HTTPS server at all, so Caddy asks for no certificate.
-	only := build(t, Config{AdminListen: "localhost:2019", PanelUpstream: "berth:8080",
+	only := build(t, Config{AdminListen: "localhost:2019", PanelUpstream: "dokyr:8080",
 		Routes: []Route{{ID: "a", Hosts: []string{"cf.example.com"}, HTTPOnly: []string{"cf.example.com"}}}})
 	if _, has := dig(t, only, "apps", "http", "servers").(map[string]any)["https"]; has {
 		t.Fatal("https server built for HTTP-only hosts")
 	}
 
-	if _, err := Build(Config{AdminListen: "x:1", PanelUpstream: "berth:8080",
+	if _, err := Build(Config{AdminListen: "x:1", PanelUpstream: "dokyr:8080",
 		Routes: []Route{{ID: "a", Hosts: []string{"a.example.com"}, HTTPOnly: []string{"b.example.com"}}}}); err == nil {
 		t.Fatal("http-only host outside the route's hosts accepted")
 	}
 }
 
 func TestBuildPanelHTTPOnly(t *testing.T) {
-	cfg := build(t, Config{AdminListen: "localhost:2019", PanelUpstream: "berth:8080", PanelDomain: "panel.example.com", PanelHTTPOnly: true})
+	cfg := build(t, Config{AdminListen: "localhost:2019", PanelUpstream: "dokyr:8080", PanelDomain: "panel.example.com", PanelHTTPOnly: true})
 	if _, has := dig(t, cfg, "apps", "http", "servers").(map[string]any)["https"]; has {
 		t.Fatal("https server built for an HTTP-only panel domain")
 	}
@@ -253,7 +253,7 @@ func TestBuildPanelDomainOnly(t *testing.T) {
 		routes := dig(t, build(t, c), "apps", "http", "servers", "http", "routes").([]any)
 		return routes[len(routes)-1]
 	}
-	base := Config{AdminListen: "localhost:2019", PanelUpstream: "berth:8080", PanelDomain: "panel.example.com", PanelDomainOnly: true}
+	base := Config{AdminListen: "localhost:2019", PanelUpstream: "dokyr:8080", PanelDomain: "panel.example.com", PanelDomainOnly: true}
 	if r := last(base); dig(t, r, "handle", 0, "abort") != true {
 		t.Fatalf("catch-all = %v, want abort", r)
 	}
@@ -265,8 +265,8 @@ func TestBuildPanelDomainOnly(t *testing.T) {
 }
 
 func TestBuildPanelPaths(t *testing.T) {
-	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Routes: []Route{{
-		ID: "registry", Hosts: []string{"registry.example.com"}, Upstreams: []string{"berth-registry:5000"},
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", Routes: []Route{{
+		ID: "registry", Hosts: []string{"registry.example.com"}, Upstreams: []string{"dokyr-registry:5000"},
 		PanelPaths: []string{"/api/registry/token"},
 	}}})
 	route := dig(t, cfg, "apps", "http", "servers", "https", "routes", 0)
@@ -277,10 +277,10 @@ func TestBuildPanelPaths(t *testing.T) {
 	if got := dig(t, sub, "routes", 0, "match", 0, "path", 0); got != "/api/registry/token" {
 		t.Errorf("panel path = %v", got)
 	}
-	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "dokyr:8080" {
 		t.Errorf("token endpoint goes to %v, want the panel", got)
 	}
-	if got := dig(t, sub, "routes", 1, "handle", 0, "upstreams", 0, "dial"); got != "berth-registry:5000" {
+	if got := dig(t, sub, "routes", 1, "handle", 0, "upstreams", 0, "dial"); got != "dokyr-registry:5000" {
 		t.Errorf("the rest goes to %v, want the registry", got)
 	}
 }
@@ -288,9 +288,9 @@ func TestBuildPanelPaths(t *testing.T) {
 // An HTTP-only registry (behind Cloudflare "Flexible") is served on the http server, token
 // path included, with no redirect to HTTPS (which would loop).
 func TestBuildPanelPathsHTTPOnly(t *testing.T) {
-	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Routes: []Route{{
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", Routes: []Route{{
 		ID: "registry", Hosts: []string{"registry.example.com"}, HTTPOnly: []string{"registry.example.com"},
-		Upstreams: []string{"berth-registry:5000"}, PanelPaths: []string{"/api/registry/token"},
+		Upstreams: []string{"dokyr-registry:5000"}, PanelPaths: []string{"/api/registry/token"},
 	}}})
 	servers := dig(t, cfg, "apps", "http", "servers").(map[string]any)
 	if _, ok := servers["https"]; ok {
@@ -300,13 +300,13 @@ func TestBuildPanelPathsHTTPOnly(t *testing.T) {
 	if dig(t, sub, "handler") != "subroute" {
 		t.Fatalf("handle = %v, want the registry subroute, not a redirect", sub)
 	}
-	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "berth:8080" {
+	if got := dig(t, sub, "routes", 0, "handle", 0, "upstreams", 0, "dial"); got != "dokyr:8080" {
 		t.Errorf("token endpoint goes to %v, want the panel", got)
 	}
 }
 
 func TestBuildSites(t *testing.T) {
-	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "berth:8080", Sites: []Site{{Host: "shop.example.com", Paths: []Path{
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", Sites: []Site{{Host: "shop.example.com", Paths: []Path{
 		{ID: "r1", AppID: "front", Prefix: "/", Upstreams: []string{"front:80"}},
 		{ID: "r2", AppID: "back", Prefix: "/api", Strip: true, Upstreams: []string{"back:8080"}},
 	}}}})
@@ -324,7 +324,7 @@ func TestBuildSites(t *testing.T) {
 		t.Error("the / route has a matcher")
 	}
 	// A hostname both a project domain and a built-in route is refused.
-	if _, err := Build(Config{AdminListen: ":2019", PanelUpstream: "berth:8080",
+	if _, err := Build(Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080",
 		Routes: []Route{{ID: "registry", Hosts: []string{"shop.example.com"}, Upstreams: []string{"r:5000"}}},
 		Sites:  []Site{{Host: "shop.example.com"}}}); err == nil {
 		t.Error("duplicate hostname accepted")

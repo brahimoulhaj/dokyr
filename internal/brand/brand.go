@@ -5,14 +5,14 @@ package brand
 import "strings"
 
 const (
-	Name = "Berth" // UI title, CLI help, emails, notifications
-	Slug = "berth" // binary, image, Docker network, data dir, env prefix
+	Name = "Dokyr" // UI title, CLI help, emails, notifications
+	Slug = "dokyr" // binary, image, Docker network, data dir, env prefix
 )
 
-// EnvPrefix is the prefix of every environment variable the panel reads, e.g. "BERTH_".
+// EnvPrefix is the prefix of every environment variable the panel reads, e.g. "DOKYR_".
 func EnvPrefix() string { return strings.ToUpper(Slug) + "_" }
 
-// DataDir is the default data directory, e.g. "/var/lib/berth".
+// DataDir is the default data directory, e.g. "/var/lib/dokyr".
 func DataDir() string { return "/var/lib/" + Slug }
 
 // Network is the Docker network every managed container joins.

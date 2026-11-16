@@ -10,7 +10,7 @@ import (
 )
 
 // SetBuildDefaults sets the build limits that apply until they are changed in Settings
-// (BERTH_BUILD_CPUS and BERTH_BUILD_MEMORY_MB).
+// (DOKYR_BUILD_CPUS and DOKYR_BUILD_MEMORY_MB).
 func (s *Server) SetBuildDefaults(l store.BuildLimits) { s.buildDefaults = l }
 
 // minBuildMemoryMB keeps BuildKit itself alive under a memory cap.

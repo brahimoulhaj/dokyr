@@ -17,7 +17,7 @@ import (
 // Ref is a parsed image reference.
 type Ref struct {
 	Registry string // as written in the reference, e.g. "ghcr.io", "localhost:5000", "docker.io"
-	Repo     string // e.g. "owner/berth", "library/nginx"
+	Repo     string // e.g. "owner/dokyr", "library/nginx"
 	Tag      string // "latest" when omitted
 }
 

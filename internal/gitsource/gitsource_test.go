@@ -223,7 +223,7 @@ func (g *fakeGitHub) handler() http.Handler {
 			return
 		}
 		writeJSON(w, 201, map[string]any{
-			"id": 4242, "slug": "berth-abc", "name": "berth-abc", "html_url": "https://github.com/apps/berth-abc",
+			"id": 4242, "slug": "dokyr-abc", "name": "dokyr-abc", "html_url": "https://github.com/apps/dokyr-abc",
 			"client_id": "Iv1.x", "client_secret": "cs", "webhook_secret": "ws", "pem": g.pem,
 		})
 	})
@@ -288,7 +288,7 @@ func TestGitHubApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if manifest.RedirectURL != "https://panel.example.com/api/git-sources/github/callback" || manifest.SetupURL != "https://panel.example.com/settings?tab=git" ||
-		manifest.Public || !strings.HasPrefix(manifest.Name, "berth-") ||
+		manifest.Public || !strings.HasPrefix(manifest.Name, "dokyr-") ||
 		fmt.Sprint(manifest.Permissions) != "map[contents:read metadata:read]" {
 		t.Errorf("manifest = %s", m.Manifest)
 	}
@@ -309,8 +309,8 @@ func TestGitHubApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Type != store.GitTypeGitHubApp || c.Name != "berth-abc" || c.BaseURL != "https://github.com" ||
-		c.InstallURL != "https://github.com/apps/berth-abc/installations/new" || c.AppURL != "https://github.com/apps/berth-abc" {
+	if c.Type != store.GitTypeGitHubApp || c.Name != "dokyr-abc" || c.BaseURL != "https://github.com" ||
+		c.InstallURL != "https://github.com/apps/dokyr-abc/installations/new" || c.AppURL != "https://github.com/apps/dokyr-abc" {
 		t.Errorf("connection = %+v", c)
 	}
 	if _, err := svc.FinishGitHub(ctx, "goodcode", m.State); !errors.Is(err, ErrState) {

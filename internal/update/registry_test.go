@@ -12,19 +12,19 @@ import (
 
 func TestParseRef(t *testing.T) {
 	for _, tc := range []struct{ in, registry, repo, tag, repository string }{
-		{"berth", "docker.io", "library/berth", "latest", "berth"},
-		{"berth:0.1.0", "docker.io", "library/berth", "0.1.0", "berth"},
-		{"me/berth:1.0.0", "docker.io", "me/berth", "1.0.0", "me/berth"},
-		{"ghcr.io/me/berth:0.2.0", "ghcr.io", "me/berth", "0.2.0", "ghcr.io/me/berth"},
-		{"localhost:5000/berth:0.1.0", "localhost:5000", "berth", "0.1.0", "localhost:5000/berth"},
-		{"10.0.0.5:5000/team/berth", "10.0.0.5:5000", "team/berth", "latest", "10.0.0.5:5000/team/berth"},
+		{"dokyr", "docker.io", "library/dokyr", "latest", "dokyr"},
+		{"dokyr:0.1.0", "docker.io", "library/dokyr", "0.1.0", "dokyr"},
+		{"me/dokyr:1.0.0", "docker.io", "me/dokyr", "1.0.0", "me/dokyr"},
+		{"ghcr.io/me/dokyr:0.2.0", "ghcr.io", "me/dokyr", "0.2.0", "ghcr.io/me/dokyr"},
+		{"localhost:5000/dokyr:0.1.0", "localhost:5000", "dokyr", "0.1.0", "localhost:5000/dokyr"},
+		{"10.0.0.5:5000/team/dokyr", "10.0.0.5:5000", "team/dokyr", "latest", "10.0.0.5:5000/team/dokyr"},
 	} {
 		r, err := ParseRef(tc.in)
 		if err != nil || r.Registry != tc.registry || r.Repo != tc.repo || r.Tag != tc.tag || r.Repository() != tc.repository {
 			t.Errorf("ParseRef(%q) = %+v (%s), %v", tc.in, r, r.Repository(), err)
 		}
 	}
-	for _, bad := range []string{"", "berth@sha256:abc", "ghcr.io/me/berth:"} {
+	for _, bad := range []string{"", "dokyr@sha256:abc", "ghcr.io/me/dokyr:"} {
 		if _, err := ParseRef(bad); err == nil {
 			t.Errorf("ParseRef(%q) accepted", bad)
 		}
@@ -59,7 +59,7 @@ func TestTagsWithTokenAndPages(t *testing.T) {
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/token":
-			if r.URL.Query().Get("scope") != "repository:me/berth:pull" || r.URL.Query().Get("service") != "test" {
+			if r.URL.Query().Get("scope") != "repository:me/dokyr:pull" || r.URL.Query().Get("service") != "test" {
 				http.Error(w, "bad scope", 400)
 				return
 			}
@@ -68,7 +68,7 @@ func TestTagsWithTokenAndPages(t *testing.T) {
 			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test",scope="x"`, srv.URL))
 			w.WriteHeader(401)
 		case r.URL.Query().Get("last") == "":
-			w.Header().Set("Link", `</v2/me/berth/tags/list?n=2&last=0.1.1>; rel="next"`)
+			w.Header().Set("Link", `</v2/me/dokyr/tags/list?n=2&last=0.1.1>; rel="next"`)
 			fmt.Fprint(w, `{"tags":["0.1.0","0.1.1"]}`)
 		default:
 			fmt.Fprint(w, `{"tags":["0.2.0"]}`)
@@ -77,7 +77,7 @@ func TestTagsWithTokenAndPages(t *testing.T) {
 	defer srv.Close()
 	host := strings.TrimPrefix(srv.URL, "http://")
 	g := &Registry{HTTP: srv.Client(), Insecure: func(h string) bool { return h == host }}
-	r, _ := ParseRef(host + "/me/berth:0.1.0")
+	r, _ := ParseRef(host + "/me/dokyr:0.1.0")
 	tags, err := g.Tags(context.Background(), r)
 	if err != nil || strings.Join(tags, ",") != "0.1.0,0.1.1,0.2.0" {
 		t.Fatalf("tags = %v, %v", tags, err)

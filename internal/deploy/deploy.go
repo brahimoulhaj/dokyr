@@ -1239,7 +1239,7 @@ func (s *Service) probe(ctx context.Context, h store.HealthCheck, name string, p
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "berth-health-check")
+	req.Header.Set("User-Agent", "dokyr-health-check")
 	client := &http.Client{
 		Transport:     &http.Transport{DialContext: s.opts.Dial, DisableKeepAlives: true},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },

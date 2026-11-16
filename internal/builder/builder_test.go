@@ -117,7 +117,7 @@ func TestBuildDockerfile(t *testing.T) {
 	if err := b.Build(context.Background(), src, dir, tag, "app1", func(l string) { lines = append(lines, l) }); err != nil {
 		t.Fatalf("build: %v\n%s", err, strings.Join(lines, "\n"))
 	}
-	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "berth.build"}}`, tag).Output()
+	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "dokyr.build"}}`, tag).Output()
 	if err != nil || strings.TrimSpace(string(out)) != "app1" {
 		t.Errorf("label = %q, %v", out, err)
 	}
@@ -215,7 +215,7 @@ func TestBuildAutoPicksBuilder(t *testing.T) {
 	if len(got) != 4 ||
 		!strings.HasPrefix(got[0], "railpack prepare "+filepath.Join(dir, "api")) ||
 		!strings.Contains(got[1], "BUILDKIT_SYNTAX="+RailpackFrontend) || !strings.Contains(got[1], "--tag app-x:abc-railpack") ||
-		!strings.Contains(got[2], "--tag app-x:abc --label berth.build=app1") ||
+		!strings.Contains(got[2], "--tag app-x:abc --label dokyr.build=app1") ||
 		got[3] != "docker image rm app-x:abc-railpack" {
 		t.Errorf("railpack calls:\n%s", strings.Join(got, "\n"))
 	}
@@ -246,17 +246,17 @@ func TestBuildAutoPicksBuilder(t *testing.T) {
 }
 
 // TestBuildRailpack builds a tiny Node app with the real railpack CLI and frontend. It needs
-// railpack on PATH (or BERTH_TEST_RAILPACK) and network access; the first run downloads a
+// railpack on PATH (or DOKYR_TEST_RAILPACK) and network access; the first run downloads a
 // Node toolchain and takes minutes.
 func TestBuildRailpack(t *testing.T) {
 	if testing.Short() {
 		t.Skip("needs a Docker daemon and network")
 	}
-	rp := os.Getenv("BERTH_TEST_RAILPACK")
+	rp := os.Getenv("DOKYR_TEST_RAILPACK")
 	if rp == "" {
 		var err error
 		if rp, err = exec.LookPath("railpack"); err != nil {
-			t.Skip("railpack not installed; set BERTH_TEST_RAILPACK")
+			t.Skip("railpack not installed; set DOKYR_TEST_RAILPACK")
 		}
 	}
 	dir := filepath.Join(t.TempDir(), "dep")
@@ -271,7 +271,7 @@ func TestBuildRailpack(t *testing.T) {
 	if err := b.Build(context.Background(), src, dir, tag, "app1", func(l string) { lines = append(lines, l) }); err != nil {
 		t.Fatalf("build: %v\n%s", err, strings.Join(lines, "\n"))
 	}
-	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "berth.build"}} {{json .Config.Cmd}}`, tag).Output()
+	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "dokyr.build"}} {{json .Config.Cmd}}`, tag).Output()
 	if err != nil || strings.TrimSpace(string(out)) != `app1 ["npm run start"]` {
 		t.Errorf("image = %q, %v", out, err)
 	}
@@ -311,7 +311,7 @@ func TestBuildLimits(t *testing.T) {
 	b := &Local{Docker: filepath.Join(bin, "docker"), Railpack: filepath.Join(bin, "railpack"),
 		Limits: Limits{CPUs: 1.5, MemoryMB: 2048}}
 	name := b.builderName(b.Limits)
-	write(t, builders, "default\norbstack\nberth-build-0123abcd\n")
+	write(t, builders, "default\norbstack\ndokyr-build-0123abcd\n")
 
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -327,7 +327,7 @@ func TestBuildLimits(t *testing.T) {
 	got := calls()
 	want := []string{
 		"docker buildx ls --format {{.Name}}",
-		"docker buildx rm --force berth-build-0123abcd",
+		"docker buildx rm --force dokyr-build-0123abcd",
 		"docker buildx create --name " + name + " --driver docker-container --driver-opt image=" + BuildKitImage +
 			" --driver-opt cpu-period=100000 --driver-opt cpu-quota=150000 --driver-opt memory=2048m --driver-opt memory-swap=2048m --bootstrap",
 	}
@@ -348,7 +348,7 @@ func TestBuildLimits(t *testing.T) {
 	}
 	got = calls()
 	if len(got) != 4 || !strings.HasPrefix(got[1], "docker buildx build --builder "+name+" ") ||
-		strings.Contains(got[2], "--builder") || !strings.Contains(got[2], "--label berth.build=app1") {
+		strings.Contains(got[2], "--builder") || !strings.Contains(got[2], "--label dokyr.build=app1") {
 		t.Errorf("railpack calls:\n%s", strings.Join(got, "\n"))
 	}
 

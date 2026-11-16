@@ -37,7 +37,7 @@ export const en = {
   updatingTo: 'Updating to <v/>…',
   seconds: (n: number) => `${n}s`,
   restartNote: 'The panel restarts on the new version and this page reloads by itself. Apps keep serving traffic meanwhile.',
-  slowNote: 'This is taking longer than usual; check `docker logs berth-updater` on the server.',
+  slowNote: 'This is taking longer than usual; check `docker logs dokyr-updater` on the server.',
 }
 
 export const fr: typeof en = {
@@ -78,7 +78,7 @@ export const fr: typeof en = {
   seconds: (n) => `${n} s`,
   restartNote:
     'Le panneau redémarre sur la nouvelle version et cette page se recharge toute seule. Les applications continuent de servir le trafic entre-temps.',
-  slowNote: "C'est plus long que d'habitude ; consultez `docker logs berth-updater` sur le serveur.",
+  slowNote: "C'est plus long que d'habitude ; consultez `docker logs dokyr-updater` sur le serveur.",
 }
 
 export const ar: typeof en = {
@@ -117,7 +117,7 @@ export const ar: typeof en = {
   updatingTo: 'جارٍ التحديث إلى <v/>…',
   seconds: (n) => `${n} ث`,
   restartNote: 'تعيد لوحة التحكم التشغيل على الإصدار الجديد وتُعاد تحميل هذه الصفحة تلقائياً. التطبيقات تواصل استقبال الزيارات في الأثناء.',
-  slowNote: 'يستغرق هذا أكثر من المعتاد؛ راجع `docker logs berth-updater` على الخادم.',
+  slowNote: 'يستغرق هذا أكثر من المعتاد؛ راجع `docker logs dokyr-updater` على الخادم.',
 }
 
 export const es: typeof en = {
@@ -158,5 +158,5 @@ export const es: typeof en = {
   seconds: (n) => `${n} s`,
   restartNote:
     'El panel se reinicia con la nueva versión y esta página se recarga sola. Mientras tanto, las aplicaciones siguen atendiendo tráfico.',
-  slowNote: 'Está tardando más de lo habitual; revisa `docker logs berth-updater` en el servidor.',
+  slowNote: 'Está tardando más de lo habitual; revisa `docker logs dokyr-updater` en el servidor.',
 }

@@ -23,7 +23,7 @@ import (
 // Config describes one gate. An empty Allow admits every address.
 type Config struct {
 	Listen string // e.g. ":5432"
-	Target string // the database on the private network, e.g. "berth-db-x:5432"
+	Target string // the database on the private network, e.g. "dokyr-db-x:5432"
 	Engine string // "postgres" or "mariadb"
 	Allow  []netip.Prefix
 	Cert   tls.Certificate

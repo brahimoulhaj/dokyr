@@ -59,7 +59,7 @@ func TestDockerCLI(t *testing.T) {
 	host := fmt.Sprintf("127.0.0.1:%d", port)
 	svc, err = New(Options{
 		Executor: d, Store: st, Log: slog.New(slog.DiscardHandler), Name: name + "-registry", Image: "registry:3.0.0",
-		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "berth", PublishPort: port,
+		Dir: t.TempDir(), DataVolume: name + "-data", Issuer: "dokyr", PublishPort: port,
 		PanelUpstream: "host.docker.internal:1", Realm: "http://" + ln.Addr().String() + TokenPath,
 	})
 	if err != nil {

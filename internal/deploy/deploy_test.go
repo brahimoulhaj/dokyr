@@ -1644,7 +1644,7 @@ type fakeCache struct{ pushed map[string]bool }
 
 func (fakeCache) PullAuth(context.Context, string) *executor.RegistryAuth { return nil }
 func (fakeCache) BuildCache(_ context.Context, local string) (string, *executor.RegistryAuth, bool) {
-	return "registry.example.com/builds/" + local, &executor.RegistryAuth{Username: "berth"}, true
+	return "registry.example.com/builds/" + local, &executor.RegistryAuth{Username: "dokyr"}, true
 }
 func (c fakeCache) CachedBuilds(context.Context, string) map[string]bool {
 	out := map[string]bool{}

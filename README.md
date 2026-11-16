@@ -1,8 +1,8 @@
-# Berth
+# Dokyr
 
 A lightweight, single-node PaaS panel: one Go binary with an embedded React app, SQLite for
-state, Docker for workloads and Caddy in front. "Berth" is a working name held in
-`internal/brand/brand.go`; nothing else hard-codes it.
+state, Docker for workloads and Caddy in front. The name lives in `internal/brand/brand.go`;
+nothing else hard-codes it.
 
 Progress is tracked in [Roadmap.md](Roadmap.md).
 
@@ -16,10 +16,10 @@ curl -fsSL https://github.com/brahimoulhaj/paas/releases/latest/download/install
 
 It installs Docker if needed, starts the panel and prints a one-time setup link
 (`http://<server-ip>/setup?token=…`). Options go between `sudo` and `sh`, e.g.
-`… | sudo BERTH_PUBLIC_URL=http://203.0.113.10 sh`. A specific version:
+`… | sudo DOKYR_PUBLIC_URL=http://203.0.113.10 sh`. A specific version:
 `https://github.com/brahimoulhaj/paas/releases/download/v0.1.1/install.sh`.
 
-Later versions install from the panel (Settings → Updates) or over SSH with `berth update`
+Later versions install from the panel (Settings → Updates) or over SSH with `dokyr update`
 (`--check` only reports, `--yes` skips the prompt).
 
 ## Requirements
@@ -52,11 +52,11 @@ Open http://localhost:5173. Edits show up on their own:
   (about 2 s). The browser keeps working after the restart.
 - `go.mod`, `go.sum`, `web/package.json` and the lockfile rebuild the images.
 
-Stop it with Ctrl-C, or `make dev-down` from another terminal. Caddy (`berth-proxy`) and
+Stop it with Ctrl-C, or `make dev-down` from another terminal. Caddy (`dokyr-proxy`) and
 deployed apps keep running, as they would during a panel update; the next start adopts them.
 
 Panel data (database, key, certificates, deployment logs) lives in the Docker volume
-`berth-data`, not in `./.data`. The panel is told so (`BERTH_DATA_VOLUME`) and mounts Caddy's
+`dokyr-data`, not in `./.data`. The panel is told so (`DOKYR_DATA_VOLUME`) and mounts Caddy's
 folders from that volume. It survives `make dev-down`; `docker compose down -v` deletes it.
 `make dev-import-data` replaces its content with a copy of `./.data` (from `make dev-api`).
 
@@ -66,7 +66,7 @@ fight over the proxy container.
 ## Build
 
 ```sh
-make build              # bin/berth, web app embedded
+make build              # bin/dokyr, web app embedded
 make test               # go vet, go test, web typecheck
 make image VERSION=0.1.0
 ```
@@ -85,40 +85,40 @@ make installer VERSION=0.1.0 [IMAGE=...]       # writes bin/install.sh from inst
 ```
 
 On the server (Linux, amd64 or arm64), as root: `curl -fsSL <url>/install.sh | sh`. It checks
-ports 80/443, installs Docker from get.docker.com when missing, creates `/var/lib/berth` and the
-`berth` network, writes `/var/lib/berth/compose.yaml` and starts the panel, then prints the
-setup link. It also installs a `berth` host command that runs the CLI inside the container
-(`berth setup-token`, `berth owner reset-password`). Running it again keeps the data.
+ports 80/443, installs Docker from get.docker.com when missing, creates `/var/lib/dokyr` and the
+`dokyr` network, writes `/var/lib/dokyr/compose.yaml` and starts the panel, then prints the
+setup link. It also installs a `dokyr` host command that runs the CLI inside the container
+(`dokyr setup-token`, `dokyr owner reset-password`). Running it again keeps the data.
 
-Overrides: `BERTH_IMAGE`, `BERTH_PUBLIC_URL`, and `BERTH_PULL=never` to use an image already
+Overrides: `DOKYR_IMAGE`, `DOKYR_PUBLIC_URL`, and `DOKYR_PULL=never` to use an image already
 loaded with `docker load` (no registry needed for testing).
 
 ## CLI
 
 ```
-berth serve
-berth setup-token                                  new one-time setup link (15 min)
-berth owner create --email E [--password P]
-berth owner reset-password [--email E] [--password P]
-berth version
+dokyr serve
+dokyr setup-token                                  new one-time setup link (15 min)
+dokyr owner create --email E [--password P]
+dokyr owner reset-password [--email E] [--password P]
+dokyr version
 ```
 
-Configuration is by environment: `BERTH_DATA_DIR` (default `/var/lib/berth`), `BERTH_ADDR`
-(default `:8080`), `BERTH_PUBLIC_URL` (base URL for printed links), `BERTH_MAX_BUILDS` (Git builds
+Configuration is by environment: `DOKYR_DATA_DIR` (default `/var/lib/dokyr`), `DOKYR_ADDR`
+(default `:8080`), `DOKYR_PUBLIC_URL` (base URL for printed links), `DOKYR_MAX_BUILDS` (Git builds
 run at once, default 1; further Git deploys wait, queued, and can be cancelled; queued and interrupted deploys
 start again after a panel restart, at most 3 times),
-`BERTH_BUILD_CPUS` and `BERTH_BUILD_MEMORY_MB` (default CPU and memory all builds share, e.g.
+`DOKYR_BUILD_CPUS` and `DOKYR_BUILD_MEMORY_MB` (default CPU and memory all builds share, e.g.
 `1.5` and `2048`; unset means no cap; Settings → Builds overrides them without a restart). Capped builds run in a BuildKit container of their own
 (`moby/buildkit`, created on the first build, about 100 MB to download) because Docker's
 built-in BuildKit ignores per-build limits; a build step over the memory cap is killed.
 
 The dashboard samples host CPU, RAM, swap, load, uptime, data-disk capacity and network
 traffic every five seconds, keeping ten minutes of history in memory. The disk is the
-filesystem holding `BERTH_DATA_DIR`; available space excludes filesystem reservations.
+filesystem holding `DOKYR_DATA_DIR`; available space excludes filesystem reservations.
 For host network readings inside Docker, mount `/proc:/host/proc:ro` on the panel
 container (included in the installer and development Compose file). Existing installations
 can re-run the installer or add that mount and recreate the panel container. Image-only
-updates preserve existing mounts. `BERTH_HOST_PROC` overrides the proc path for custom
+updates preserve existing mounts. `DOKYR_HOST_PROC` overrides the proc path for custom
 setups. On Docker Desktop these are the Linux VM's metrics. Unavailable readings are
 shown explicitly, and loopback, container bridges and tunnels are excluded from network
 totals. Metrics are available only through the authenticated `/api/host/metrics` endpoint.
@@ -131,9 +131,9 @@ logs, and are shown by category because image and build-cache layers may overlap
 If Docker becomes unavailable, the card labels the last known readings. The endpoint
 is `/api/docker/metrics` and requires authentication.
 
-Proxy: `BERTH_PROXY_HTTP_PORT` / `BERTH_PROXY_HTTPS_PORT` (default 80 / 443; `make dev-api` uses
-8880 / 8443), `BERTH_PROXY_IMAGE`, `BERTH_PROXY_PANEL_UPSTREAM` (how Caddy reaches the panel),
-`BERTH_PROXY_ADMIN` (`socket` on Linux, `tcp` elsewhere) and `BERTH_PROXY_ADMIN_PORT` (tcp mode,
+Proxy: `DOKYR_PROXY_HTTP_PORT` / `DOKYR_PROXY_HTTPS_PORT` (default 80 / 443; `make dev-api` uses
+8880 / 8443), `DOKYR_PROXY_IMAGE`, `DOKYR_PROXY_PANEL_UPSTREAM` (how Caddy reaches the panel),
+`DOKYR_PROXY_ADMIN` (`socket` on Linux, `tcp` elsewhere) and `DOKYR_PROXY_ADMIN_PORT` (tcp mode,
 default 2019 on 127.0.0.1). Socket mode needs the panel to run as root and the data dir mounted
 at the same path inside the panel container as on the host.
 

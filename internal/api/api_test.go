@@ -397,7 +397,7 @@ func TestUpdates(t *testing.T) {
 		t.Fatalf("apply without updater = %d", code)
 	}
 
-	fu := &fakeUpdater{info: update.Info{Supported: true, Version: "0.1.0", Image: "ghcr.io/me/berth:0.1.0", Status: "idle"}}
+	fu := &fakeUpdater{info: update.Info{Supported: true, Version: "0.1.0", Image: "ghcr.io/me/dokyr:0.1.0", Status: "idle"}}
 	e.srv.SetUpdater(fu)
 	if code, m := e.call("POST", "/api/updates/check", nil); code != 200 || m["available"] != true || m["latest"] != "0.2.0" || m["auto"] != false {
 		t.Fatalf("check = %d %v", code, m)
