@@ -373,6 +373,14 @@ Goal: see what the server is doing and get told when something breaks.
 
 ---
 
+## UI (v0.13–v0.16)
+- [x] Sidebar icons — outlined, solid and accent-coloured on the open page (Phosphor 2.1.7, per-icon imports; about 9 kB gzipped added to the main bundle) (2026-11-16)
+- [x] Projects list — search (name and description, accents ignored), filters (needs attention, all good, no apps), sorting (name, last deploy, newest, most apps), paging of 10; rows show running, down and stopped counts, databases, domains and the last deploy (`GET /api/projects` returns one summary per project)
+- [x] Databases list — search (instance, project, database, engine), filters (engine, project, status, needs attention), sorting (name, project, newest, last backup), paging of 10; rows show status, engine and version, public port, databases, users, limits and the last backup (`GET /api/databases` returns one summary per instance)
+- [x] Activity — server-side search, filters (type, problems only, people or panel and webhooks, period), paging of 25 with totals (`GET /api/events/search`); readable labels in four languages for every recorded action; problem and success markers (2026-11-16)
+- [x] Shared list controls: search box, selects, pager and debounced search (`web/src/components/list-controls.tsx`)
+- [ ] Command palette (Ctrl/Cmd+K): navigate to pages and projects, apps and databases, and run common actions
+
 ## Cross-cutting
 
 - [ ] Unit tests for store, secret, deploy state machine, Caddy config builder
