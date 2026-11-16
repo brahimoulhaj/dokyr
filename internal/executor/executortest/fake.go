@@ -293,3 +293,12 @@ func (f *Fake) Logs(ctx context.Context, id string, opts executor.LogOptions, fn
 	}
 	return nil
 }
+
+// Mutate changes a container's observed state (tests of crash and restart handling).
+func (f *Fake) Mutate(idOrName string, fn func(*executor.Container)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c := f.find(idOrName); c != nil {
+		fn(c)
+	}
+}

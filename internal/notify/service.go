@@ -14,7 +14,7 @@ import (
 
 // Events that alert rules can name. Rules for deployment.failed also match a
 // deployment that failed and was rolled back.
-var Events = []string{"deployment.started", "deployment.succeeded", "deployment.failed", "backup.failed", "disk.high"}
+var Events = []string{"deployment.started", "deployment.succeeded", "deployment.failed", "app.health_failing", "app.health_recovered", "app.crashed", "backup.failed", "disk.high"}
 
 // DiskHigh and DiskClear: the disk alert fires at DiskHigh percent and re-arms
 // only once usage falls under DiskClear, so it does not repeat every minute.
@@ -130,6 +130,15 @@ func (s *Service) message(ctx context.Context, event string, e store.Event) Mess
 		if e.Action == "deployment.rolled_back" {
 			m.Text += " The previous version is serving again."
 		}
+	case "app.health_failing":
+		m.Title, m.Level = "Unhealthy: "+e.TargetName, "error"
+		m.Text = e.TargetName + " is failing."
+	case "app.health_recovered":
+		m.Title, m.Level = "Recovered: "+e.TargetName, "success"
+		m.Text = e.TargetName + " is healthy again."
+	case "app.crashed":
+		m.Title, m.Level = "Crashed: "+e.TargetName, "error"
+		m.Text = e.TargetName + " crashed and was restarted."
 	case "backup.failed":
 		m.Title, m.Level = "Backup failed: "+e.TargetName, "error"
 		m.Text = "A backup of the database instance " + e.TargetName + " failed."
@@ -138,12 +147,16 @@ func (s *Service) message(ctx context.Context, event string, e store.Event) Mess
 		m.Text = "The data disk is nearly full."
 	}
 	if detail != "" {
-		m.Text += "\n" + detail
+		m.Text += "\n" + strings.ToUpper(detail[:1]) + detail[1:] // reasons are written as clauses
 	}
 	switch e.TargetType {
 	case "app":
 		if a, err := s.st.GetApp(ctx, e.TargetID); err == nil {
-			m.URL, _ = s.panelURL(ctx, "/projects/"+a.ProjectID+"/apps/"+a.ID+"?tab=deployments")
+			tab := "deployments"
+			if strings.HasPrefix(event, "app.") {
+				tab = "logs" // a crash or failing check: the runtime logs say why
+			}
+			m.URL, _ = s.panelURL(ctx, "/projects/"+a.ProjectID+"/apps/"+a.ID+"?tab="+tab)
 		}
 	case "database":
 		m.URL, _ = s.panelURL(ctx, "/databases/"+e.TargetID+"?tab=backups")

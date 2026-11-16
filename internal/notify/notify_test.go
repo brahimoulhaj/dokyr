@@ -182,7 +182,7 @@ func TestDispatch(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal(good.body[0], &body)
-	if body["level"] != "error" || !strings.Contains(body["text"].(string), "previous version is serving again") || !strings.Contains(body["text"].(string), "boom") {
+	if body["level"] != "error" || !strings.Contains(body["text"].(string), "previous version is serving again") || !strings.Contains(body["text"].(string), "Boom") {
 		t.Fatalf("message %v", body)
 	}
 	record("deployment.succeeded", "app", "app1") // rule is for app2 only

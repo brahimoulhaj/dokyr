@@ -74,6 +74,10 @@ export const en = {
     `Settings changed since the last deploy (deployed: ${version}, port ${port}). Redeploy to apply them.`,
   deployFailed: 'The last deploy failed: <err/>. <a>Open its log</a>. The previous version was kept.',
 
+  health: 'Health',
+  healthStatus: { unknown: 'Checking…', healthy: 'Healthy', unhealthy: 'Unhealthy', down: 'Down' } as Record<string, string>,
+  healthChecked: (when: string, probe: string) => `${probe ? `${probe.toUpperCase()} check` : 'Container state'} · checked ${when}`,
+  healthRestarts: (n: number) => `${n} restart${n === 1 ? '' : 's'}`,
   summary: 'Summary',
   repository: 'Repository',
   image: 'Image',
@@ -244,6 +248,10 @@ export const fr: typeof en = {
     `Les paramètres ont changé depuis le dernier déploiement (déployé : ${version}, port ${port}). Redéployez pour les appliquer.`,
   deployFailed: 'Le dernier déploiement a échoué : <err/>. <a>Ouvrir son journal</a>. La version précédente a été conservée.',
 
+  health: 'Santé',
+  healthStatus: { unknown: 'Vérification…', healthy: 'En bonne santé', unhealthy: 'En échec', down: 'Arrêtée' },
+  healthChecked: (when, probe) => `${probe ? `Contrôle ${probe.toUpperCase()}` : 'État du conteneur'} · vérifié ${when}`,
+  healthRestarts: (n) => `${n} redémarrage${n === 1 ? '' : 's'}`,
   summary: 'Résumé',
   repository: 'Dépôt',
   image: 'Image',
@@ -416,6 +424,10 @@ export const ar: typeof en = {
     `تغيّرت الإعدادات منذ آخر نشر (المنشور: ⁦${version}⁩، المنفذ ${port}). أعد النشر لتطبيقها.`,
   deployFailed: 'فشل آخر نشر: <err/>. <a>افتح سجله</a>. تم الإبقاء على النسخة السابقة.',
 
+  health: 'الصحة',
+  healthStatus: { unknown: 'جارٍ الفحص…', healthy: 'سليم', unhealthy: 'غير سليم', down: 'متوقف' },
+  healthChecked: (when, probe) => `${probe ? `فحص ${probe.toUpperCase()}` : 'حالة الحاوية'} · فُحص ${when}`,
+  healthRestarts: (n) => `إعادات التشغيل: ${n}`,
   summary: 'ملخص',
   repository: 'المستودع',
   image: 'الصورة',
@@ -586,6 +598,10 @@ export const es: typeof en = {
     `Los ajustes han cambiado desde el último despliegue (desplegado: ${version}, puerto ${port}). Vuelve a desplegar para aplicarlos.`,
   deployFailed: 'El último despliegue falló: <err/>. <a>Abrir su registro</a>. Se conservó la versión anterior.',
 
+  health: 'Salud',
+  healthStatus: { unknown: 'Comprobando…', healthy: 'Sana', unhealthy: 'Con fallos', down: 'Caída' },
+  healthChecked: (when, probe) => `${probe ? `Comprobación ${probe.toUpperCase()}` : 'Estado del contenedor'} · comprobada ${when}`,
+  healthRestarts: (n) => `${n} reinicio${n === 1 ? '' : 's'}`,
   summary: 'Detalles',
   repository: 'Repositorio',
   image: 'Imagen',

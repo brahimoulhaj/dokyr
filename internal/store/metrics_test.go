@@ -61,3 +61,26 @@ func TestMetricRollupsAndRetention(t *testing.T) {
 		t.Fatal("hours kept past 30 days")
 	}
 }
+
+func TestAlertRulesGoWithTheirTarget(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	p, _ := s.CreateProject(ctx, "shop", "")
+	app, err := s.CreateApp(ctx, p.ID, AppInput{Name: "web", Image: "nginx", Port: 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, _ := s.CreateNotificationChannel(ctx, "ops", "slack", map[string]string{"webhook_url": "https://x"})
+	for _, r := range []AlertRule{{Event: "app.crashed", TargetID: app.ID, ChannelID: ch.ID}, {Event: "app.crashed", ChannelID: ch.ID}} {
+		if _, err := s.CreateAlertRule(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteApp(ctx, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := s.ListAlertRules(ctx)
+	if len(rules) != 1 || rules[0].TargetID != "" {
+		t.Fatalf("rules after deleting their app: %+v", rules)
+	}
+}

@@ -173,7 +173,7 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	if in.TargetID != "" {
 		var err error
 		switch {
-		case strings.HasPrefix(in.Event, "deployment."):
+		case strings.HasPrefix(in.Event, "deployment.") || strings.HasPrefix(in.Event, "app."):
 			var a store.App
 			a, err = s.store.GetApp(r.Context(), in.TargetID)
 			target = a.Name

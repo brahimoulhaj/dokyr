@@ -281,6 +281,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	} else if r != (deploy.Recovery{}) {
 		log.Info("deployments left by the last run picked up", "resumed", r.Resumed, "finished", r.Finished, "failed", r.Failed)
 	}
+	go deployer.Monitor(ctx, deploy.MonitorInterval)
 
 	apiSrv := api.New(st, acc, log, version, webui.FS())
 	databases := database.New(ctx, st, ex)

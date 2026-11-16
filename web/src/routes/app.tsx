@@ -273,6 +273,18 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
       )}
       <Panel title={t.app.summary}>
         <dl className="grid gap-px bg-line sm:grid-cols-2">
+          {app.health && (
+            <Fact label={t.app.health}>
+              <span className="flex flex-wrap items-center gap-2">
+                <Badge tone={app.health.status === 'healthy' ? 'accent' : app.health.status === 'unknown' ? 'muted' : 'danger'}>{t.app.healthStatus[app.health.status] ?? app.health.status}</Badge>
+                <span className="text-xs text-muted">
+                  {t.app.healthChecked(timeAgo(app.health.checked_at), app.health.probe)}
+                  {app.health.restarts > 0 && ` · ${t.app.healthRestarts(app.health.restarts)}`}
+                </span>
+              </span>
+              {app.health.reason && <span className={cx('mt-1 block text-xs', app.health.status === 'healthy' ? 'text-warn' : 'text-danger')}>{app.health.reason}</span>}
+            </Fact>
+          )}
           {app.source_type === 'git' ? (
             <>
               <Fact label={t.app.repository}>

@@ -137,6 +137,7 @@ type Service struct {
 	busy    map[string]bool         // app ids with an operation in progress
 	pending map[string]string       // app id → trigger of one deploy to start once the app is free
 	running map[string]*cancellable // unfinished deployments by id
+	mon     monitor                 // health of running apps between deploys
 	wg      sync.WaitGroup
 }
 
@@ -167,7 +168,7 @@ func New(ctx context.Context, opts Options) *Service {
 	if opts.RetryDelays == nil {
 		opts.RetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
 	}
-	return &Service{opts: opts, ctx: ctx, busy: map[string]bool{}, pending: map[string]string{}, running: map[string]*cancellable{},
+	return &Service{opts: opts, ctx: ctx, busy: map[string]bool{}, mon: monitor{apps: map[string]*appWatch{}}, pending: map[string]string{}, running: map[string]*cancellable{},
 		builds: make(chan struct{}, opts.MaxBuilds)}
 }
 

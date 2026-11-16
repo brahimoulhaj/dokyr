@@ -165,7 +165,7 @@ function RuleForm({ channels, targets, onDone }: { channels: Channel[]; targets:
   const [target, setTarget] = useState(EVERY)
   const [channel, setChannel] = useState(channels[0]?.id ?? '')
   const save = useMutation({ mutationFn: () => api('/alert-rules', { method: 'POST', body: { event, target_id: target === EVERY ? '' : target, channel_id: channel } }), onSuccess: onDone })
-  const forApps = event.startsWith('deployment.')
+  const forApps = event.startsWith('deployment.') || event.startsWith('app.')
   const forDatabases = event === 'backup.failed'
   return <form className="space-y-5 p-5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
     <DatabaseSelect label={t.event} value={event} onChange={(v) => { setEvent(v); setTarget(EVERY) }}>

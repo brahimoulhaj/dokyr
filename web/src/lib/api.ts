@@ -172,6 +172,8 @@ export type App = {
   current_deployment_id: string
   /** What the container is doing right now, when the runtime is available. */
   runtime_state?: string
+  /** The health monitor's last view, for a running app (checked every 30 s). */
+  health?: { status: 'unknown' | 'healthy' | 'unhealthy' | 'down'; reason: string; since: string; checked_at: string; probe: string; restarts: number }
   created_at: string
   updated_at: string
 }

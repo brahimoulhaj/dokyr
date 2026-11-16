@@ -37,6 +37,8 @@ type Deployer interface {
 	// RollbackTargets tells which of an app's deployments a rollback can return to.
 	RollbackTargets(ctx context.Context, app store.App, deps []store.Deployment) (map[string]bool, error)
 	RuntimeState(ctx context.Context, appID string) string
+	// AppHealth is the monitor's last view of a running app; false when it is not watched.
+	AppHealth(appID string) (deploy.AppHealth, bool)
 	AppProblems(ctx context.Context) ([]store.AppRuntimeTarget, error)
 	LogPath(dep store.Deployment) string
 	// StreamLogs calls fn for each line of the app's current container until the stream
@@ -94,6 +96,7 @@ type appJSON struct {
 	Strategy            string            `json:"strategy"`    // rolling or recreate, from the mounts
 	PushDeploy          bool              `json:"push_deploy"` // image apps on the built-in registry: deploy when the tag is pushed
 	RuntimeState        string            `json:"runtime_state,omitempty"`
+	Health              *deploy.AppHealth `json:"health,omitempty"` // only on GET /api/apps/{id}, for a running app
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
 }
@@ -618,6 +621,9 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 	out := toAppJSON(a)
 	if s.deployer != nil {
 		out.RuntimeState = s.deployer.RuntimeState(r.Context(), a.ID)
+		if h, ok := s.deployer.AppHealth(a.ID); ok {
+			out.Health = &h
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
