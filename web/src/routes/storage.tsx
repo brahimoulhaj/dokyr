@@ -144,7 +144,7 @@ function SetupForm({ current, onDone }: { current: ObjectStore; onDone: () => vo
     save.mutate()
   }
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-5 p-5">
       <Field name="s3-domain" dir="ltr" label={ts.domain} hint={ts.domainHint} hintTooltip placeholder="s3.example.com"
         value={domain} onChange={(e) => setDomain(e.target.value)} autoComplete="off" spellCheck={false} />
       {domain.trim() !== '' && <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />}
@@ -164,7 +164,7 @@ function Credentials({ accessKey }: { accessKey: string }) {
   const reveal = useMutation({ mutationFn: () => api<{ access_key: string; secret_key: string }>('/object-store/credentials') })
   const block = 'block overflow-x-auto whitespace-pre border border-line bg-bg px-3 py-2 text-xs'
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-5 p-5 text-sm">
       <div className="space-y-1.5"><p className="text-xs text-muted">{ts.accessKey}</p><code dir="ltr" className={block}>{accessKey}</code></div>
       <div className="space-y-1.5">
         <p className="text-xs text-muted">{ts.secretKey}</p>
@@ -249,7 +249,7 @@ function NewBucket({ onDone }: { onDone: () => void }) {
     },
   })
   return (
-    <form onSubmit={(e) => { e.preventDefault(); create.mutate() }} className="space-y-4">
+    <form onSubmit={(e) => { e.preventDefault(); create.mutate() }} className="space-y-5 p-5">
       <Field name="bucket-name" dir="ltr" required label={ts.name} hint={ts.bucketHint} hintTooltip pattern="[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]"
         value={name} onChange={(e) => setName(e.target.value.toLowerCase())} autoComplete="off" spellCheck={false} />
       {create.error && <ErrorNote>{create.error.message}</ErrorNote>}

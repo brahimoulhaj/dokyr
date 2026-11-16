@@ -218,7 +218,7 @@ function BackupForm({ current, onDone }: { current: PanelBackup; onDone: () => v
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-5 p-5">
       <CheckOption checked={enabled} onChange={setEnabled} label={tb.enabled} />
       <DatabaseSelect label={tb.storageLabel} value={connection} onChange={setConnection}>
         {storage.data?.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.bucket}</option>)}
@@ -264,7 +264,7 @@ function RestoreSteps({ example }: { example?: string }) {
   const file = example ?? `${slug}-<time>.tar.gz.age`
   const block = 'block overflow-x-auto whitespace-pre border border-line bg-bg px-3 py-2 text-xs'
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4 p-5 text-sm">
       <p>{tb.restoreStep1}</p>
       <code dir="ltr" className={block}>{`docker cp ${file} ${slug}:/tmp/`}</code>
       <p>{tb.restoreStep2}</p>
