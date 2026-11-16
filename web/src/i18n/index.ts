@@ -20,6 +20,7 @@ import * as settingsTokens from './settingsTokens'
 import * as settingsUpdates from './settingsUpdates'
 import * as settingsBuilds from './settingsBuilds'
 import * as settingsStorage from './settingsStorage'
+import * as settingsNotifications from './settingsNotifications'
 import * as registries from './registries'
 import * as builtinRegistry from './builtinRegistry'
 import * as deployHook from './deployHook'
@@ -56,6 +57,7 @@ const pick = (l: Code) => ({
   settingsUpdates: settingsUpdates[l] as typeof settingsUpdates.en,
   settingsBuilds: settingsBuilds[l] as typeof settingsBuilds.en,
   settingsStorage: settingsStorage[l] as typeof settingsStorage.en,
+  settingsNotifications: settingsNotifications[l] as typeof settingsNotifications.en,
   registries: registries[l] as typeof registries.en,
   builtinRegistry: builtinRegistry[l] as typeof builtinRegistry.en,
   deployHook: deployHook[l] as typeof deployHook.en,

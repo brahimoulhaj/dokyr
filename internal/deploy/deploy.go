@@ -566,6 +566,9 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail("", err)
 		return
 	}
+	if dep.Attempts == 0 { // a resumed attempt after a restart is not a new start
+		s.event(final, "deployment.started", app, "")
+	}
 	// 1. Pull the image, or build it from Git. A rollback reuses the earlier image: a Git
 	// app's is still on the server, an image app's is pulled again.
 	image := app.Image

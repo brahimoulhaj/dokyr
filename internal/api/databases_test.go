@@ -217,6 +217,41 @@ func TestDatabaseAPI(t *testing.T) {
 	if call("GET", path+"/metrics?range=30d", nil, "session", 200).Body.String() == "" {
 		t.Fatal("empty 30d answer")
 	}
+	// Notification channels and alert rules.
+	call("GET", "/api/notification-channels", nil, "", 401)
+	call("POST", "/api/notification-channels", map[string]any{"name": "ops", "kind": "slack", "config": map[string]string{"webhook_url": "https://hooks.example/abc"}}, "token", 403)
+	call("POST", "/api/notification-channels", map[string]any{"name": "ops", "kind": "slack", "config": map[string]string{"webhook_url": "nope"}}, "session", 422)
+	created := call("POST", "/api/notification-channels", map[string]any{"name": "ops", "kind": "slack", "config": map[string]string{"webhook_url": "https://hooks.example/abc"}}, "session", 201)
+	if strings.Contains(created.Body.String(), "hooks.example") || !strings.Contains(created.Body.String(), `"webhook_url_set":true`) {
+		t.Fatalf("channel answer leaks or lacks the secret flag: %s", created.Body.String())
+	}
+	var channel struct{ ID string }
+	_ = json.Unmarshal(created.Body.Bytes(), &channel)
+	call("POST", "/api/notification-channels", map[string]any{"name": "ops", "kind": "slack", "config": map[string]string{"webhook_url": "https://hooks.example/x"}}, "session", 409)
+	call("PUT", "/api/notification-channels/"+channel.ID, map[string]any{"name": "ops 2", "config": map[string]string{}}, "session", 200)
+	if c, _ := st.GetNotificationChannel(ctx, channel.ID); c.Name != "ops 2" || c.Config["webhook_url"] != "https://hooks.example/abc" {
+		t.Fatalf("update lost the saved secret: %+v", c)
+	}
+	call("POST", "/api/notification-channels/"+channel.ID+"/test", nil, "session", 503)
+	tested := ""
+	server.SetNotifier(testNotifier(func(id string) error { tested = id; return nil }))
+	call("POST", "/api/notification-channels/"+channel.ID+"/test", nil, "session", 204)
+	if tested != channel.ID {
+		t.Fatal("test send not called")
+	}
+	call("POST", "/api/alert-rules", map[string]string{"event": "nope", "channel_id": channel.ID}, "session", 422)
+	call("POST", "/api/alert-rules", map[string]string{"event": "backup.failed", "channel_id": "missing"}, "session", 422)
+	call("POST", "/api/alert-rules", map[string]string{"event": "disk.high", "channel_id": channel.ID, "target_id": d.ID}, "session", 422)
+	call("POST", "/api/alert-rules", map[string]string{"event": "deployment.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 422)
+	rule := call("POST", "/api/alert-rules", map[string]string{"event": "backup.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 201)
+	call("POST", "/api/alert-rules", map[string]string{"event": "backup.failed", "channel_id": channel.ID, "target_id": d.ID}, "session", 409)
+	var r struct{ ID string }
+	_ = json.Unmarshal(rule.Body.Bytes(), &r)
+	call("PUT", "/api/alert-rules/"+r.ID, map[string]bool{"enabled": false}, "session", 204)
+	call("DELETE", "/api/notification-channels/"+channel.ID, nil, "session", 204)
+	if rules, _ := st.ListAlertRules(ctx); len(rules) != 0 {
+		t.Fatal("rules kept after their channel was removed")
+	}
 	orphans := "/api/database-backups/orphaned"
 	call("GET", orphans, nil, "", 401)
 	if got := call("GET", orphans, nil, "session", 200); strings.TrimSpace(got.Body.String()) != "[]" {
@@ -339,3 +374,7 @@ func TestDatabaseAPI(t *testing.T) {
 	call("GET", path, nil, "session", 404)
 	call("DELETE", "/api/projects/"+p.ID, nil, "session", 204)
 }
+
+type testNotifier func(string) error
+
+func (f testNotifier) Test(_ context.Context, id string) error { return f(id) }

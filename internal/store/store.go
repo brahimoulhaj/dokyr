@@ -23,6 +23,7 @@ type Store struct {
 	path      string
 	backupDir string
 	box       *secret.Box // encrypts app environments; nil only in tests and tools that never touch apps
+	eventHook func(Event)
 }
 
 // Open opens (creating if needed) the SQLite database at path in WAL mode.

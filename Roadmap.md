@@ -7,15 +7,15 @@ name; it lives only in `internal/brand/brand.go`.
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
 
-**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS) · M6 ◐ (container metrics with history and charts; notifications and alerts remain)
+**Progress:** M0 ◐ · M1 ◐ · M2 ◐ (nearly done) · M3 ◐ · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS) · M6 ◐ (container metrics with history and charts; notifications and alert rules; health monitoring and threshold alerts remain)
 
 **Where we are (2026-11-16, v0.13.0):** M6 container metrics: every 10 s the panel reads Docker stats of each running app and database container (`internal/metrics`; the public-port gate is left out) and stores one sample per app or instance (containers of one app are added together during a rolling deploy): CPU in cores, memory without reclaimable cache, memory limit, network and disk rates. Samples roll up to minutes and hours with average and peak; raw samples are kept 24 hours, minutes 7 days, hours 30 days (`0030_metrics.sql`, `metrics_samples`). `GET /api/apps/{id}/metrics` and `GET /api/databases/{id}/metrics` take `range=1h|6h|24h|7d|30d` and answer at most about 360 points. App and database pages have a Metrics tab with four Recharts charts (CPU, memory with its limit, network, disk), time axis across the whole range, gaps where no samples exist and a hover tooltip, in four languages; Recharts 3.10.1 is pinned and loaded only when the tab opens (its own chunk, about 107 kB gzipped). A resource's first reading (new container, panel restart) only primes the counters, so charts never show a false drop to zero. Checked in the browser against a real PostgreSQL instance, at desktop and phone width. The VPS checks of v0.12.3–v0.12.4 are done (public-port allowlist with real IPs, Adminer edits, retention on S3, the Backups tab controls) and backups of deleted instances can be restored or deleted from the Databases page (`TestOrphanBackups`). `TestRealPublicPort/mariadb` sometimes loses the TLS handshake when the whole suite runs at once; it passes on its own.
 
 **Earlier milestones:** recreate with a volume is checked on the VPS (data kept across a deploy, a short gap, a failed health check rolls back). v0.12.0 adds project databases (M4): Postgres and MariaDB instances per project with encrypted credentials, lifecycle controls, an internal data volume, `${db.main.URL}` references, management operations and the Databases pages; deploys report problems per app. Real Docker checks for MariaDB and the VPS are still pending. v0.11.5 adds a queue button to the navbar (a count and a list of the deployments running or waiting; each opens its app's Deployments tab) and turns the deployment toasts into a stack, one card per deployment, so several in parallel are all in view (ding shows one toast at a time). v0.11.4: the registry page has Images (how to push and pull, a table of image, tag, platform and size, with several tags in one collapsible row) and Settings (settings, turn off, tokens); the registry address carries the proxy's port in development. v0.11.3: the token endpoint accepts the space-separated scopes of containerd's login (Docker Desktop), which fixed `insufficient_scope` on push. v0.11.2: an HTTP-only option for the registry domain, for Cloudflare "Flexible" (it looped on redirects). v0.11.0 checked on the VPS (2026-11-15): the built-in registry on a real domain (docker login and push from a laptop, push redeploys, S3 storage, build cache) and a project domain with `/` → frontend and `/api` → backend with shared variables; recreate with a volume checked on the VPS too (2026-11-15: data kept, short gap, failed check rolls back). v0.11.0 moves domains and shared variables to the project: a project domain's paths go to apps (`/` → frontend, `/api` → backend, prefix kept unless stripped), and project variables are used as `${project.NAME}` or inherited by every app when the project says so (off by default); forms open in side sheets; the registry page lists every registry in one list. v0.10.0 added the built-in registry. Earlier: M2 is done except pushing builds to a registry, more builders (Nixpacks, Buildpacks, Static), a Gitea token, a build-time env flag and cron. M3 has push/CI webhooks, health checks before the traffic switch (v0.8.0), rollback (v0.8.0), the deploy state machine with its timeline (v0.8.0), the Deployments tab as a paged accordion (v0.8.1), and Git deployments named by their commit message (v0.8.2, `0015_deployment_commit_message.sql`); a check-for-updates button beside the version in the navbar offers Update now / Dismiss in a toast (v0.8.2); the rolling strategy now drains the old container (default 10 s) before removing it (v0.8.3); apps with volumes deploy with recreate (v0.9.0). The built-in registry (M5, v0.10.0): off by default, its own domain, Docker volume or S3 storage, registry tokens, deploy on push, build cache, repositories with delete and garbage collection; checked against real Docker, Distribution and RustFS, and on the VPS with a real domain. v0.8.2 checked on the VPS (2026-11-14): update from the navbar toast (v0.8.1 → v0.8.2), commit messages with the hover tooltip, HTTP and TCP health checks (a failing check keeps the old container), Git rollback without a build, the live timeline and paging. v0.6.0 checked on the VPS (2026-11-14): build caps, resume after restart, deploy keys, private registries, deploy webhooks, Railpack without a Dockerfile, cancel in the browser.
 
 **Next up:**
-1. M6 notifications: channel interface with a test send, then SMTP, Slack, Discord, Telegram and a generic webhook; alert rules for deploy failures, failing health checks, failed backups and high disk (metrics are now stored, so CPU/memory thresholds can follow).
-2. Make `TestRealPublicPort/mariadb` reliable under a full test run (wait for the gate before connecting). Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
+1. M6: continuous health monitoring after deploy (feeds a "health failing" alert), and CPU/memory threshold alerts from the stored metrics. Notifications are done (2026-11-16): channels (email, Slack, Discord, Telegram, webhook) with a test send, alert rules, events for deploys, failed backups and a full disk; email checked against Mailpit, webhook against a local receiver.
+2. `TestRealPublicPort` now fails for both engines on this Mac, also at v0.13.0 (Docker is OrbStack; `host.docker.internal` resolves to 0.250.250.254): find out how the gate is reached there and make the test wait for it. Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
 3. Record the fresh-install time with image download (M1, "Under 60 seconds").
 ---
 
@@ -344,21 +344,21 @@ Goal: optional built-in S3 and image registry.
 Goal: see what the server is doing and get told when something breaks.
 
 ### Metrics (`internal/metrics`)
-- [~] Migration: `metrics_samples` (`0030_metrics.sql`); `notification_channels` and `alert_rules` come with notifications
+- [x] Migration: `metrics_samples` (`0030_metrics.sql`), `notification_channels` and `alert_rules` (`0031_notifications.sql`)
 - [x] Docker stats sampler, 10 s samples (CPU, memory, network, disk) — `internal/metrics`, one sample per app or database instance (its containers added together, the public-port gate left out), rates from the previous reading, `TestSampler`; checked against a real PostgreSQL container (2026-11-16); engine-wide counts and storage usage already shown by `internal/dockermetrics` (`/api/docker/metrics`, 15 s refresh, disk scan at most once a minute)
 - [x] Rollups to 1 min and 1 h; prune after 30 days — average and peak per bucket; raw samples kept 24 h, minutes 7 days, hours 30 days; idempotent, run every minute (`TestMetricRollupsAndRetention`)
 - [x] Host metrics: CPU, memory, disk, load — plus swap, uptime and network; `internal/hostmetrics`, 5 s samples, ten minutes kept in memory, `/api/host/metrics`; reads `/proc` through a read-only `/host/proc` mount on Linux (installer and dev Compose); on a real VPS (2026-11-13)
 - [x] Metrics query API — `GET /api/apps/{id}/metrics`, `GET /api/databases/{id}/metrics`, `range=1h|6h|24h|7d|30d`, at most about 360 points
 
 ### Notifications (`internal/notify`)
-- [ ] Channel interface with a test-send
-- [ ] Email (SMTP)
-- [ ] Slack
-- [ ] Discord
-- [ ] Telegram
-- [ ] Generic webhook
-- [ ] Alert rules: event, target, channel
-- [ ] Events: deploy started / succeeded / failed, health failing, backup failed, disk high
+- [x] Channel interface with a test-send — `internal/notify`: settings sealed with the panel key, secrets never sent back (an empty secret keeps the saved one), last delivery and last error kept per channel; Settings → Notifications → Send test (2026-11-16)
+- [x] Email (SMTP) — STARTTLS (default, required when chosen), implicit TLS or none; optional login; several recipients; checked against Mailpit
+- [x] Slack — incoming webhook
+- [x] Discord — webhook embed coloured by level
+- [x] Telegram — Bot API sendMessage; errors never echo the bot token
+- [x] Generic webhook — JSON (title, text, level, url, at), optional `X-Signature-256: sha256=<HMAC>`; checked against a local receiver
+- [x] Alert rules: event, target, channel — every recorded event passes through the store's event hook; rules for one app or database, or all; one message per channel; pause/resume (`TestDispatch`)
+- [~] Events: deploy started / succeeded / failed (rolled back counts as failed), backup failed, disk high (fires at 90%, re-arms under 85%) done; health failing waits for continuous health monitoring
 
 ### More engines
 - [ ] MongoDB driver
@@ -367,8 +367,8 @@ Goal: see what the server is doing and get told when something breaks.
 ### UI
 - [~] Global dashboard — host and Docker cards on the overview page (`web/src/components/host-metrics.tsx`, `docker-metrics.tsx`); the host CPU, RAM and network sparklines use Recharts (lazy-loaded, hover readout); host history is ten minutes in memory, per-app and per-database history is on their Metrics tabs
 - [x] Per-app and per-database charts — Metrics tab on app and database pages: CPU, memory (with limit), network and disk, range picker, hover readout; Recharts (lazy-loaded)
-- [ ] Notification channels settings
-- [ ] Alert rules editor
+- [x] Notification channels settings — Settings → Notifications, four languages
+- [x] Alert rules editor — same tab: event, app/database or all, channel
 
 ---
 

@@ -34,6 +34,7 @@ import (
 	"panel/internal/gitsource"
 	"panel/internal/hostmetrics"
 	containermetrics "panel/internal/metrics"
+	"panel/internal/notify"
 	"panel/internal/proxy"
 	"panel/internal/registry"
 	"panel/internal/secret"
@@ -166,6 +167,10 @@ func serve(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	defer st.Close()
+	// Alerts: every recorded event goes through the rules. Set before anything records events.
+	notifier := notify.New(ctx, st, log, nil)
+	st.SetEventHook(notifier.Handle)
+	defer notifier.Wait()
 	acc := account.New(st)
 
 	if required, err := acc.SetupRequired(ctx); err != nil {
@@ -295,6 +300,8 @@ func serve(ctx context.Context, cfg config.Config) error {
 	metrics := hostmetrics.New(hostmetrics.Options{DataDir: cfg.DataDir, ProcRoot: os.Getenv(brand.EnvPrefix() + "HOST_PROC")})
 	go metrics.Run(ctx)
 	apiSrv.SetHostMetrics(metrics)
+	go notifier.WatchDisk(ctx, metrics.Snapshot, time.Minute)
+	apiSrv.SetNotifier(notifier)
 	metricsClient, err := client.New(client.FromEnv)
 	if err != nil {
 		return err

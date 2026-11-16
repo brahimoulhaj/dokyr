@@ -26,6 +26,10 @@ func (s *Store) AddEvent(ctx context.Context, e Event) error {
 		INSERT INTO events (id, user_id, actor, action, target_type, target_id, target_name, detail, created_at, updated_at)
 		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id.New(), e.UserID, e.Actor, e.Action, e.TargetType, e.TargetID, e.TargetName, e.Detail, ts, ts)
+	if err == nil && s.eventHook != nil {
+		e.CreatedAt = parseTime(ts)
+		s.eventHook(e)
+	}
 	return err
 }
 

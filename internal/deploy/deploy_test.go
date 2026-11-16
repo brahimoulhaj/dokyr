@@ -185,9 +185,9 @@ func TestDeployReplacesContainer(t *testing.T) {
 		}
 	}
 
-	// Events were recorded.
+	// Events were recorded: started and succeeded for each of the two deployments.
 	events, _ := e.st.ListEvents(ctx, 10)
-	if len(events) != 2 || events[0].Action != "deployment.succeeded" || events[0].Actor != "system" {
+	if len(events) != 4 || events[0].Action != "deployment.succeeded" || events[1].Action != "deployment.started" || events[0].Actor != "system" {
 		t.Errorf("events = %+v", events)
 	}
 }

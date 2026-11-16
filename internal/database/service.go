@@ -283,6 +283,14 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 	if finishErr := s.st.FinishDBOperation(save, op.ID, reason); finishErr != nil {
 		return finishErr
 	}
+	if err != nil && op.Action == "backup" {
+		// Alertable: scheduled backups fail with no one watching.
+		detail := op.Detail
+		if done, getErr := s.st.GetDBOperation(save, op.ID); getErr == nil && done.Error != "" {
+			detail += ": " + done.Error
+		}
+		_ = s.st.AddEvent(save, store.Event{Actor: "system", Action: "backup.failed", TargetType: "database", TargetID: op.InstanceID, TargetName: op.InstanceName, Detail: detail})
+	}
 	if op.Action == "backup" {
 		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()

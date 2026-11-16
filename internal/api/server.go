@@ -37,6 +37,7 @@ type Server struct {
 	s3Test        S3Tester
 	registry      BuiltinRegistry
 	databases     *database.Service
+	notifier      Notifier
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
 	stop     chan struct{} // closed when the server shuts down; ends open streams
@@ -182,6 +183,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/apps/{id}/logs/stream", s.requireAuth(s.handleAppLogStream))
 	mux.HandleFunc("GET /api/apps/{id}/terminal", s.requireAuth(sessionOnly(s.handleTerminal)))
 	mux.HandleFunc("GET /api/apps/{id}/routes", s.requireAuth(s.handleAppRoutes))
+	mux.HandleFunc("GET /api/notifications/kinds", s.requireAuth(s.handleNotificationKinds))
+	mux.HandleFunc("GET /api/notification-channels", s.requireAuth(s.handleListChannels))
+	mux.HandleFunc("POST /api/notification-channels", s.requireAuth(sessionOnly(s.handleCreateChannel)))
+	mux.HandleFunc("PUT /api/notification-channels/{id}", s.requireAuth(sessionOnly(s.handleUpdateChannel)))
+	mux.HandleFunc("DELETE /api/notification-channels/{id}", s.requireAuth(sessionOnly(s.handleDeleteChannel)))
+	mux.HandleFunc("POST /api/notification-channels/{id}/test", s.requireAuth(sessionOnly(s.handleTestChannel)))
+	mux.HandleFunc("GET /api/alert-rules", s.requireAuth(s.handleListRules))
+	mux.HandleFunc("POST /api/alert-rules", s.requireAuth(sessionOnly(s.handleCreateRule)))
+	mux.HandleFunc("PUT /api/alert-rules/{id}", s.requireAuth(sessionOnly(s.handleUpdateRule)))
+	mux.HandleFunc("DELETE /api/alert-rules/{id}", s.requireAuth(sessionOnly(s.handleDeleteRule)))
 	mux.HandleFunc("GET /api/apps/{id}/metrics", s.requireAuth(s.handleResourceMetrics("app")))
 	mux.HandleFunc("GET /api/databases/{id}/metrics", s.requireAuth(s.handleResourceMetrics("database")))
 	mux.HandleFunc("GET /api/projects/{id}/domains", s.requireAuth(s.handleListDomains))
