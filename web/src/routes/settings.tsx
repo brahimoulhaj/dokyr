@@ -16,6 +16,20 @@ import { api, ApiError, panelDnsQuery, panelSettingsQuery, type PanelSettings } 
 export const settingsTabs = ['general', 'git', 'builds', 'storage', 'backup', 'notifications', 'tokens'] as const
 export type SettingsTab = (typeof settingsTabs)[number]
 
+/** The name of each settings section, for the page's tabs and the sidebar. */
+export function useSettingsTabLabels(): Record<SettingsTab, string> {
+  const t = useT()
+  return {
+    general: t.settings.general,
+    git: t.settingsGit.title,
+    builds: t.settingsBuilds.title,
+    storage: t.settingsStorage.title,
+    backup: t.settingsBackup.title,
+    notifications: t.settingsNotifications.title,
+    tokens: t.settingsTokens.title,
+  }
+}
+
 export function SettingsPage() {
   const t = useT()
   const search = useSearch({ strict: false }) as { tab?: string; git_error?: string }
@@ -25,15 +39,7 @@ export function SettingsPage() {
     : search.git_error
       ? 'git'
       : 'general'
-  const label: Record<SettingsTab, string> = {
-    general: t.settings.general,
-    git: t.settingsGit.title,
-    builds: t.settingsBuilds.title,
-    storage: t.settingsStorage.title,
-    backup: t.settingsBackup.title,
-    notifications: t.settingsNotifications.title,
-    tokens: t.settingsTokens.title,
-  }
+  const label = useSettingsTabLabels()
   return (
     <div className="space-y-6">
       <PageHeader

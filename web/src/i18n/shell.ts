@@ -1,6 +1,17 @@
 // The navbar, the sidebar and the account and language menus.
 
 export const en = {
+  newAppIn: (project: string) => `New app in ${project}`,
+  navigation: 'Main navigation',
+  groupWorkloads: 'Workloads',
+  groupInfrastructure: 'Infrastructure',
+  groupSystem: 'System',
+  allProjects: (n: number) => `All projects (${n})`,
+  appsRunning: (running: number, total: number) => `${running} of ${total} apps running`,
+  databasesFailing: (n: number) => (n === 1 ? '1 instance has an error' : `${n} instances have an error`),
+  on: 'on',
+  off: 'off',
+  starting: 'starting',
   overview: 'Overview',
   projects: 'Projects',
   activity: 'Activity',
@@ -27,6 +38,17 @@ export const en = {
 }
 
 export const fr: typeof en = {
+  newAppIn: (project) => `Nouvelle application dans ${project}`,
+  navigation: 'Navigation principale',
+  groupWorkloads: 'Charges de travail',
+  groupInfrastructure: 'Infrastructure',
+  groupSystem: 'Système',
+  allProjects: (n) => `Tous les projets (${n})`,
+  appsRunning: (running, total) => `${running} application(s) sur ${total} en marche`,
+  databasesFailing: (n) => (n === 1 ? '1 instance en erreur' : `${n} instances en erreur`),
+  on: 'actif',
+  off: 'inactif',
+  starting: 'démarrage',
   overview: "Vue d'ensemble",
   projects: 'Projets',
   activity: 'Activité',
@@ -53,6 +75,17 @@ export const fr: typeof en = {
 }
 
 export const ar: typeof en = {
+  newAppIn: (project) => `تطبيق جديد في ${project}`,
+  navigation: 'التنقل الرئيسي',
+  groupWorkloads: 'أعباء العمل',
+  groupInfrastructure: 'البنية التحتية',
+  groupSystem: 'النظام',
+  allProjects: (n) => `كل المشاريع (${n})`,
+  appsRunning: (running, total) => `${running} من ${total} تطبيقات قيد التشغيل`,
+  databasesFailing: (n) => (n === 1 ? 'نسخة واحدة بها خطأ' : `${n} نسخ بها خطأ`),
+  on: 'يعمل',
+  off: 'متوقف',
+  starting: 'قيد البدء',
   overview: 'نظرة عامة',
   projects: 'المشاريع',
   activity: 'النشاط',
@@ -79,6 +112,17 @@ export const ar: typeof en = {
 }
 
 export const es: typeof en = {
+  newAppIn: (project) => `Nueva aplicación en ${project}`,
+  navigation: 'Navegación principal',
+  groupWorkloads: 'Cargas de trabajo',
+  groupInfrastructure: 'Infraestructura',
+  groupSystem: 'Sistema',
+  allProjects: (n) => `Todos los proyectos (${n})`,
+  appsRunning: (running, total) => `${running} de ${total} aplicaciones en marcha`,
+  databasesFailing: (n) => (n === 1 ? '1 instancia con error' : `${n} instancias con error`),
+  on: 'activo',
+  off: 'inactivo',
+  starting: 'iniciando',
   overview: 'Resumen',
   projects: 'Proyectos',
   activity: 'Actividad',

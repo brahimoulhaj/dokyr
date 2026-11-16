@@ -471,3 +471,16 @@ export const buildSettingsQuery = {
   queryKey: ['settings', 'builds'] as const,
   queryFn: () => api<BuildSettings>('/settings/builds'),
 }
+
+/** The built-in S3 storage (RustFS): its settings and the container's state. */
+export type ObjectStore = {
+  enabled: boolean
+  domain: string
+  tls_mode: 'auto' | 'http_only'
+  state: string
+  endpoint: string
+  connection_id: string
+  access_key: string
+}
+// Settings-table changes (turning it on, the connection id) refetch it over the change stream.
+export const objectStoreQuery = { queryKey: ['settings', 'object-store'] as const, queryFn: () => api<ObjectStore>('/object-store') }

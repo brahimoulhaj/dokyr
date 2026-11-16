@@ -6,24 +6,14 @@ import { ActionsMenu } from '../components/actions-menu'
 import { ConfirmModal } from '../components/confirm-dialog'
 import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, Empty, ErrorNote, Field, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
-import { api } from '../lib/api'
+import { api, objectStoreQuery, type ObjectStore } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { locale, useT } from '../lib/i18n'
 import { poll } from '../lib/live'
 
-type ObjectStore = {
-  enabled: boolean
-  domain: string
-  tls_mode: 'auto' | 'http_only'
-  state: string
-  endpoint: string
-  connection_id: string
-  access_key: string
-}
 type Bucket = { name: string; created_at: string; size: number; objects: number; truncated: boolean }
 
-// Settings-table changes (turning it on, the connection id) refetch it over the change stream.
-const settingsKey = ['settings', 'object-store'] as const
+const settingsKey = objectStoreQuery.queryKey
 const bucketsKey = ['object-store', 'buckets'] as const
 const toastId = 'object-store'
 
@@ -32,8 +22,7 @@ export function StoragePage() {
   const ts = t.storage
   const qc = useQueryClient()
   const store = useQuery({
-    queryKey: settingsKey,
-    queryFn: () => api<ObjectStore>('/object-store'),
+    ...objectStoreQuery,
     // The container's state comes from Docker, not the database: poll until it settles.
     refetchInterval: (q) => (q.state.data?.enabled && q.state.data.state !== 'running' ? poll(3000)() : false),
   })
