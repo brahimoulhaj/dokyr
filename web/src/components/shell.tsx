@@ -22,6 +22,7 @@ import { UpdateCheck } from './update-check'
 import { Badge, cx } from './ui'
 import { useDatabaseOperations } from '../lib/database-operations'
 import { CommandPalette } from './command-palette'
+import { useLiveChanges } from '../lib/live'
 
 // Sections light up as their milestone lands; until then they show as "soon".
 type NavKey = 'overview' | 'projects' | 'activity' | 'databases' | 'storage' | 'registry' | 'settings'
@@ -43,6 +44,7 @@ export function Shell() {
   const { data: me } = useSuspenseQuery(meQuery)
   const updates = useQuery(updatesQuery)
   const databaseOperations = useDatabaseOperations()
+  useLiveChanges()
   const main = useRef<HTMLElement>(null)
   const { pathname } = useLocation()
   const [picking, setPicking] = useState(false)

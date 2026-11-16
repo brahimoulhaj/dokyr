@@ -6,12 +6,13 @@ import { useT } from '../lib/i18n'
 import { DatabaseSelect } from '../routes/databases'
 import { Sheet } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
+import { poll } from '../lib/live'
 
 type Frequency = 'daily' | 'weekly' | 'cron'
 type Policy = { id: string; database_name: string; s3_connection_id: string; enabled: boolean; frequency: Frequency; cron: string; scope: 'database' | 'instance'; hour: number; minute: number; weekday: number; keep_count: number; next_run_at: string; last_error: string; last_operation_id: string }
 export function DatabaseBackupPolicies({ d, busy }: { d: DatabaseInstance; busy: boolean }) {
   const t = useT().databases
-  const policies = useQuery({ queryKey: ['backup-policies', d.id], queryFn: () => api<Policy[]>(`/databases/${d.id}/backup-policies`), refetchInterval: 5000 })
+  const policies = useQuery({ queryKey: ['backup-policies', d.id], queryFn: () => api<Policy[]>(`/databases/${d.id}/backup-policies`), refetchInterval: poll(5000) })
   const storage = useQuery(s3ConnectionsQuery)
   const [editing, setEditing] = useState<Policy | 'new' | null>(null)
   return <>

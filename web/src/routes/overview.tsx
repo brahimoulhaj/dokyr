@@ -7,13 +7,14 @@ import { useT } from '../lib/i18n'
 import { EventList } from './activity'
 import { HostMetrics } from '../components/host-metrics'
 import { DockerMetrics } from '../components/docker-metrics'
+import { poll } from '../lib/live'
 
 export function OverviewPage() {
   const t = useT()
   const { data: meta } = useSuspenseQuery(metaQuery)
   const { data: me } = useSuspenseQuery(meQuery)
   const projects = useQuery(projectsQuery)
-  const events = useQuery({ ...eventsQuery(8), refetchInterval: 15_000 })
+  const events = useQuery({ ...eventsQuery(8), refetchInterval: poll(15_000) })
   const apps = projects.data?.reduce((n, p) => n + p.app_count, 0) ?? 0
 
   return (
@@ -99,7 +100,7 @@ function AppProblems() {
  * Shows nothing while no deployment is in progress.
  */
 function ActiveDeployments() {
-  const q = useQuery({ ...activeDeploymentsQuery, refetchInterval: 5_000 })
+  const q = useQuery({ ...activeDeploymentsQuery, refetchInterval: poll(5_000) })
   if (!q.data?.length) return null
   return (
     <div role="status" aria-live="polite" className="space-y-2">

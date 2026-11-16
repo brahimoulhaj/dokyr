@@ -1,4 +1,5 @@
 import { api } from './api'
+import { poll } from './live'
 
 export type DatabaseEngine = { id: string; name: string; versions: string[]; port: number }
 export type DatabaseInstance = {
@@ -26,29 +27,29 @@ export type DatabaseCatalog = { databases: ManagedDatabase[]; users: DatabaseUse
 export const databaseCatalogQuery = (id: string) => ({
   queryKey: ['database-catalog', id] as const,
   queryFn: () => api<DatabaseCatalog>(`/databases/${id}/catalog`),
-  refetchInterval: 3000,
+  refetchInterval: poll(3000),
 })
 export type DatabaseAccepted = DatabaseInstance & { operation: DatabaseOperation }
 export const databaseOperationsQuery = {
   queryKey: ['database-operations', 'active'] as const,
   queryFn: () => api<DatabaseOperation[]>('/database-operations/active'),
-  refetchInterval: 2000,
+  refetchInterval: poll(2000),
 }
 export const databasesQuery = {
   queryKey: ['databases'] as const,
   queryFn: () => api<DatabaseInstance[]>('/databases'),
-  refetchInterval: 3000,
+  refetchInterval: poll(3000),
 }
 export type ProjectDatabaseInstance = DatabaseInstance & { database_names: string[] }
 export const projectDatabasesQuery = (projectId: string) => ({
   queryKey: ['databases', 'project', projectId] as const,
   queryFn: () => api<ProjectDatabaseInstance[]>(`/projects/${projectId}/databases`),
-  refetchInterval: 5000,
+  refetchInterval: poll(5000),
 })
 export const databaseQuery = (id: string) => ({
   queryKey: ['databases', id] as const,
   queryFn: () => api<DatabaseInstance>(`/databases/${id}`),
-  refetchInterval: 3000,
+  refetchInterval: poll(3000),
 })
 export const enginesQuery = {
   queryKey: ['database-engines'] as const,

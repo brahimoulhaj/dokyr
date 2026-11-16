@@ -11,6 +11,7 @@ import { ConfirmModal } from './confirm-dialog'
 import { DatabaseBackupPolicies } from './database-backup-policies'
 import { Sheet } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
+import { poll } from '../lib/live'
 
 type Backup = { policy_id: string; id: string; database_name: string; scope: 'database' | 'instance'; s3_connection_id: string; object_key: string; size_bytes: number; ready: boolean; status: string; error: string; created_at: string }
 export function DatabaseBackups({ d, busy }: { d: DatabaseInstance; busy: boolean }) {
@@ -18,7 +19,7 @@ export function DatabaseBackups({ d, busy }: { d: DatabaseInstance; busy: boolea
   const t = all.databases, tc = all.common
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const history = useQuery({ queryKey: ['database-backups', d.id], queryFn: () => api<Backup[]>(`/databases/${d.id}/backups`), refetchInterval: 2000 })
+  const history = useQuery({ queryKey: ['database-backups', d.id], queryFn: () => api<Backup[]>(`/databases/${d.id}/backups`), refetchInterval: poll(2000) })
   const storage = useQuery(s3ConnectionsQuery)
   const catalog = useQuery({ ...databaseCatalogQuery(d.id), enabled: d.runtime === 'running' })
   const [creating, setCreating] = useState(false)

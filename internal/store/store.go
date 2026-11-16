@@ -24,6 +24,8 @@ type Store struct {
 	backupDir string
 	box       *secret.Box // encrypts app environments; nil only in tests and tools that never touch apps
 	eventHook func(Event)
+	dsn       string
+	changes   *Changes
 }
 
 // Open opens (creating if needed) the SQLite database at path in WAL mode.
@@ -34,18 +36,28 @@ func Open(path, backupDir string) (*Store, error) {
 	}
 	dsn := "file:" + path +
 		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_txlock=immediate"
+	changes := &Changes{subs: map[*Subscription]struct{}{}}
+	changeHubs.Store(dsn, changes) // before the first connection opens
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
+		changeHubs.Delete(dsn)
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
 		db.Close()
+		changeHubs.Delete(dsn)
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	return &Store{db: db, path: path, backupDir: backupDir}, nil
+	return &Store{db: db, path: path, backupDir: backupDir, dsn: dsn, changes: changes}, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	changeHubs.Delete(s.dsn)
+	return s.db.Close()
+}
+
+// Changes announces which tables each committed write touched.
+func (s *Store) Changes() *Changes { return s.changes }
 
 // Ping reports whether the database answers.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }

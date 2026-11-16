@@ -5,6 +5,7 @@ import { toast } from '@yusufceng1z/ding-react'
 import { api } from './api'
 import { databaseOperationsQuery, type DatabaseOperation } from './databases'
 import { tr } from './i18n'
+import { poll } from './live'
 
 // Local submissions seed tracking immediately, so even jobs that finish between
 // polls get their completion toast. The server supplies jobs from other clients.
@@ -52,7 +53,7 @@ export function useDatabaseOperations() {
     queryKey: ['database-operations', op.id],
     queryFn: () => api<DatabaseOperation>(`/database-operations/${op.id}`),
     initialData: op,
-    refetchInterval: (query: { state: { data?: DatabaseOperation } }) => !query.state.data || databaseOperationActive(query.state.data) ? 1000 : false,
+    refetchInterval: (query: { state: { data?: DatabaseOperation } }) => !query.state.data || databaseOperationActive(query.state.data) ? poll(1000)() : false,
   })) })
   const operations = watched.map((op, i) => queries[i]?.data ?? op)
   useEffect(() => {

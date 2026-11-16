@@ -12,6 +12,7 @@ import { DnsHintText } from '../components/dns'
 import { projectDatabasesQuery } from '../lib/databases'
 import { DatabaseStatus, NewDatabase } from './databases'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
+import { poll } from '../lib/live'
 
 export const projectTabs = ['apps', 'databases', 'domains', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
@@ -123,7 +124,7 @@ export function ProjectPage() {
 
 /** One app in the list. It asks for the app on its own to learn what the container is doing. */
 function AppRow({ app }: { app: App }) {
-  const live = useQuery({ ...appQuery(app.id), refetchInterval: 10_000 })
+  const live = useQuery({ ...appQuery(app.id), refetchInterval: poll(10_000) })
   const t = useT()
   const status = appStatus(live.data ?? app, false)
   return (

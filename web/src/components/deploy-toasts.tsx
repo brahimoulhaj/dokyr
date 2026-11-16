@@ -12,6 +12,7 @@ import { takeUpdated } from '../lib/toasts'
 import { Button } from './ui'
 import type { DatabaseOperation } from '../lib/databases'
 import { databaseOperationActive } from '../lib/database-operations'
+import { poll } from '../lib/live'
 
 // ding's built-in tones: success rises, error falls, info is one note; loading stays silent.
 // Browsers hold audio until the first click or key press on the page.
@@ -33,7 +34,7 @@ export function DeployToasts({ databaseOperations, onDismissDatabase }: { databa
   const t = useT()
   const theme = useTheme()
   const navigate = useNavigate()
-  const active = useQuery({ ...activeDeploymentsQuery, refetchInterval: 5_000 })
+  const active = useQuery({ ...activeDeploymentsQuery, refetchInterval: poll(5_000) })
   // Deployments seen in progress, and the ones that ended since.
   const seen = useRef(new Map<string, ActiveDeployment>())
   const [ended, setEnded] = useState<Ended[]>([])

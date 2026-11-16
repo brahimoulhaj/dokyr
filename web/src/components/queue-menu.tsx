@@ -8,6 +8,7 @@ import { useT } from '../lib/i18n'
 import { cx } from './ui'
 import { databaseOperationActive } from '../lib/database-operations'
 import type { DatabaseOperation } from '../lib/databases'
+import { poll } from '../lib/live'
 
 function QueueIcon() {
   // Three rows, the first one "playing": a running job and the ones waiting behind it.
@@ -26,7 +27,7 @@ function QueueIcon() {
 export function QueueMenu({ databaseOperations }: { databaseOperations: DatabaseOperation[] }) {
   const t = useT()
   const [open, setOpen] = useState(false)
-  const active = useQuery({ ...activeDeploymentsQuery, refetchInterval: 5_000 })
+  const active = useQuery({ ...activeDeploymentsQuery, refetchInterval: poll(5_000) })
   const list = active.data ?? []
   const databases = databaseOperations.filter(databaseOperationActive)
   const count = list.length + databases.length

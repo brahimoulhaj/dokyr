@@ -32,6 +32,7 @@ import { rich, useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, duration, repoName, timeAgo, type Tone } from '../lib/format'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
+import { poll } from '../lib/live'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
 export const appTabs = ['overview', 'deployments', 'logs', 'metrics', 'terminal', 'settings'] as const
@@ -50,11 +51,11 @@ export function AppPage() {
   const mainUrl = routes.data?.[0]?.url
   const deployments = useQuery({
     ...deploymentsQuery(appId),
-    refetchInterval: (q) => (q.state.data?.items.some(isActive) ? 1500 : false),
+    refetchInterval: (q) => (q.state.data?.items.some(isActive) ? poll(1500)() : false),
   })
   const latest = deployments.data?.items[0]
   const deploying = !!latest && isActive(latest)
-  const app = useQuery({ ...appQuery(appId), refetchInterval: deploying ? 2000 : 10_000 })
+  const app = useQuery({ ...appQuery(appId), refetchInterval: poll(deploying ? 2000 : 10_000) })
 
   // A deployment that just finished changes the app (current deployment, state).
   useEffect(() => {
@@ -392,7 +393,7 @@ function Deployments(props: {
   const other = useQuery({
     ...deploymentsQuery(props.appId, props.page),
     enabled: props.page > 1,
-    refetchInterval: (q) => (q.state.data?.items.some(isActive) ? 1500 : false),
+    refetchInterval: (q) => (q.state.data?.items.some(isActive) ? poll(1500)() : false),
     placeholderData: keepPreviousData,
   })
   const q = props.page > 1 ? other : props.first

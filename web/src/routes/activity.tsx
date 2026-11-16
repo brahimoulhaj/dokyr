@@ -5,6 +5,7 @@ import { cx, Empty, PageHeader, Panel, QueryState } from '../components/ui'
 import { api, type PanelEvent } from '../lib/api'
 import { actionLabel, dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { poll } from '../lib/live'
 
 type EventPage = { page: number; size: number; total: number; items: PanelEvent[] }
 
@@ -31,7 +32,7 @@ export function ActivityPage() {
     queryKey: ['events', 'search', filters, page],
     queryFn: () => api<EventPage>(`/events/search?${params}`),
     placeholderData: keepPreviousData,
-    refetchInterval: page === 1 ? 15_000 : false, // only the newest page moves
+    refetchInterval: page === 1 ? poll(15_000) : false, // only the newest page moves
   })
   const filtered = q !== '' || group !== 'all' || actor !== 'all' || period !== 'all' || outcome !== 'all'
   const clear = () => { setText(''); setGroup('all'); setActor('all'); setPeriod('all'); setOutcome('all') }
