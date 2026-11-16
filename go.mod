@@ -3,6 +3,7 @@ module panel
 go 1.26.0
 
 require (
+	filippo.io/age v1.2.1
 	github.com/containerd/errdefs v1.0.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/minio/minio-go/v7 v7.4.1

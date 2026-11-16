@@ -142,6 +142,9 @@ func (s *Service) message(ctx context.Context, event string, e store.Event) Mess
 	case "backup.failed":
 		m.Title, m.Level = "Backup failed: "+e.TargetName, "error"
 		m.Text = "A backup of the database instance " + e.TargetName + " failed."
+		if e.TargetType == "panel" {
+			m.Text = "The panel's own backup (its database and key) failed."
+		}
 	case "disk.high":
 		m.Title, m.Level = "Disk almost full on "+e.TargetName, "error"
 		m.Text = "The data disk is nearly full."
@@ -160,6 +163,8 @@ func (s *Service) message(ctx context.Context, event string, e store.Event) Mess
 		}
 	case "database":
 		m.URL, _ = s.panelURL(ctx, "/databases/"+e.TargetID+"?tab=backups")
+	case "panel":
+		m.URL, _ = s.panelURL(ctx, "/settings?tab=backup")
 	default:
 		m.URL, _ = s.panelURL(ctx, "/")
 	}

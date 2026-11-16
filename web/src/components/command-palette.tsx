@@ -145,7 +145,7 @@ export function CommandPalette() {
     ] as const).map(([id, label, icon, to]) => ({ id, label, icon, group: c.pages, keywords: id, run: () => { setOpen(false); void navigate({ to }) } })),
     ...([
       ['git', t.settingsGit.title, GitBranch], ['storage', t.settingsStorage.title, HardDrives],
-      ['builds', t.settingsBuilds.title, GearSix], ['notifications', t.settingsNotifications.title, GearSix], ['tokens', t.settingsTokens.title, GearSix],
+      ['builds', t.settingsBuilds.title, GearSix], ['backup', t.settingsBackup.title, ClockCounterClockwise], ['notifications', t.settingsNotifications.title, GearSix], ['tokens', t.settingsTokens.title, GearSix],
     ] as const).map(([tab, label, icon]) => ({ id: `settings-${tab}`, label, icon, group: c.pages, keywords: tab, run: () => { setOpen(false); void navigate({ to: '/settings', search: { tab } }) } })),
   ]
   const terms = fold(query).trim().split(/\s+/).filter(Boolean)

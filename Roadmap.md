@@ -388,7 +388,7 @@ Goal: see what the server is doing and get told when something breaks.
 - [ ] Integration tests against a real Docker daemon
 - [ ] End-to-end test: install script on a fresh VM
 - [ ] Security review: socket exposure, secrets at rest, webhook token handling, headers
-- [ ] Panel self-backup (SQLite file + key) and restore procedure
+- [x] Panel self-backup (SQLite file + key) and restore procedure (2026-11-16): Settings → Backup sends an encrypted copy (`age` with a passphrase, sealed at rest with the panel key; `gzip`+`tar` of a `VACUUM INTO` snapshot, the key and a manifest) to an S3 connection on a cron schedule or on demand, keeps the newest N, lists and downloads them; failures feed the `backup.failed` alert. `panel restore FILE` checks the file (passphrase, key fingerprint, size, SQLite integrity) and stages it; the next start moves the old database, WAL and key to `backups/pre-restore-<time>` and swaps the backup in (`internal/selfbackup`; real round-trip against RustFS checked)
 - [ ] Docs: install, first deploy, backups, updates, recovery CLI
 - [x] Release pipeline: versioned image (amd64 + arm64), generated `install.sh`, changelog — push a `vX.Y.Z` tag; `.github/workflows/release.yml` publishes `ghcr.io/brahimoulhaj/paas:X.Y.Z` and `:latest` and a GitHub release with generated notes (v0.1.0 → v0.6.0 published)
 

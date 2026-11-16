@@ -38,6 +38,7 @@ import (
 	"panel/internal/proxy"
 	"panel/internal/registry"
 	"panel/internal/secret"
+	"panel/internal/selfbackup"
 	"panel/internal/store"
 	"panel/internal/update"
 	"panel/internal/webui"
@@ -63,6 +64,8 @@ Usage:
   %[2]s owner reset-password [--email E] [--password P]
                                                      set a new password and sign out all sessions
   %[2]s update [--check] [--yes]                     update the panel to the newest release
+  %[2]s restore [--passphrase-file F] FILE           stage a panel backup; it replaces the database
+                                                     and key on the next start
   %[2]s version
 
 Environment:
@@ -97,6 +100,8 @@ func run(args []string) error {
 		return dbGate(ctx)
 	case "update-apply": // run by the update helper container, not by people
 		return updateApply(ctx, cfg, args[1:])
+	case "restore":
+		return restore(ctx, cfg, args[1:])
 	case "setup-token":
 		return withStore(ctx, cfg, func(st *store.Store, acc *account.Service) error {
 			return printSetupLink(ctx, cfg, acc)
@@ -123,6 +128,17 @@ func run(args []string) error {
 func open(ctx context.Context, cfg config.Config, log *slog.Logger) (*store.Store, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("data dir: %w", err)
+	}
+	// A restore staged with `restore` replaces the database and key before either opens.
+	if aside, err := selfbackup.ApplyPending(cfg.DataDir, cfg.DBPath(), cfg.KeyPath(), cfg.BackupDir()); err != nil {
+		return nil, fmt.Errorf("apply staged restore: %w", err)
+	} else if aside != "" {
+		msg := "restored the panel from a backup; the previous database and key were moved to " + aside
+		if log != nil {
+			log.Info(msg)
+		} else {
+			fmt.Fprintln(os.Stderr, msg)
+		}
 	}
 	box, err := secret.LoadOrCreate(cfg.KeyPath())
 	if err != nil {
@@ -295,6 +311,9 @@ func serve(ctx context.Context, cfg config.Config) error {
 	schedulerCtx, stopBackupScheduler := context.WithCancel(ctx)
 	defer stopBackupScheduler()
 	databases.StartBackupScheduler(schedulerCtx)
+	panelBackups := selfbackup.New(st, log, version, cfg.DataDir, cfg.KeyPath())
+	go panelBackups.Watch(schedulerCtx)
+	apiSrv.SetPanelBackups(panelBackups)
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetRegistryChecker(ex)
