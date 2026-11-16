@@ -66,9 +66,18 @@ func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "list databases", err, "") {
 		return
 	}
-	out := []databaseJSON{}
+	sums, err := s.store.DBInstanceSummaries(r.Context())
+	if s.storeError(w, "summarize databases", err, "") {
+		return
+	}
+	// The list shows counts and the latest backup beside each instance.
+	type listed struct {
+		databaseJSON
+		store.DBInstanceSummary
+	}
+	out := []listed{}
 	for _, d := range list {
-		out = append(out, s.databaseJSON(r.Context(), d))
+		out = append(out, listed{s.databaseJSON(r.Context(), d), sums[d.ID]})
 	}
 	writeJSON(w, 200, out)
 }

@@ -219,6 +219,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/domains/{id}/dns", s.requireAuth(s.handleDomainDNS))
 
 	mux.HandleFunc("GET /api/events", s.requireAuth(s.handleListEvents))
+	mux.HandleFunc("GET /api/events/search", s.requireAuth(s.handleSearchEvents))
 	mux.HandleFunc("GET /api/host/metrics", s.requireAuth(s.handleHostMetrics))
 	mux.HandleFunc("GET /api/docker/metrics", s.requireAuth(s.handleDockerMetrics))
 

@@ -7,6 +7,9 @@ export type DatabaseInstance = {
   desired_state: string; status: string; runtime: string; error: string
   host: string; volume: string; created_at: string; updated_at: string
   public_port: number; public_allow: string
+  // Summary, on the list only.
+  database_count?: number; user_count?: number; backup_policies?: number
+  last_backup_at?: string | null; last_backup_status?: string
 }
 export type DatabaseOperation = {
   id: string; instance_id: string; project_id: string; instance_name: string; engine: string; version: string

@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { DeletedInstanceBackups } from '../components/deleted-instance-backups'
+import { ListToolbar, Pager, SearchBox, ToolbarSelect, fold, usePages } from '../components/list-controls'
 import { Sheet } from '../components/sheet'
-import { Badge, Button, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
-import { api, projectsQuery } from '../lib/api'
-import { databasesQuery, enginesQuery, type DatabaseAccepted } from '../lib/databases'
+import { Badge, Button, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
+import { api, projectsQuery, type Project } from '../lib/api'
+import { timeAgo } from '../lib/format'
+import { databasesQuery, enginesQuery, type DatabaseAccepted, type DatabaseInstance } from '../lib/databases'
 import { submitDatabaseOperation } from '../lib/database-operations'
 import { useT } from '../lib/i18n'
 
@@ -27,16 +29,90 @@ export function DatabasesPage() {
       {creating && <NewDatabase onDone={() => setCreating(false)} />}
     </Sheet>
     <QueryState loading={dbs.isPending} error={dbs.error} what={t.databases.title} />
-    {dbs.data && <Panel>{dbs.data.length === 0 ? <Empty title={t.databases.empty}>{t.databases.emptyHint}</Empty> :
-      <ul className="divide-y divide-line">{dbs.data.map((d) => <li key={d.id}>
-        <Link to="/databases/$databaseId" params={{ databaseId: d.id }} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-raised">
-          <div className="min-w-0"><span className="block truncate text-sm">{d.name}</span><span className="text-xs text-muted">{projects.data?.find((p) => p.id === d.project_id)?.name ?? d.project_id} · {d.engine === 'postgres' ? 'PostgreSQL' : 'MariaDB'} {d.version}</span></div>
-          <DatabaseStatus value={d.status === 'running' && d.runtime !== 'running' ? d.runtime : d.status} />
-        </Link>
-      </li>)}</ul>}
-    </Panel>}
+    {dbs.data && (dbs.data.length === 0
+      ? <Panel><Empty title={t.databases.empty}>{t.databases.emptyHint}</Empty></Panel>
+      : <DatabaseList list={dbs.data} projects={projects.data ?? []} />)}
     <DeletedInstanceBackups />
   </div>
+}
+
+const engineLabel = (e: string) => (e === 'postgres' ? 'PostgreSQL' : 'MariaDB')
+const shownStatus = (d: DatabaseInstance) => (d.status === 'running' && d.runtime !== 'running' ? d.runtime : d.status)
+const needsAttention = (d: DatabaseInstance) => ['failed', 'unavailable', 'missing', 'exited'].includes(shownStatus(d)) || d.last_backup_status === 'failed'
+
+function DatabaseList({ list, projects }: { list: DatabaseInstance[]; projects: Project[] }) {
+  const t = useT()
+  const tl = t.lists
+  const [q, setQ] = useState('')
+  const [engine, setEngine] = useState('all')
+  const [project, setProject] = useState('all')
+  const [status, setStatus] = useState('all')
+  const [sort, setSort] = useState('name')
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id
+  const rows = useMemo(() => {
+    const needle = fold(q.trim())
+    const time = (v?: string | null) => (v ? Date.parse(v) : 0)
+    return list.filter((d) => (!needle || fold(`${d.name} ${projectName(d.project_id)} ${d.database_name} ${engineLabel(d.engine)}`).includes(needle))
+      && (engine === 'all' || d.engine === engine)
+      && (project === 'all' || d.project_id === project)
+      && (status === 'all' || (status === 'attention' ? needsAttention(d) : status === 'running' ? shownStatus(d) === 'running' : d.desired_state === 'stopped')))
+      .sort((a, b) => sort === 'project' ? projectName(a.project_id).localeCompare(projectName(b.project_id)) || a.name.localeCompare(b.name)
+        : sort === 'created' ? time(b.created_at) - time(a.created_at)
+        : sort === 'backup' ? time(b.last_backup_at) - time(a.last_backup_at)
+        : a.name.localeCompare(b.name))
+  }, [list, projects, q, engine, project, status, sort])
+  const pages = usePages(rows, [q, engine, project, status, sort])
+  const projectIds = [...new Set(list.map((d) => d.project_id))]
+  return <Panel>
+    <ListToolbar>
+      <SearchBox label={tl.searchDatabases} value={q} onChange={setQ} />
+      <ToolbarSelect label={tl.engine} value={engine} onChange={setEngine} options={[{ value: 'all', label: tl.allEngines }, { value: 'postgres', label: 'PostgreSQL' }, { value: 'mariadb', label: 'MariaDB' }]} />
+      {projectIds.length > 1 && <ToolbarSelect label={tl.project} value={project} onChange={setProject}
+        options={[{ value: 'all', label: tl.allProjects }, ...projectIds.map((id) => ({ value: id, label: projectName(id) }))]} />}
+      <ToolbarSelect label={tl.filter} value={status} onChange={setStatus} options={['all', 'running', 'stopped', 'attention'].map((v) => ({ value: v, label: tl.dbStatus[v] }))} />
+      <ToolbarSelect label={tl.sort} value={sort} onChange={setSort} options={['name', 'project', 'created', 'backup'].map((v) => ({ value: v, label: tl.dbSort[v] }))} />
+    </ListToolbar>
+    {rows.length === 0
+      ? <Empty title={tl.noMatch}><button type="button" className="text-accent hover:underline" onClick={() => { setQ(''); setEngine('all'); setProject('all'); setStatus('all') }}>{tl.clear}</button></Empty>
+      : <ul className="divide-y divide-line">{pages.shown.map((d) => <DatabaseRow key={d.id} d={d} projectName={projectName(d.project_id)} />)}</ul>}
+    <Pager {...pages} />
+  </Panel>
+}
+
+function DatabaseRow({ d, projectName }: { d: DatabaseInstance; projectName: string }) {
+  const t = useT()
+  const tl = t.lists
+  const cpu = d.cpu_limit ? String(d.cpu_limit) : tl.unlimited
+  const mem = d.memory_mb ? `${d.memory_mb} MiB` : tl.unlimited
+  const failed = d.last_backup_status === 'failed'
+  return <li>
+    <Link to="/databases/$databaseId" params={{ databaseId: d.id }}
+      className="grid gap-x-6 gap-y-2 px-4 py-3 hover:bg-raised md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center">
+      <span className="min-w-0">
+        <span className="block truncate text-sm">{d.name}</span>
+        <span className="block truncate text-xs text-muted">{projectName}</span>
+      </span>
+      <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+        <DatabaseStatus value={shownStatus(d)} />
+        <span className="text-muted">{engineLabel(d.engine)} {d.version}</span>
+        {d.public_port > 0 && <Badge tone="warn">{tl.publicPort(d.public_port)}</Badge>}
+      </span>
+      <span className="min-w-0 text-xs text-muted">
+        <span className="block text-fg">{tl.dbCounts(d.database_count ?? 1, d.user_count ?? 1)}</span>
+        <span className="block">{tl.limits(cpu, mem)}</span>
+      </span>
+      <span className="min-w-0 text-xs">
+        <span className="block text-muted">{tl.lastBackup}{(d.backup_policies ?? 0) > 0 && ` · ${tl.scheduled}`}</span>
+        {d.last_backup_at
+          ? <span className="flex items-center gap-1.5">
+              <span className={cx('size-1.5 shrink-0 rounded-full', failed ? 'bg-danger' : d.last_backup_status === 'succeeded' ? 'bg-accent' : 'bg-warn')} />
+              <span className={failed ? 'text-danger' : undefined}>{failed ? tl.backupFailed : timeAgo(d.last_backup_at)}</span>
+              {failed && <span className="text-muted">{timeAgo(d.last_backup_at)}</span>}
+            </span>
+          : <span className="text-muted">{tl.noBackups}</span>}
+      </span>
+    </Link>
+  </li>
 }
 
 export function DatabaseSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: ReactNode }) {

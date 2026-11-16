@@ -328,7 +328,21 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, "list projects", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, mapSlice(list, toProjectJSON))
+	sums, err := s.store.ProjectSummaries(r.Context())
+	if err != nil {
+		s.internal(w, "summarize projects", err)
+		return
+	}
+	// The list shows counts and the latest deploy beside each project.
+	type listed struct {
+		projectJSON
+		store.ProjectSummary
+	}
+	out := make([]listed, 0, len(list))
+	for _, p := range list {
+		out = append(out, listed{toProjectJSON(p), sums[p.ID]})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
@@ -1204,4 +1218,64 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mapSlice(list, func(e store.Event) eventJSON {
 		return eventJSON{e.ID, e.Actor, e.Action, e.TargetType, e.TargetID, e.TargetName, e.Detail, e.CreatedAt}
 	}))
+}
+
+// handleSearchEvents serves the Activity page: filters, a page and the total.
+func (s *Server) handleSearchEvents(w http.ResponseWriter, r *http.Request) {
+	v := r.URL.Query()
+	q := store.EventQuery{Text: v.Get("q"), Actor: v.Get("actor"), Failures: v.Get("failures") == "1"}
+	if g := v.Get("group"); g != "" {
+		if _, ok := store.EventGroups[g]; !ok {
+			invalid(w, "unknown group")
+			return
+		}
+		q.Group = g
+	}
+	if q.Actor != "" && q.Actor != "people" && q.Actor != "system" {
+		invalid(w, "actor must be people or system")
+		return
+	}
+	if len(q.Text) > 200 {
+		invalid(w, "the search is too long")
+		return
+	}
+	switch v.Get("period") {
+	case "", "all":
+	case "24h":
+		q.Since = time.Now().Add(-24 * time.Hour)
+	case "7d":
+		q.Since = time.Now().Add(-7 * 24 * time.Hour)
+	case "30d":
+		q.Since = time.Now().Add(-30 * 24 * time.Hour)
+	default:
+		invalid(w, "period must be 24h, 7d, 30d or all")
+		return
+	}
+	page, size := 1, 25
+	if p := v.Get("page"); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 100000 {
+			invalid(w, "page must be a positive number")
+			return
+		}
+		page = n
+	}
+	if p := v.Get("size"); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 10 || n > 100 {
+			invalid(w, "size must be between 10 and 100")
+			return
+		}
+		size = n
+	}
+	q.Limit, q.Offset = size, (page-1)*size
+	list, total, err := s.store.SearchEvents(r.Context(), q)
+	if err != nil {
+		s.internal(w, "search events", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"page": page, "size": size, "total": total,
+		"items": mapSlice(list, func(e store.Event) eventJSON {
+			return eventJSON{e.ID, e.Actor, e.Action, e.TargetType, e.TargetID, e.TargetName, e.Detail, e.CreatedAt}
+		})})
 }

@@ -125,6 +125,15 @@ export type Project = {
   app_count: number
   created_at: string
   updated_at: string
+  // Summary, on the list only.
+  apps_running?: number
+  apps_stopped?: number
+  apps_not_deployed?: number
+  databases?: number
+  domains?: number
+  last_deploy_at?: string | null
+  last_deploy_status?: string
+  last_deploy_app?: string
 }
 
 export type AppProblem = { app_id: string; app_name: string; project_id: string; project_name: string; runtime_state: string }
