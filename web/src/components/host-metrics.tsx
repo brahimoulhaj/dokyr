@@ -4,6 +4,7 @@ import { hostMetricsQuery, type HostMetrics as Metrics } from '../lib/api'
 import { locale, useT } from '../lib/i18n'
 import { formatBytes as bytes } from '../lib/format'
 import { cx, HelpTip, Panel } from './ui'
+import { useMetricsStream } from '../lib/live'
 
 const percent = (value: number | null | undefined) => value == null ? '—' : `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value)}%`
 
@@ -33,6 +34,7 @@ function Metric({ label, value, children }: { label: string; value: ReactNode; c
 export function HostMetrics() {
   const t = useT().metrics
   const query = useQuery(hostMetricsQuery)
+  useMetricsStream('host')
   const m = query.data
   const [now, setNow] = useState(Date.now())
   useEffect(() => {

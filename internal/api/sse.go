@@ -22,6 +22,12 @@ func startSSE(w http.ResponseWriter) (*sseStream, error) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Accel-Buffering", "no") // tells buffering proxies to pass events through
 	w.WriteHeader(http.StatusOK)
+	// A first line of body right away: some proxies (Node's, in development) hold the
+	// headers until body bytes arrive, so a quiet stream would not open until its first
+	// ping. Clients ignore comment lines.
+	if _, err := w.Write([]byte(": open\n\n")); err != nil {
+		return nil, err
+	}
 	if err := s.rc.Flush(); err != nil {
 		return nil, err
 	}

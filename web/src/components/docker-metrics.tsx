@@ -4,6 +4,7 @@ import { dockerMetricsQuery, type DockerUsage } from '../lib/api'
 import { formatBytes as bytes, timeAgo } from '../lib/format'
 import { locale, useT } from '../lib/i18n'
 import { Badge, cx, HelpTip, Panel } from './ui'
+import { useMetricsStream } from '../lib/live'
 
 const count = (n: number | null | undefined) => n == null || n < 0 ? '—' : new Intl.NumberFormat(locale()).format(n)
 
@@ -22,6 +23,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 export function DockerMetrics() {
   const t = useT().dockerMetrics
   const query = useQuery(dockerMetricsQuery)
+  useMetricsStream('docker')
   const m = query.data
   const engine = m?.engine
   const storage = m?.storage

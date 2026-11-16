@@ -143,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects", s.requireAuth(s.handleListProjects))
 	mux.HandleFunc("GET /api/search", s.requireAuth(s.handleSearch))
 	mux.HandleFunc("GET /api/changes", s.requireAuth(s.handleChanges))
+	mux.HandleFunc("GET /api/metrics/stream", s.requireAuth(s.handleMetricsStream))
 	mux.HandleFunc("GET /api/database-engines", s.requireAuth(s.handleDatabaseEngines))
 	mux.HandleFunc("GET /api/database-operations/active", s.requireAuth(s.handleActiveDatabaseOperations))
 	mux.HandleFunc("GET /api/database-operations/{id}", s.requireAuth(s.handleGetDatabaseOperation))

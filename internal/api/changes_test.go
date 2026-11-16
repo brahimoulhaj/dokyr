@@ -85,7 +85,7 @@ func TestChangeStream(t *testing.T) {
 			if !ok {
 				t.Fatalf("stream closed after %v", got)
 			}
-			if line != "" {
+			if line != "" && !strings.HasPrefix(line, ":") { // comments: the opening line, pings
 				got = append(got, line)
 			}
 		case <-timeout:

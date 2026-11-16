@@ -1,4 +1,4 @@
-import { poll } from './live'
+import { metricsPoll, poll } from './live'
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -67,7 +67,7 @@ export type HostMetrics = {
 export const hostMetricsQuery = {
   queryKey: ['host', 'metrics'] as const,
   queryFn: () => api<HostMetrics>('/host/metrics'),
-  refetchInterval: 5_000,
+  refetchInterval: metricsPoll('host', 5_000), // pushed while the metrics stream is up
   staleTime: 4_000,
   retry: 1,
 }
@@ -93,7 +93,7 @@ export type DockerMetrics = {
 export const dockerMetricsQuery = {
   queryKey: ['docker', 'metrics'] as const,
   queryFn: () => api<DockerMetrics>('/docker/metrics'),
-  refetchInterval: 15_000,
+  refetchInterval: metricsPoll('docker', 15_000), // pushed while the metrics stream is up
   staleTime: 10_000,
   retry: 1,
 }
