@@ -148,7 +148,7 @@ function AppRow({ app }: { app: App }) {
   )
 }
 
-function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+export function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [name, setName] = useState('')

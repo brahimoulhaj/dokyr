@@ -137,7 +137,7 @@ function ExternalRow({ registry }: { registry: Registry }) {
   )
 }
 
-function AddExternal({ onDone }: { onDone: () => void }) {
+export function AddExternal({ onDone }: { onDone: () => void }) {
   const queryClient = useQueryClient()
   const t = useT()
   const tr = t.registries

@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 // Per-icon imports keep the bundle to the icons used.
 import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
@@ -10,7 +10,8 @@ import { HardDrives } from '@phosphor-icons/react/dist/csr/HardDrives'
 import { Package } from '@phosphor-icons/react/dist/csr/Package'
 import { SquaresFour } from '@phosphor-icons/react/dist/csr/SquaresFour'
 import type { Icon } from '@phosphor-icons/react'
-import { api, meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
+import { meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
+import { useLogout } from '../lib/logout'
 import { useT } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
 import { LanguagePicker } from './langpicker'
@@ -20,6 +21,7 @@ import { QueueMenu } from './queue-menu'
 import { UpdateCheck } from './update-check'
 import { Badge, cx } from './ui'
 import { useDatabaseOperations } from '../lib/database-operations'
+import { CommandPalette } from './command-palette'
 
 // Sections light up as their milestone lands; until then they show as "soon".
 type NavKey = 'overview' | 'projects' | 'activity' | 'databases' | 'storage' | 'registry' | 'settings'
@@ -70,19 +72,22 @@ export function Shell() {
             <UpdateCheck updates={updates.data} />
           </div>
         </div>
-        <div className="flex items-center gap-2 px-4">
-          <button
-            type="button"
-            onClick={() => setPicking(true)}
-            aria-label={t.shell.chooseTheme}
-            title={t.shell.theme}
-            className="flex size-8 items-center justify-center border border-transparent text-muted hover:border-line hover:text-fg"
-          >
-            <PaletteIcon />
-          </button>
-          <QueueMenu databaseOperations={databaseOperations.operations} />
-          <LanguagePicker />
-          {me && <UserMenu user={me} onPickTheme={() => setPicking(true)} />}
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-2 sm:justify-between sm:px-4">
+          <CommandPalette />
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              aria-label={t.shell.chooseTheme}
+              title={t.shell.theme}
+              className="flex size-8 items-center justify-center border border-transparent text-muted hover:border-line hover:text-fg"
+            >
+              <PaletteIcon />
+            </button>
+            <QueueMenu databaseOperations={databaseOperations.operations} />
+            <LanguagePicker />
+            {me && <UserMenu user={me} onPickTheme={() => setPicking(true)} />}
+          </div>
         </div>
       </header>
 
@@ -138,16 +143,7 @@ function UserMenu({ user, onPickTheme }: { user: User; onPickTheme: () => void }
   const theme = useTheme()
   const t = useT()
   const root = useRef<HTMLDivElement>(null)
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-
-  const logout = useMutation({
-    mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
-    onSettled: () => {
-      queryClient.setQueryData(meQuery.queryKey, null)
-      navigate({ to: '/login' })
-    },
-  })
+  const logout = useLogout()
 
   // Close on a click outside or on Escape.
   useEffect(() => {
@@ -222,6 +218,7 @@ function UserMenu({ user, onPickTheme }: { user: User; onPickTheme: () => void }
             >
               {logout.isPending ? t.shell.signingOut : t.shell.signOut}
             </button>
+            {logout.error && <p role="alert" className="px-3 py-1.5 text-xs text-danger">{logout.error.message}</p>}
           </div>
         </div>
       )}

@@ -117,7 +117,7 @@ function Status({ tone, children }: { tone: 'accent' | 'danger' | 'muted'; child
   </span>
 }
 
-function NewProject({ onDone }: { onDone: () => void }) {
+export function NewProject({ onDone }: { onDone: () => void }) {
   const t = useT()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
