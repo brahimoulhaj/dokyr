@@ -292,3 +292,107 @@ func TestLoginMethodOriginAndFlowBoundaries(t *testing.T) {
 		t.Fatal("expired challenge retained")
 	}
 }
+
+func TestLoginOriginBehindCDN(t *testing.T) {
+	e, _ := loginMethodEnv(t)
+	ctx := context.Background()
+	// The installer initially records an HTTP IP address for setup links.
+	e.srv.SetAuthPublicURL("http://203.0.113.10")
+	if err := e.srv.store.SetSetting(ctx, store.SettingPanelDomain, "panel.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.srv.store.SetSetting(ctx, store.SettingPanelTLS, store.TLSHTTPOnly); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, host, origin, forwardedProto string
+		allowed                            bool
+	}{
+		{"HTTPS browser through HTTP CDN upstream", "panel.example.com", "https://panel.example.com", "http", true},
+		{"OAuth callback without Origin", "panel.example.com", "", "http", true},
+		{"plain HTTP browser", "panel.example.com", "http://panel.example.com", "http", false},
+		{"foreign Origin", "panel.example.com", "https://evil.example", "https", false},
+		{"unconfigured Host", "evil.example", "https://evil.example", "https", false},
+		{"setup IP is not a secure sign-in origin", "203.0.113.10", "http://203.0.113.10", "https", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "http://"+test.host+"/api/auth/passkeys/login/begin", nil)
+			req.Header.Set("Origin", test.origin)
+			req.Header.Set("X-Forwarded-Proto", test.forwardedProto)
+			origin, err := e.srv.loginOrigin(req)
+			if test.allowed {
+				if err != nil || origin != "https://panel.example.com" {
+					t.Fatalf("origin = %q, error = %v", origin, err)
+				}
+			} else if err == nil {
+				t.Fatalf("untrusted origin accepted: %q", origin)
+			}
+		})
+	}
+}
+
+func TestLoginMethodsAfterImageUpdate(t *testing.T) {
+	for _, mode := range []string{store.TLSAuto, store.TLSHTTPOnly} {
+		t.Run(mode, func(t *testing.T) {
+			e, owner := loginMethodEnv(t)
+			ctx := context.Background()
+			for key, value := range map[string]string{
+				store.SettingPanelDomain: "panel.example.com",
+				store.SettingPanelTLS:    mode,
+			} {
+				if err := e.srv.store.SetSetting(ctx, key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := e.srv.store.SetGitHubLoginConfig(ctx, store.GitHubLoginConfig{ClientID: "configured-app", ClientSecret: "configured-secret"}); err != nil {
+				t.Fatal(err)
+			}
+			token, _, err := e.accounts.NewSession(ctx, owner.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, installURL := range []string{"", "http://203.0.113.10", "https://old.example.com"} {
+				t.Run(installURL, func(t *testing.T) {
+					// A replacement image sees the persisted database and the old
+					// container environment, just as the self-updater provides them.
+					updated := New(e.srv.store, account.New(e.srv.store), e.srv.log, "updated", e.srv.web)
+					updated.SetAuthPublicURL(installURL)
+					handler := updated.Handler()
+					req := httptest.NewRequest("GET", "http://panel.example.com/api/auth/methods", nil)
+					req.Header.Set("X-Forwarded-Proto", "http")
+					rr := httptest.NewRecorder()
+					handler.ServeHTTP(rr, req)
+					var methods struct {
+						Passkeys bool   `json:"passkeys"`
+						GitHub   bool   `json:"github"`
+						Origin   string `json:"origin"`
+					}
+					if err := json.Unmarshal(rr.Body.Bytes(), &methods); err != nil {
+						t.Fatal(err)
+					}
+					if rr.Code != 200 || !methods.Passkeys || !methods.GitHub || methods.Origin != "https://panel.example.com" {
+						t.Fatalf("login methods after update: %d %+v", rr.Code, methods)
+					}
+					req = httptest.NewRequest("GET", "http://panel.example.com/api/auth/security", nil)
+					req.AddCookie(&http.Cookie{Name: "dokyr_session", Value: token})
+					rr = httptest.NewRecorder()
+					handler.ServeHTTP(rr, req)
+					var security struct {
+						Callback    string `json:"callback_url"`
+						OriginError string `json:"origin_error"`
+					}
+					if err := json.Unmarshal(rr.Body.Bytes(), &security); err != nil {
+						t.Fatal(err)
+					}
+					if rr.Code != 200 || security.OriginError != "" || security.Callback != "https://panel.example.com"+githubLoginCallback {
+						t.Fatalf("security after update: %d %+v", rr.Code, security)
+					}
+					persisted, _, err := e.srv.store.GetSetting(ctx, store.SettingPanelTLS)
+					if err != nil || persisted != mode {
+						t.Fatalf("TLS setting changed during update: %q, %v", persisted, err)
+					}
+				})
+			}
+		})
+	}
+}
