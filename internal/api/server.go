@@ -29,6 +29,7 @@ type Server struct {
 	proxy          ProxyApplier
 	deployer       Deployer
 	updater        Updater
+	hostTerminal   HostTerminal
 	git            *gitsource.Service
 	metrics        HostMetrics
 	dockerMetrics  DockerMetrics
@@ -216,6 +217,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/apps/{id}/deployments", s.requireAuth(s.handleListDeployments))
 	mux.HandleFunc("GET /api/apps/{id}/logs/stream", s.requireAuth(s.handleAppLogStream))
 	mux.HandleFunc("GET /api/apps/{id}/terminal", s.requireAuth(sessionOnly(s.handleTerminal)))
+	mux.HandleFunc("GET /api/host/terminal", s.requireAuth(sessionOnly(s.handleHostTerminal)))
 	mux.HandleFunc("GET /api/apps/{id}/routes", s.requireAuth(s.handleAppRoutes))
 	mux.HandleFunc("GET /api/notifications/kinds", s.requireAuth(s.handleNotificationKinds))
 	mux.HandleFunc("GET /api/notification-channels", s.requireAuth(s.handleListChannels))

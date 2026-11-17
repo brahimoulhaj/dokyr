@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { TerminalWindow } from '@phosphor-icons/react'
 import { meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
 import { useLogout } from '../lib/logout'
 import { useT } from '../lib/i18n'
@@ -16,6 +17,8 @@ import { CommandPalette } from './command-palette'
 import { useLiveChanges } from '../lib/live'
 import { Sidebar } from './sidebar'
 
+const HostTerminalDock = lazy(() => import('./host-terminal'))
+
 // The page itself never scrolls: the navbar and the sidebar stay put and only <main> scrolls.
 export function Shell() {
   const { data: meta } = useSuspenseQuery(metaQuery)
@@ -26,6 +29,8 @@ export function Shell() {
   const main = useRef<HTMLElement>(null)
   const { pathname } = useLocation()
   const [picking, setPicking] = useState(false)
+  // 'hidden' keeps the shells running under a collapsed dock.
+  const [terminal, setTerminal] = useState<'closed' | 'open' | 'hidden'>('closed')
   const t = useT()
 
   // The router restores window scroll, which no longer moves; a new page starts at the top.
@@ -52,7 +57,7 @@ export function Shell() {
           </div>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-2 sm:justify-between sm:px-4">
-          <CommandPalette />
+          <CommandPalette onOpenTerminal={me?.role === 'owner' ? () => setTerminal('open') : undefined} />
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               type="button"
@@ -63,6 +68,22 @@ export function Shell() {
             >
               <PaletteIcon />
             </button>
+            {me?.role === 'owner' && (
+              <button
+                type="button"
+                onClick={() => setTerminal((state) => (state === 'open' ? 'hidden' : 'open'))}
+                aria-label={t.shell.hostTerminal}
+                aria-pressed={terminal === 'open'}
+                title={t.shell.hostTerminal}
+                className={cx(
+                  'relative flex size-8 items-center justify-center border hover:border-line hover:text-fg',
+                  terminal === 'open' ? 'border-line text-fg' : 'border-transparent text-muted',
+                )}
+              >
+                <TerminalWindow size={16} aria-hidden />
+                {terminal !== 'closed' && <span aria-hidden className="absolute end-1 top-1 size-1.5 rounded-full bg-accent" />}
+              </button>
+            )}
             <QueueMenu databaseOperations={databaseOperations.operations} />
             <LanguagePicker />
             {me && <UserMenu user={me} onPickTheme={() => setPicking(true)} />}
@@ -74,9 +95,16 @@ export function Shell() {
         <aside className="shrink-0 border-b border-line bg-surface md:w-56 md:overflow-y-auto md:border-e md:border-b-0">
           <Sidebar />
         </aside>
-        <main ref={main} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8">
-          <Outlet />
-        </main>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <main ref={main} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8">
+            <Outlet />
+          </main>
+          {terminal !== 'closed' && (
+            <Suspense fallback={null}>
+              <HostTerminalDock hidden={terminal === 'hidden'} onHide={() => setTerminal('hidden')} onClose={() => setTerminal('closed')} />
+            </Suspense>
+          )}
+        </div>
       </div>
       <DeployToasts databaseOperations={databaseOperations.operations} onDismissDatabase={databaseOperations.dismiss} />
       {picking && <ThemePicker brand={meta.name} onClose={() => setPicking(false)} />}

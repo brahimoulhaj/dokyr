@@ -6,6 +6,7 @@ export const en = {
   intro: 'Open a shell in this container.', failed: 'Connection failed. Check your session, container and selected shell, then reconnect.',
   ended: 'Session ended', shortcut: 'Ctrl+C interrupt · Ctrl+L clear', output: 'Interactive container terminal',
   changed: 'Container changed. Reconnect to open the new container.',
+  hostFailed: 'Cannot open a shell on the host. Check your session, then reconnect.', hostOutput: 'Interactive host terminal',
 }
 export const fr: typeof en = {
   idleClosed: 'Déconnecté après 2 minutes hors du terminal. Reconnectez-vous pour ouvrir un nouveau shell.',
@@ -15,6 +16,7 @@ export const fr: typeof en = {
   intro: 'Ouvrir un shell dans ce conteneur.', failed: 'Connexion échouée. Vérifiez votre session, le conteneur et le shell, puis reconnectez-vous.',
   ended: 'Session terminée', shortcut: 'Ctrl+C interrompre · Ctrl+L effacer', output: 'Terminal interactif du conteneur',
   changed: 'Le conteneur a changé. Reconnectez-vous au nouveau conteneur.',
+  hostFailed: 'Impossible d’ouvrir un shell sur l’hôte. Vérifiez votre session, puis reconnectez-vous.', hostOutput: 'Terminal interactif de l’hôte',
 }
 export const ar: typeof en = {
   idleClosed: 'تم قطع الاتصال بعد دقيقتين خارج الطرفية. أعد الاتصال لفتح صدفة جديدة.',
@@ -24,6 +26,7 @@ export const ar: typeof en = {
   intro: 'افتح صدفة داخل هذه الحاوية.', failed: 'فشل الاتصال. تحقق من جلستك والحاوية والصدفة ثم أعد الاتصال.',
   ended: 'انتهت الجلسة', shortcut: 'Ctrl+C إيقاف · Ctrl+L مسح', output: 'طرفية تفاعلية للحاوية',
   changed: 'تغيّرت الحاوية. أعد الاتصال لفتح الحاوية الجديدة.',
+  hostFailed: 'تعذّر فتح صدفة على الخادم. تحقق من جلستك ثم أعد الاتصال.', hostOutput: 'طرفية تفاعلية للخادم',
 }
 export const es: typeof en = {
   idleClosed: 'Desconectado tras 2 minutos fuera del terminal. Reconecta para abrir un nuevo shell.',
@@ -33,4 +36,5 @@ export const es: typeof en = {
   intro: 'Abre un shell en este contenedor.', failed: 'Conexión fallida. Comprueba la sesión, el contenedor y el shell antes de reconectar.',
   ended: 'Sesión finalizada', shortcut: 'Ctrl+C interrumpir · Ctrl+L limpiar', output: 'Terminal interactivo del contenedor',
   changed: 'El contenedor ha cambiado. Reconecta para abrir el nuevo contenedor.',
+  hostFailed: 'No se pudo abrir un shell en el servidor. Comprueba la sesión y reconecta.', hostOutput: 'Terminal interactivo del servidor',
 }

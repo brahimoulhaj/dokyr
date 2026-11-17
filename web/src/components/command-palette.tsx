@@ -20,6 +20,7 @@ import { Palette } from '@phosphor-icons/react/dist/csr/Palette'
 import { Translate } from '@phosphor-icons/react/dist/csr/Translate'
 import { SignOut } from '@phosphor-icons/react/dist/csr/SignOut'
 import { Check } from '@phosphor-icons/react/dist/csr/Check'
+import { TerminalWindow } from '@phosphor-icons/react/dist/csr/TerminalWindow'
 import { api, projectsQuery } from '../lib/api'
 import { languages, setLang, useLang, useT } from '../lib/i18n'
 import { setTheme, themes, useTheme } from '../lib/theme'
@@ -38,7 +39,8 @@ type Creation = { kind: 'app'; projectId: string } | { kind: 'project' | 'databa
 type Entry = { id: string; label: string; detail?: string; icon: Icon; group: string; keywords?: string; current?: boolean; disabled?: boolean; run: () => void }
 const icons: Record<ResourceKind, Icon> = { project: FolderSimple, app: Cube, database: Database, domain: Globe, registry: Package, git: GitBranch, storage: HardDrives }
 
-export function CommandPalette() {
+/** onOpenTerminal is set only for users allowed to open the host terminal. */
+export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void }) {
   const t = useT()
   const c = t.command
   const theme = useTheme()
@@ -132,6 +134,7 @@ export function CommandPalette() {
     { id: 'new-project', label: c.newProject, icon: Plus, group: c.actions, keywords: 'create new project', run: () => create({ kind: 'project' }) },
     { id: 'new-database', label: c.newDatabase, icon: Plus, group: c.actions, keywords: 'create new database postgres mariadb', run: () => create({ kind: 'database' }) },
     { id: 'new-registry', label: c.registry, icon: Plus, group: c.actions, keywords: 'add connect registry', run: () => create({ kind: 'registry' }) },
+    ...(onOpenTerminal ? [{ id: 'host-terminal', label: t.shell.hostTerminal, icon: TerminalWindow, group: c.actions, keywords: 'open terminal shell console ssh host server root command line', run: () => { setOpen(false); onOpenTerminal() } }] : []),
     { id: 'choose-theme', label: t.shell.chooseTheme, detail: theme.name, icon: Palette, group: c.preferences, keywords: 'theme switch appearance dark light', run: () => chooseMode('theme') },
     { id: 'choose-language', label: t.shell.chooseLanguage, detail: languages.find((l) => l.code === lang)?.name, icon: Translate, group: c.preferences, keywords: 'language switch locale translate', run: () => chooseMode('language') },
     { id: 'sign-out', label: logout.isPending ? t.shell.signingOut : t.shell.signOut, icon: SignOut, group: c.preferences, keywords: 'logout log out sign out disconnect', disabled: logout.isPending, run: () => { if (!logout.isPending) logout.mutate() } },
@@ -220,7 +223,7 @@ export function CommandPalette() {
               placeholder={modeTitle} maxLength={64}
               aria-label={modeTitle}
               role="combobox" aria-expanded="true" aria-controls={listId} aria-autocomplete="list" aria-activedescendant={activeId}
-              autoComplete="off" spellCheck={false} className="h-13 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+              autoComplete="off" spellCheck={false} className="h-13 min-w-0 flex-1 bg-transparent text-sm outline-none! placeholder:text-muted"
               onKeyDown={(e) => {
                 if (e.nativeEvent.isComposing) return
                 if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) && ordered.length) {

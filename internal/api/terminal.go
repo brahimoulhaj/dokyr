@@ -45,6 +45,57 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get terminal app", err, "") {
 		return
 	}
+	s.serveTerminal(w, r, terminalSession{
+		open: func(ctx context.Context) (executor.Terminal, error) {
+			return d.OpenTerminal(ctx, a.ID, shell, uint(cols), uint(rows))
+		},
+		failed: "Cannot open shell. Check the container is running and the selected shell is installed.",
+		audit:  func(action string) { s.audit(r, "app.terminal."+action, "app", a.ID, a.Name, shell) },
+	})
+}
+
+// HostTerminal opens a root shell on the host the panel runs on.
+type HostTerminal func(ctx context.Context, cols, rows uint) (executor.Terminal, error)
+
+func (s *Server) SetHostTerminal(open HostTerminal) { s.hostTerminal = open }
+
+// handleHostTerminal is a root shell on the host: browser session of the owner only.
+func (s *Server) handleHostTerminal(w http.ResponseWriter, r *http.Request) {
+	if !terminalOrigin(r) {
+		writeError(w, http.StatusForbidden, "cross_origin", "cross-origin terminal blocked")
+		return
+	}
+	if userFrom(r.Context()).Role != "owner" {
+		writeError(w, http.StatusForbidden, "forbidden", "only the owner can open the host terminal")
+		return
+	}
+	if s.hostTerminal == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "host terminal is unavailable")
+		return
+	}
+	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
+	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
+	if !terminalSize(cols, rows) {
+		invalid(w, "choose valid terminal dimensions")
+		return
+	}
+	s.serveTerminal(w, r, terminalSession{
+		open: func(ctx context.Context) (executor.Terminal, error) {
+			return s.hostTerminal(ctx, uint(cols), uint(rows))
+		},
+		failed: "Cannot open a shell on the host.",
+		audit:  func(action string) { s.audit(r, "host.terminal."+action, "host", "", "host", "") },
+	})
+}
+
+type terminalSession struct {
+	open   func(context.Context) (executor.Terminal, error)
+	failed string              // shown in the browser when open fails
+	audit  func(action string) // "open" and "close"
+}
+
+// serveTerminal upgrades to a WebSocket and bridges it to the session's PTY.
+func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session terminalSession) {
 	if !websocket.IsWebSocketUpgrade(r) {
 		writeError(w, http.StatusBadRequest, "invalid", "WebSocket upgrade required")
 		return
@@ -81,15 +132,16 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	go func() { <-ctx.Done(); ws.Close() }()
-	pty, err := d.OpenTerminal(ctx, a.ID, shell, uint(cols), uint(rows))
+	pty, err := session.open(ctx)
 	if err != nil {
+		s.log.Warn("open terminal", "error", err)
 		ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		ws.WriteJSON(map[string]string{"type": "error", "message": "Cannot open shell. Check the container is running and the selected shell is installed."})
+		ws.WriteJSON(map[string]string{"type": "error", "message": session.failed})
 		return
 	}
 	defer pty.Close()
-	s.audit(r, "app.terminal.open", "app", a.ID, a.Name, shell)
-	defer s.audit(r, "app.terminal.close", "app", a.ID, a.Name, shell)
+	session.audit("open")
+	defer session.audit("close")
 	go func() { <-ctx.Done(); pty.Close() }()
 	if err := ws.WriteJSON(map[string]string{"type": "ready"}); err != nil {
 		return

@@ -35,6 +35,13 @@ export const en = {
   owner: 'Owner',
   signOut: 'Sign out',
   signingOut: 'Signing out…',
+  hostTerminal: 'Host terminal',
+  hostTab: (n: number) => `host ${n}`,
+  newTab: 'New terminal',
+  closeTab: 'Close this terminal',
+  hideTerminal: 'Hide (sessions stay open)',
+  closeTerminal: 'Close all terminals',
+  resizeTerminal: 'Resize the terminal',
 }
 
 export const fr: typeof en = {
@@ -72,6 +79,13 @@ export const fr: typeof en = {
   owner: 'Propriétaire',
   signOut: 'Se déconnecter',
   signingOut: 'Déconnexion…',
+  hostTerminal: 'Terminal de l’hôte',
+  hostTab: (n) => `hôte ${n}`,
+  newTab: 'Nouveau terminal',
+  closeTab: 'Fermer ce terminal',
+  hideTerminal: 'Masquer (les sessions restent ouvertes)',
+  closeTerminal: 'Fermer tous les terminaux',
+  resizeTerminal: 'Redimensionner le terminal',
 }
 
 export const ar: typeof en = {
@@ -109,6 +123,13 @@ export const ar: typeof en = {
   owner: 'المالك',
   signOut: 'تسجيل الخروج',
   signingOut: 'جارٍ تسجيل الخروج…',
+  hostTerminal: 'طرفية الخادم',
+  hostTab: (n) => `host ${n}`,
+  newTab: 'طرفية جديدة',
+  closeTab: 'إغلاق هذه الطرفية',
+  hideTerminal: 'إخفاء (تبقى الجلسات مفتوحة)',
+  closeTerminal: 'إغلاق كل الطرفيات',
+  resizeTerminal: 'تغيير حجم الطرفية',
 }
 
 export const es: typeof en = {
@@ -146,4 +167,11 @@ export const es: typeof en = {
   owner: 'Propietario',
   signOut: 'Cerrar sesión',
   signingOut: 'Cerrando sesión…',
+  hostTerminal: 'Terminal del servidor',
+  hostTab: (n) => `host ${n}`,
+  newTab: 'Nuevo terminal',
+  closeTab: 'Cerrar este terminal',
+  hideTerminal: 'Ocultar (las sesiones siguen abiertas)',
+  closeTerminal: 'Cerrar todos los terminales',
+  resizeTerminal: 'Redimensionar el terminal',
 }

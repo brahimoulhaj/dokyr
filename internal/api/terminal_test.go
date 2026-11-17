@@ -123,3 +123,42 @@ func TestTerminalWebSocketBridge(t *testing.T) {
 		t.Fatal("PTY not closed on disconnect")
 	}
 }
+
+func TestHostTerminal(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	url := "ws" + strings.TrimPrefix(e.url, "http") + "/api/host/terminal?cols=80&rows=24"
+	dialer := websocket.Dialer{Jar: e.client.Jar}
+	origin := http.Header{"Origin": []string{e.url}}
+
+	// Not configured: refused before any upgrade.
+	if _, res, err := dialer.Dial(url, origin); err == nil || res == nil || res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured host terminal: %v %v", res, err)
+	}
+
+	server, process := net.Pipe()
+	defer process.Close()
+	defer server.Close()
+	e.srv.SetHostTerminal(func(_ context.Context, cols, rows uint) (executor.Terminal, error) {
+		if cols != 80 || rows != 24 {
+			t.Errorf("size %dx%d", cols, rows)
+		}
+		return &testPTY{Conn: server, sizes: make(chan [2]uint, 1)}, nil
+	})
+	if _, res, err := (&websocket.Dialer{}).Dial(url, origin); err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("signed-out host terminal: %v %v", res, err)
+	}
+	ws, _, err := dialer.Dial(url, origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, ready, err := ws.ReadMessage(); err != nil || !strings.Contains(string(ready), "ready") {
+		t.Fatalf("ready: %s %v", ready, err)
+	}
+	go process.Write([]byte("root@host:~# "))
+	if _, output, err := ws.ReadMessage(); err != nil || string(output) != "root@host:~# " {
+		t.Fatalf("output: %q %v", output, err)
+	}
+}
