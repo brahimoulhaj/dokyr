@@ -17,7 +17,7 @@ services:
       context: .
       dockerfile: dev/api.Dockerfile
     environment:
-      DOKYR_ADDR: ":8090"
+      DOKYR_ADDR: ":10000"
       DOKYR_DATA_DIR: /var/lib/dokyr
       DOKYR_DATA_VOLUME: dokyr-data
       DOKYR_PUBLIC_URL: http://localhost:5173
@@ -28,11 +28,11 @@ services:
       - /proc:/host/proc:ro
       - dokyr-data:/var/lib/dokyr
     ports:
-      - "8090:8090"
+      - "10000:10000"
     networks:
       default:
       dokyr:
-        aliases: [dokyr] # the proxy reaches the panel as dokyr:8090
+        aliases: [dokyr] # the proxy reaches the panel as dokyr:10000
     stop_grace_period: 20s
     develop:
       watch:
@@ -55,7 +55,7 @@ services:
       context: .
       dockerfile: dev/web.Dockerfile
     environment:
-      API_URL: http://api:8090
+      API_URL: http://api:10000
     ports:
       - "5173:5173"
     depends_on:
