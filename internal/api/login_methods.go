@@ -48,22 +48,21 @@ func (s *Server) SetAuthPublicURL(publicURL string) {
 // Only configured panel origins are trusted; a supplied Host cannot register an RP
 // or redirect OAuth codes to an arbitrary domain.
 func (s *Server) loginOrigin(r *http.Request) (string, error) {
-	candidates := []string{s.authPublicURL}
+	var candidates []string
 	domain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
 	if err != nil {
 		return "", err
 	}
 	if domain != "" {
-		mode, _, err := s.store.GetSetting(r.Context(), store.SettingPanelTLS)
-		if err != nil {
-			return "", err
-		}
-		scheme := "https"
-		if mode == store.TLSHTTPOnly {
-			scheme = "http"
-		}
-		candidates = append(candidates, scheme+"://"+domain)
+		// HTTP-only describes the connection from a TLS-terminating CDN to Caddy,
+		// not the browser's origin. The configured hostname remains trusted for
+		// HTTPS authentication; plain HTTP origins are still refused below.
+		candidates = append(candidates, "https://"+domain)
 	}
+	// The updater preserves the data directory and the install-time environment.
+	// Prefer the live panel-domain setting so an old HTTP/IP setup URL does not
+	// need an environment-file migration when a new image starts.
+	candidates = append(candidates, s.authPublicURL)
 	for _, candidate := range candidates {
 		u, err := url.Parse(candidate)
 		if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -77,7 +76,7 @@ func (s *Server) loginOrigin(r *http.Request) (string, error) {
 			return origin, nil
 		}
 	}
-	return "", errors.New("use the HTTPS panel domain or configure DOKYR_PUBLIC_URL (localhost is supported for development)")
+	return "", errors.New("open the HTTPS panel domain configured in Settings > General (localhost is supported for development)")
 }
 
 func flowCookieName(kind string) string { return brand.Slug + "_" + strings.ReplaceAll(kind, "-", "_") }
