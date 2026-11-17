@@ -19,27 +19,30 @@ import (
 )
 
 type Server struct {
-	store         *store.Store
-	accounts      *account.Service
-	log           *slog.Logger
-	version       string
-	web           fs.FS
-	authRate      *rateLimiter
-	hookRate      *rateLimiter // webhook calls per IP
-	proxy         ProxyApplier
-	deployer      Deployer
-	updater       Updater
-	git           *gitsource.Service
-	metrics       HostMetrics
-	dockerMetrics DockerMetrics
-	buildDefaults store.BuildLimits
-	registryCheck RegistryChecker
-	s3Test        S3Tester
-	registry      BuiltinRegistry
-	databases     *database.Service
-	notifier      Notifier
-	panelBackups  PanelBackups
-	objectStore   ObjectStore
+	store          *store.Store
+	accounts       *account.Service
+	log            *slog.Logger
+	version        string
+	web            fs.FS
+	authRate       *rateLimiter
+	hookRate       *rateLimiter // webhook calls per IP
+	proxy          ProxyApplier
+	deployer       Deployer
+	updater        Updater
+	git            *gitsource.Service
+	metrics        HostMetrics
+	dockerMetrics  DockerMetrics
+	buildDefaults  store.BuildLimits
+	registryCheck  RegistryChecker
+	s3Test         S3Tester
+	registry       BuiltinRegistry
+	databases      *database.Service
+	notifier       Notifier
+	panelBackups   PanelBackups
+	objectStore    ObjectStore
+	authPublicURL  string
+	loginFlows     loginFlows
+	authHTTPClient *http.Client // injected only by OAuth tests
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
 	stop     chan struct{} // closed when the server shuts down; ends open streams
@@ -79,6 +82,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.limit(s.authRate, s.handleLogin))
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.handleMe))
+	mux.HandleFunc("GET /api/auth/methods", s.handleLoginMethods)
+	mux.HandleFunc("GET /api/auth/security", s.requireAuth(sessionOnly(s.handleSecuritySettings)))
+	mux.HandleFunc("PUT /api/auth/github/config", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleSaveGitHubLogin))))
+	mux.HandleFunc("POST /api/auth/github/start", s.limit(s.authRate, s.handleStartGitHubLogin))
+	mux.HandleFunc("GET "+githubLoginCallback, s.limit(s.authRate, s.handleGitHubLoginCallback))
+	mux.HandleFunc("DELETE /api/auth/github/link", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleUnlinkGitHub))))
+	mux.HandleFunc("POST /api/auth/passkeys/register/begin", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleBeginPasskeyRegistration))))
+	mux.HandleFunc("POST /api/auth/passkeys/register/finish", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleFinishPasskeyRegistration))))
+	mux.HandleFunc("POST /api/auth/passkeys/login/begin", s.limit(s.authRate, s.handleBeginPasskeyLogin))
+	mux.HandleFunc("POST /api/auth/passkeys/login/finish", s.limit(s.authRate, s.handleFinishPasskeyLogin))
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleDeletePasskey))))
 
 	mux.HandleFunc("GET /api/settings/panel", s.requireAuth(s.handleGetPanelSettings))
 	mux.HandleFunc("PUT /api/settings/panel", s.requireAuth(s.handlePutPanelSettings))
