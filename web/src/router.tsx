@@ -49,6 +49,7 @@ const setupRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (s: Record<string, unknown>): { auth_error?: string } => typeof s.auth_error === 'string' ? { auth_error: s.auth_error } : {},
   beforeLoad: async ({ context }) => {
     const meta = await context.queryClient.ensureQueryData(metaQuery)
     if (meta.setup_required) throw redirect({ to: '/setup', search: { token: '' } })
@@ -121,9 +122,10 @@ const builtinRegistryRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
-  validateSearch: (s: Record<string, unknown>): { tab?: SettingsTab; git_error?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { tab?: SettingsTab; git_error?: string; auth_error?: string } => ({
     ...(settingsTabs.includes(s.tab as SettingsTab) ? { tab: s.tab as SettingsTab } : {}),
     ...(typeof s.git_error === 'string' ? { git_error: s.git_error } : {}),
+    ...(typeof s.auth_error === 'string' ? { auth_error: s.auth_error } : {}),
   }),
   component: SettingsPage,
 })
