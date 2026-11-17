@@ -4,6 +4,7 @@
 import * as common from './common'
 import * as shell from './shell'
 import * as auth from './auth'
+import * as security from './security'
 import * as theme from './theme'
 import * as app from './app'
 import * as logviewer from './logviewer'
@@ -47,6 +48,7 @@ const pick = (l: Code) => ({
   common: common[l] as typeof common.en,
   shell: shell[l] as typeof shell.en,
   auth: auth[l] as typeof auth.en,
+  security: security[l] as typeof security.en,
   theme: theme[l] as typeof theme.en,
   app: app[l] as typeof app.en,
   logviewer: logviewer[l] as typeof logviewer.en,
