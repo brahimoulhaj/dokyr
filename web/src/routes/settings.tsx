@@ -4,6 +4,7 @@ import { DnsHintText } from '../components/dns'
 import { Link, useSearch } from '@tanstack/react-router'
 import { GitConnections } from './settings-git'
 import { ApiTokens } from './settings-tokens'
+import { SecuritySettings } from './settings-security'
 import { PanelUpdates } from './settings-updates'
 import { BuildSettingsSection } from './settings-builds'
 import { StorageSettings } from './settings-storage'
@@ -13,7 +14,7 @@ import { Button, CheckOption, ConfirmButton, cx, ErrorNote, Field, HttpOnlyChoic
 import { rich, useT } from '../lib/i18n'
 import { api, ApiError, panelDnsQuery, panelSettingsQuery, type PanelSettings } from '../lib/api'
 
-export const settingsTabs = ['general', 'git', 'builds', 'storage', 'backup', 'notifications', 'tokens'] as const
+export const settingsTabs = ['general', 'security', 'git', 'builds', 'storage', 'backup', 'notifications', 'tokens'] as const
 export type SettingsTab = (typeof settingsTabs)[number]
 
 /** The name of each settings section, for the page's tabs and the sidebar. */
@@ -21,6 +22,7 @@ export function useSettingsTabLabels(): Record<SettingsTab, string> {
   const t = useT()
   return {
     general: t.settings.general,
+    security: t.security.title,
     git: t.settingsGit.title,
     builds: t.settingsBuilds.title,
     storage: t.settingsStorage.title,
@@ -73,6 +75,7 @@ export function SettingsPage() {
         </>
       )}
       {tab === 'git' && <GitConnections />}
+      {tab === 'security' && <SecuritySettings />}
       {tab === 'builds' && <BuildSettingsSection />}
       {tab === 'storage' && <StorageSettings />}
       {tab === 'backup' && <PanelBackupSettings />}

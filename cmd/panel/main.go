@@ -312,6 +312,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	go deployer.Monitor(ctx, deploy.MonitorInterval)
 
 	apiSrv := api.New(st, acc, log, version, webui.FS())
+	apiSrv.SetAuthPublicURL(cfg.PublicURL)
 	databases := database.New(ctx, st, ex)
 	if !inContainer() {
 		databases.AdminerPort = 18081

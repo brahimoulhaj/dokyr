@@ -103,6 +103,39 @@ dokyr owner reset-password [--email E] [--password P]
 dokyr version
 ```
 
+For local development, CLI commands must use the same data directory as the API:
+`DOKYR_DATA_DIR=./.data ./tmp/panel owner reset-password` (no `sudo`).
+With `make dev`, use `docker compose exec api go run ./cmd/panel owner reset-password`.
+
+## Sign-in methods
+
+Settings → Security manages passkeys and GitHub sign-in for the current owner.
+Enter the current password to register/remove a passkey, link/unlink GitHub, or
+change the GitHub OAuth configuration. Password sign-in and CLI password recovery
+remain available.
+
+- **Passkeys:** choose a name, click **Add passkey**, and complete the browser's
+  fingerprint, face, device PIN or security-key prompt. Sign out and choose
+  **Sign in with a passkey**. Passkeys are tied to the hostname where they were
+  registered; register another passkey when moving to a different domain.
+- **GitHub:** create an OAuth App in GitHub → Settings → Developer settings.
+  Use the panel's origin as its homepage and copy the **Authorization callback URL**
+  shown in Settings → Security (development:
+  `http://localhost:5173/api/auth/github/callback`). Save the app's Client ID and
+  client secret, confirming the save with your password. Choose **Link GitHub account**
+  and confirm your password in the dialog to authorize the account link.
+  Once linked, **Sign in with GitHub** accepts that numeric GitHub account ID only;
+  email matching never creates or links accounts. Changing or disabling the OAuth
+  configuration clears existing links, so link again after saving.
+
+Both methods require a configured HTTPS panel domain or `DOKYR_PUBLIC_URL` matching
+the browser origin; HTTP is accepted for localhost/loopback development. GitHub app
+credentials for repository access in Git connections are separate from sign-in.
+The OAuth client secret is encrypted with the panel key and never returned to the
+browser; user OAuth access tokens are used only to look up the GitHub identity and
+are not stored. Pending sign-in challenges expire after five minutes and are lost
+on an API restart; registered passkeys and account links persist.
+
 Configuration is by environment: `DOKYR_DATA_DIR` (default `/var/lib/dokyr`), `DOKYR_ADDR`
 (default `:8080`), `DOKYR_PUBLIC_URL` (base URL for printed links), `DOKYR_MAX_BUILDS` (Git builds
 run at once, default 1; further Git deploys wait, queued, and can be cancelled; queued and interrupted deploys
