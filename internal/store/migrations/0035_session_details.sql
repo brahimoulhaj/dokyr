@@ -1,0 +1,3 @@
+ALTER TABLE sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN last_used_at TEXT;

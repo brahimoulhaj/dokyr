@@ -139,6 +139,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "sign in to continue")
 			return
 		}
+		if err := s.store.TouchSession(r.Context(), auth.HashToken(c.Value), browserSessionDetails(r)); err != nil {
+			s.log.Error("session activity", "error", err)
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
 	}
 }

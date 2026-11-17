@@ -74,14 +74,24 @@ func TestChanges(t *testing.T) {
 	}
 	quiet()
 
-	// Unwatched tables stay silent.
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, created_at) SELECT 'x', id, 'later', 'now' FROM users LIMIT 1`); err != nil {
+	// Session changes update the Security list; normal activity is throttled.
+	user, err := s.CreateUser(ctx, "sessions@example.com", "hash", "owner")
+	if err != nil {
 		t.Fatal(err)
 	}
 	quiet()
+	if err := s.CreateSession(ctx, user.ID, "test-session", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	wait("sessions")
+	if err := s.TouchSession(ctx, "test-session", SessionDetails{}); err != nil {
+		t.Fatal(err)
+	}
+	quiet()
+	if err := s.DeleteUserSessions(ctx, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	wait("sessions")
 
 	stop()
 	if _, err := s.CreateProject(ctx, "After", ""); err != nil {

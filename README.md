@@ -111,29 +111,41 @@ With `make dev`, use `docker compose exec api go run ./cmd/panel owner reset-pas
 
 Settings → Security manages passkeys and GitHub sign-in for the current owner.
 Enter the current password to register/remove a passkey, link/unlink GitHub, or
-change the GitHub OAuth configuration. Password sign-in and CLI password recovery
+disable GitHub sign-in. Password sign-in and CLI password recovery
 remain available.
+
+The **Active sessions** section shows the current session first, with browser/device,
+IP address, sign-in time and last activity. Sign out an individual session or use
+**Log out other sessions** to keep the current browser signed in and revoke every
+other session. Revoking another session requires password confirmation; signing
+out the current browser uses the normal logout flow. Session lists are scoped to
+the signed-in owner and never expose tokens or token hashes. Existing sessions
+survive the schema update and acquire device information on their next request.
 
 - **Passkeys:** choose a name, click **Add passkey**, and complete the browser's
   fingerprint, face, device PIN or security-key prompt. Sign out and choose
   **Sign in with a passkey**. Passkeys are tied to the hostname where they were
   registered; register another passkey when moving to a different domain.
-- **GitHub:** create an OAuth App in GitHub → Settings → Developer settings.
-  Use the panel's origin as its homepage and copy the **Authorization callback URL**
-  shown in Settings → Security (development:
-  `http://localhost:5173/api/auth/github/callback`). Save the app's Client ID and
-  client secret, confirming the save with your password. Choose **Link GitHub account**
-  and confirm your password in the dialog to authorize the account link.
+- **GitHub:** choose **Link GitHub account**, confirm your password, and continue
+  on GitHub. On first use, GitHub asks you to create a private sign-in app for this
+  panel, then authorize your account. Dokyr registers the callbacks and stores
+  the credentials automatically; there are no Client ID or secret fields to fill in.
+  Later sign-ins go directly to GitHub authorization. Existing OAuth App
+  configurations continue to work without creating a new app.
   Once linked, **Sign in with GitHub** accepts that numeric GitHub account ID only;
-  email matching never creates or links accounts. Changing or disabling the OAuth
-  configuration clears existing links, so link again after saving.
+  email matching never creates or links accounts. **Disable GitHub sign-in** clears
+  the panel's credentials and account links; delete the app separately in GitHub
+  if it is no longer needed.
 
 Both methods require a configured HTTPS panel domain or `DOKYR_PUBLIC_URL` matching
 the browser origin; HTTP is accepted for localhost/loopback development. GitHub app
 credentials for repository access in Git connections are separate from sign-in.
 The OAuth client secret is encrypted with the panel key and never returned to the
 browser; user OAuth access tokens are used only to look up the GitHub identity and
-are not stored. Pending sign-in challenges expire after five minutes and are lost
+are not stored. App setup and account authorization are separate, single-use,
+browser-session-bound steps; creating an app alone never links an account. The
+sign-in app requests no repository permissions or webhook events. Pending
+sign-in challenges expire after five minutes and are lost
 on an API restart; registered passkeys and account links persist.
 
 Sign-in automatically uses the HTTPS domain saved in Settings → General. The

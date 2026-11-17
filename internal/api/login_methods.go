@@ -461,22 +461,36 @@ func (s *Server) startGitHubFlow(w http.ResponseWriter, r *http.Request, f login
 		return
 	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
+		if f.UserID != "" {
+			f.Origin = origin
+			s.startGitHubSetup(w, r, f)
+			return
+		}
 		writeError(w, 422, "disabled", "GitHub sign-in is not configured")
 		return
 	}
 	f.Origin = origin
-	f.Verifier = auth.NewToken()
-	f.ClientID = cfg.ClientID
-	state, err := s.beginLoginFlow(w, f)
+	link, err := s.githubAuthorizeURL(w, f, cfg)
 	if err != nil {
 		writeError(w, 429, "busy", err.Error())
 		return
 	}
+	writeJSON(w, 200, map[string]string{"url": link})
+}
+
+func (s *Server) githubAuthorizeURL(w http.ResponseWriter, f loginFlow, cfg store.GitHubLoginConfig) (string, error) {
+	f.Kind = "github"
+	f.Verifier = auth.NewToken()
+	f.ClientID = cfg.ClientID
+	state, err := s.beginLoginFlow(w, f)
+	if err != nil {
+		return "", err
+	}
 	// State is tied to the random browser cookie, not to a callback query alone.
 	challenge := sha256.Sum256([]byte(f.Verifier))
-	q := url.Values{"client_id": {cfg.ClientID}, "redirect_uri": {origin + githubLoginCallback}, "scope": {"read:user"}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]string{"url": "https://github.com/login/oauth/authorize?" + q.Encode()})
+	// GitHub Apps use registration permissions instead of OAuth App scopes.
+	q := url.Values{"client_id": {cfg.ClientID}, "redirect_uri": {f.Origin + githubLoginCallback}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
+	return "https://github.com/login/oauth/authorize?" + q.Encode(), nil
 }
 
 func (s *Server) handleGitHubLoginCallback(w http.ResponseWriter, r *http.Request) {
@@ -529,7 +543,7 @@ func (s *Server) handleGitHubLoginCallback(w http.ResponseWriter, r *http.Reques
 		fail()
 		return
 	}
-	token, _, err := s.accounts.NewSession(ctx, u.ID)
+	token, _, err := s.accounts.NewSession(ctx, u.ID, browserSessionDetails(r))
 	if err != nil {
 		fail()
 		return

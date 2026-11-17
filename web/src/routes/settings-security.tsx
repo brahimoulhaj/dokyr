@@ -7,13 +7,12 @@ import { api } from '../lib/api'
 import { dateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { passkeysSupported, registerPasskey } from '../lib/passkeys'
+import { ActiveSessions } from './settings-sessions'
 
 type Security = {
   passkeys: { id: string; name: string; rp_id: string; created_at: string; last_used_at: string | null }[]
   github_identity: { login: string } | null
-  github_client_id: string
   github_configured: boolean
-  callback_url: string
   origin_error: string
 }
 const securityQuery = { queryKey: ['auth', 'security'], queryFn: () => api<Security>('/auth/security') }
@@ -31,8 +30,6 @@ function SecurityForm({ data }: { data: Security }) {
   const search = useSearch({ strict: false }) as { auth_error?: string }
   const [confirmation, setConfirmation] = useState<PasswordAction | null>(null)
   const [name, setName] = useState('')
-  const [clientID, setClientID] = useState(data.github_client_id)
-  const [secret, setSecret] = useState('')
   const [notice, setNotice] = useState('')
   function confirm(action: PasswordAction) {
     setNotice('')
@@ -45,8 +42,18 @@ function SecurityForm({ data }: { data: Security }) {
     qc.invalidateQueries({ queryKey: ['auth', 'methods'] })
   }
   async function linkGitHub(password: string) {
-    const { url } = await api<{ url: string }>('/auth/github/start', { method: 'POST', body: { link: true, password } })
-    location.assign(url)
+    const next = await api<{ url: string } | { action_url: string; manifest: string }>('/auth/github/start', { method: 'POST', body: { link: true, password } })
+    if ('url' in next) { location.assign(next.url); return }
+    const form = document.createElement('form')
+    form.method = 'post'
+    form.action = next.action_url
+    const manifest = document.createElement('input')
+    manifest.type = 'hidden'
+    manifest.name = 'manifest'
+    manifest.value = next.manifest
+    form.appendChild(manifest)
+    document.body.appendChild(form)
+    form.submit()
   }
 
   return <div className="space-y-4">
@@ -75,27 +82,14 @@ function SecurityForm({ data }: { data: Security }) {
         {data.github_identity ? <div className="flex flex-wrap items-center justify-between gap-3 border border-line p-3">
           <span className="text-sm" dir="ltr">@{data.github_identity.login}</span>
           <Button type="button" variant="danger" onClick={() => confirm({ title: text.unlink, confirm: text.unlink, detail: `@${data.github_identity!.login}`, tone: 'danger', onConfirm: (password) => api('/auth/github/link', { method: 'DELETE', body: { password } }) })}>{text.unlink}</Button>
-        </div> : <Button type="button" variant="ghost" disabled={!data.github_configured || !!data.origin_error} onClick={() => confirm({ title: text.linkGitHub, confirm: text.linkGitHub, onConfirm: linkGitHub })}>{text.linkGitHub}</Button>}
-        <details className="border-t border-line pt-3" open={!data.github_configured}>
-          <summary className="cursor-pointer text-sm">{text.configureGitHub}</summary>
-          <div className="mt-3 space-y-3">
-            <p className="text-xs text-muted">{text.setupHint} <a href="https://github.com/settings/developers" target="_blank" rel="noreferrer" className="text-accent hover:underline">{text.oauthApps}</a></p>
-            {data.callback_url && <Field label={text.callback} name="github-callback" value={data.callback_url} readOnly dir="ltr" onFocus={(e) => e.target.select()} />}
-            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); confirm({ title: text.configureGitHub, confirm: t.common.save, detail: text.configHint, onConfirm: async (password) => { await api('/auth/github/config', { method: 'PUT', body: { client_id: clientID, client_secret: secret, password } }); setSecret('') } }) }}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Client ID" name="github-client-id" dir="ltr" autoComplete="off" maxLength={200} value={clientID} onChange={(e) => setClientID(e.target.value)} />
-                <Field label="Client secret" name="github-client-secret" type="password" autoComplete="new-password" maxLength={500} value={secret} onChange={(e) => setSecret(e.target.value)} hint={data.github_configured ? text.secretHint : undefined} />
-              </div>
-              <p className="text-xs text-muted">{text.configHint}</p>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={!clientID.trim() || (!secret && !data.github_configured)}>{t.common.save}</Button>
-                {data.github_configured && <Button type="button" variant="danger" onClick={() => confirm({ title: text.disableGitHub, confirm: text.disableGitHub, tone: 'danger', onConfirm: async (password) => { await api('/auth/github/config', { method: 'PUT', body: { client_id: '', client_secret: '', password } }); setClientID(''); setSecret('') } })}>{text.disableGitHub}</Button>}
-              </div>
-            </form>
-          </div>
-        </details>
+        </div> : <Button type="button" variant="ghost" disabled={!!data.origin_error} onClick={() => confirm({ title: text.linkGitHub, confirm: text.continueGitHub, onConfirm: linkGitHub })}>{text.linkGitHub}</Button>}
+        {!data.github_configured && <p className="text-xs text-muted">{text.automaticGitHubHint}</p>}
+        {data.github_configured && <div className="border-t border-line pt-3">
+          <Button type="button" variant="danger" className="h-7 px-2 text-xs" onClick={() => confirm({ title: text.disableGitHub, confirm: text.disableGitHub, detail: text.disableGitHubHint, tone: 'danger', onConfirm: (password) => api('/auth/github/config', { method: 'PUT', body: { client_id: '', client_secret: '', password } }) })}>{text.disableGitHub}</Button>
+        </div>}
       </div>
     </Panel>
+    <ActiveSessions confirm={confirm} />
     {confirmation && <PasswordConfirmDialog action={confirmation} onClose={() => setConfirmation(null)} onComplete={completed} />}
   </div>
 }

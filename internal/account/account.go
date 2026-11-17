@@ -196,10 +196,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (store.User
 }
 
 // NewSession stores a session for the user and returns the cookie token.
-func (s *Service) NewSession(ctx context.Context, userID string) (token string, expires time.Time, err error) {
+func (s *Service) NewSession(ctx context.Context, userID string, details ...store.SessionDetails) (token string, expires time.Time, err error) {
 	token = auth.NewToken()
 	expires = time.Now().Add(SessionTTL)
-	return token, expires, s.store.CreateSession(ctx, userID, auth.HashToken(token), expires)
+	return token, expires, s.store.CreateSession(ctx, userID, auth.HashToken(token), expires, details...)
 }
 
 func (s *Service) SessionUser(ctx context.Context, token string) (store.User, error) {

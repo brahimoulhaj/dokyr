@@ -11,7 +11,7 @@ import (
 // it there means no code path can forget to announce a change.
 //
 // Only table names are sent, never row contents. Tables that change constantly or carry
-// nothing the UI shows live (sessions, metric samples) are left out.
+// nothing the UI shows live (metric samples) are left out.
 type Changes struct {
 	mu   sync.Mutex
 	subs map[*Subscription]struct{}
@@ -25,6 +25,7 @@ var watchedTables = map[string]bool{
 	"db_databases": true, "db_users": true, "db_user_grants": true,
 	"registries": true, "registry_tokens": true, "git_sources": true, "s3_connections": true,
 	"notification_channels": true, "alert_rules": true, "settings": true, "api_tokens": true,
+	"sessions": true,
 }
 
 // Subscription collects the tables changed since it was last drained.

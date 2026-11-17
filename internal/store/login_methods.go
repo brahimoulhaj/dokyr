@@ -127,6 +127,16 @@ func (s *Store) GitHubLoginConfig(ctx context.Context) (GitHubLoginConfig, error
 
 // Config uses the same encrypted-at-rest format as application secrets.
 func (s *Store) SetGitHubLoginConfig(ctx context.Context, cfg GitHubLoginConfig) error {
+	return s.setGitHubLoginConfig(ctx, cfg, false)
+}
+
+// CreateGitHubLoginConfig never replaces an app already configured while the
+// owner was completing a separate first-time setup on GitHub.
+func (s *Store) CreateGitHubLoginConfig(ctx context.Context, cfg GitHubLoginConfig) error {
+	return s.setGitHubLoginConfig(ctx, cfg, true)
+}
+
+func (s *Store) setGitHubLoginConfig(ctx context.Context, cfg GitHubLoginConfig, onlyIfMissing bool) error {
 	value, err := s.sealEnvironment(map[string]string{"client_id": cfg.ClientID, "client_secret": cfg.ClientSecret})
 	if err != nil {
 		return err
@@ -137,6 +147,22 @@ func (s *Store) SetGitHubLoginConfig(ctx context.Context, cfg GitHubLoginConfig)
 		return err
 	}
 	defer tx.Rollback()
+	if onlyIfMissing {
+		var current string
+		err := tx.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'github_login'`).Scan(&current)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			old, err := s.openEnvironment(current)
+			if err != nil {
+				return err
+			}
+			if old["client_id"] != "" && old["client_secret"] != "" {
+				return ErrConflict
+			}
+		}
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM login_identities WHERE provider = 'github'`); err != nil {
 		return err
 	}

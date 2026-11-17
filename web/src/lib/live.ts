@@ -32,6 +32,7 @@ const readers: Record<string, QueryKey[]> = {
   alert_rules: [['notifications']],
   settings: [['settings'], ['registry']],
   api_tokens: [['tokens']],
+  sessions: [['auth', 'sessions']],
 }
 
 let connected = false

@@ -80,7 +80,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u store.User, status int) {
-	token, _, err := s.accounts.NewSession(r.Context(), u.ID)
+	token, _, err := s.accounts.NewSession(r.Context(), u.ID, browserSessionDetails(r))
 	if err != nil {
 		s.internal(w, "create session", err)
 		return
