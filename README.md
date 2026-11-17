@@ -136,6 +136,14 @@ browser; user OAuth access tokens are used only to look up the GitHub identity a
 are not stored. Pending sign-in challenges expire after five minutes and are lost
 on an API restart; registered passkeys and account links persist.
 
+Sign-in automatically uses the HTTPS domain saved in Settings → General. The
+self-updater preserves that setting and the new image reads it on startup, even
+if the installer originally set `DOKYR_PUBLIC_URL` to an HTTP IP address. No edit
+to `panel.env`, installer rerun, or manual container recreation is needed. HTTP-only
+mode describes the CDN-to-Caddy connection; browsers still use HTTPS for passkeys.
+`DOKYR_PUBLIC_URL` remains an optional fallback for external proxy deployments
+without a saved panel domain and for localhost development.
+
 Configuration is by environment: `DOKYR_DATA_DIR` (default `/var/lib/dokyr`), `DOKYR_ADDR`
 (default `:8080`), `DOKYR_PUBLIC_URL` (base URL for printed links), `DOKYR_MAX_BUILDS` (Git builds
 run at once, default 1; further Git deploys wait, queued, and can be cancelled; queued and interrupted deploys
