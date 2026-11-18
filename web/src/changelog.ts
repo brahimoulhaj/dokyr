@@ -16,8 +16,10 @@ export type Release = {
 export const changelog: Release[] = [
   {
     version: '0.27.0',
+    date: '2026-11-18',
     changes: {
       en: [
+        'Cron jobs: schedule bash scripts on the server from the main menu, instead of crontab -e.',
         'The host terminal asks for your password before a shell opens.',
         'The host terminal can open as a chosen user instead of root, and can be switched off in Settings → Security.',
         'The whole panel is more compact.',
@@ -25,6 +27,7 @@ export const changelog: Release[] = [
         'This menu: what changed in each version.',
       ],
       fr: [
+        'Tâches cron : planifiez des scripts bash sur le serveur depuis le menu principal, au lieu de crontab -e.',
         'Le terminal de l’hôte demande votre mot de passe avant d’ouvrir un shell.',
         'Le terminal de l’hôte peut s’ouvrir avec un utilisateur choisi plutôt que root, et se désactive dans Paramètres → Sécurité.',
         'Tout le panneau est plus compact.',
@@ -32,6 +35,7 @@ export const changelog: Release[] = [
         'Ce menu : ce qui a changé dans chaque version.',
       ],
       ar: [
+        'مهام cron: جدولة سكربتات Bash على الخادم من القائمة الرئيسية بدل crontab -e.',
         'طرفية الخادم تطلب كلمة المرور قبل فتح الصدفة.',
         'يمكن فتح طرفية الخادم بمستخدم تختاره بدل root، ويمكن إيقافها من الإعدادات ← الأمان.',
         'اللوحة كلها أصبحت أكثر إحكامًا.',
@@ -39,6 +43,7 @@ export const changelog: Release[] = [
         'هذه القائمة: ما تغيّر في كل إصدار.',
       ],
       es: [
+        'Tareas cron: programa scripts de bash en el servidor desde el menú principal, en lugar de crontab -e.',
         'El terminal del host pide tu contraseña antes de abrir un shell.',
         'El terminal del host puede abrirse con un usuario elegido en lugar de root, y se desactiva en Ajustes → Seguridad.',
         'Todo el panel es más compacto.',
