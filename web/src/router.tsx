@@ -4,6 +4,7 @@ import { Shell } from './components/shell'
 import { meQuery, metaQuery, onboardingQuery } from './lib/api'
 import { ActivityPage } from './routes/activity'
 import { RegistryPage } from './routes/registries'
+import { DomainsPage } from './routes/domains'
 import { BuiltinRegistryPage, builtinTabs, type BuiltinTab } from './routes/registry-builtin'
 import { AppPage, appTabs, type AppTab } from './routes/app'
 import { LoginPage } from './routes/login'
@@ -112,6 +113,7 @@ const databaseRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { tab?: DatabaseTab } => (databaseTabs.includes(s.tab as DatabaseTab) ? { tab: s.tab as DatabaseTab } : {}),
 })
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
+const domainsRoute = createRoute({ getParentRoute: () => appRoute, path: '/domains', component: DomainsPage })
 const storageRoute = createRoute({ getParentRoute: () => appRoute, path: '/storage', component: StoragePage })
 const builtinRegistryRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -134,7 +136,7 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
   onboardingRoute,
-  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute, storageRoute,
+  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
     builtinRegistryRoute, settingsRoute, databasesRoute, databaseRoute]),
 ])
 

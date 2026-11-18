@@ -166,8 +166,8 @@ func TestProjectsAppsDomains(t *testing.T) {
 	if err := s.DeleteProject(ctx, p.ID); err != nil {
 		t.Fatalf("delete empty project: %v", err)
 	}
-	if ok, _ := s.DomainExists(ctx, "shop.example.com"); ok {
-		t.Error("domain survived its project")
+	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
+		t.Error("the domain went with its project; it should stay, unused")
 	}
 	if err := s.DeleteProject(ctx, p.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete project twice = %v", err)

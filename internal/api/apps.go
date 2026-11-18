@@ -184,16 +184,17 @@ func toRouteJSON(r store.Route) routeJSON {
 }
 
 type domainJSON struct {
-	ID        string      `json:"id"`
-	ProjectID string      `json:"project_id"`
-	Hostname  string      `json:"hostname"`
-	TLSMode   string      `json:"tls_mode"`
-	Routes    []routeJSON `json:"routes"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID          string      `json:"id"`
+	ProjectID   string      `json:"project_id"` // "" while no project uses the domain
+	ProjectName string      `json:"project_name"`
+	Hostname    string      `json:"hostname"`
+	TLSMode     string      `json:"tls_mode"`
+	Routes      []routeJSON `json:"routes"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 func toDomainJSON(d store.Domain, routes []store.Route) domainJSON {
-	out := domainJSON{ID: d.ID, ProjectID: d.ProjectID, Hostname: d.Hostname, TLSMode: d.TLSMode, Routes: []routeJSON{}, CreatedAt: d.CreatedAt}
+	out := domainJSON{ID: d.ID, ProjectID: d.ProjectID, ProjectName: d.ProjectName, Hostname: d.Hostname, TLSMode: d.TLSMode, Routes: []routeJSON{}, CreatedAt: d.CreatedAt}
 	for _, r := range routes {
 		if r.DomainID == d.ID {
 			out.Routes = append(out.Routes, toRouteJSON(r))
@@ -942,49 +943,153 @@ func (s *Server) proxyApplied(w http.ResponseWriter, r *http.Request, status int
 	writeJSON(w, status, v)
 }
 
-func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Hostname string `json:"hostname"`
-		TLSMode  string `json:"tls_mode"` // optional; "auto" (default) or "http_only"
-	}
-	if !readJSON(w, r, &in) {
+// handleAllDomains lists every domain of the panel, with the project using each.
+func (s *Server) handleAllDomains(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.AllDomains(r.Context())
+	if err != nil {
+		s.internal(w, "list domains", err)
 		return
 	}
+	routes, err := s.store.AllRoutes(r.Context())
+	if err != nil {
+		s.internal(w, "list routes", err)
+		return
+	}
+	out := make([]domainJSON, 0, len(list))
+	for _, d := range list {
+		out = append(out, toDomainJSON(d, routes))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type domainInput struct {
+	Hostname string `json:"hostname"`
+	TLSMode  string `json:"tls_mode"` // optional; "auto" (default) or "http_only"
+}
+
+// createDomain validates and stores a new hostname, for projectID or for no project ("").
+// It reports false after answering with the error.
+func (s *Server) createDomain(w http.ResponseWriter, r *http.Request, in domainInput, projectID string) (store.Domain, bool) {
 	if in.TLSMode == "" {
 		in.TLSMode = store.TLSAuto
 	}
 	if !store.ValidTLSMode(in.TLSMode) {
 		invalid(w, `tls_mode must be "auto" or "http_only"`)
-		return
+		return store.Domain{}, false
 	}
 	host := strings.ToLower(strings.TrimSpace(in.Hostname))
 	if err := proxy.ValidHost(host); err != nil {
 		invalid(w, "hostname must be a domain name like shop.example.com (no scheme, port, path or wildcard)")
+		return store.Domain{}, false
+	}
+	panelDomain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
+	if err != nil {
+		s.internal(w, "create domain", err)
+		return store.Domain{}, false
+	}
+	if host == panelDomain {
+		writeError(w, http.StatusConflict, "conflict", "this hostname is the panel's own domain")
+		return store.Domain{}, false
+	}
+	if host == s.registryDomain(r.Context()) {
+		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
+		return store.Domain{}, false
+	}
+	d, err := s.store.CreateDomain(r.Context(), projectID, host, in.TLSMode)
+	if s.storeError(w, "create domain", err, "this domain is already added") {
+		return store.Domain{}, false
+	}
+	s.audit(r, "domain.create", "domain", d.ID, d.Hostname, "")
+	return d, true
+}
+
+// handleCreateDomain adds a domain to the panel. With project_id, that project uses it
+// right away.
+func (s *Server) handleCreateDomain(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		domainInput
+		ProjectID string `json:"project_id"`
+	}
+	if !readJSON(w, r, &in) {
 		return
+	}
+	var p store.Project
+	if in.ProjectID != "" {
+		var err error
+		if p, err = s.store.GetProject(r.Context(), in.ProjectID); errors.Is(err, store.ErrNotFound) {
+			invalid(w, "project_id must be an existing project")
+			return
+		} else if err != nil {
+			s.internal(w, "get project", err)
+			return
+		}
+	}
+	d, ok := s.createDomain(w, r, in.domainInput, in.ProjectID)
+	if !ok {
+		return
+	}
+	if in.ProjectID != "" {
+		s.audit(r, "domain.add", "project", p.ID, p.Name, d.Hostname)
+	}
+	s.proxyApplied(w, r, http.StatusCreated, toDomainJSON(d, nil))
+}
+
+// handleAttachDomain makes a project use a domain: one already added (domain_id), or a
+// new one added on the way (hostname).
+func (s *Server) handleAttachDomain(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		domainInput
+		DomainID string `json:"domain_id"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.DomainID == "" {
+		if strings.TrimSpace(in.Hostname) == "" {
+			invalid(w, "domain_id or hostname is required")
+			return
+		}
 	}
 	p, err := s.store.GetProject(r.Context(), r.PathValue("id"))
 	if s.storeError(w, "get project", err, "") {
 		return
 	}
-	panelDomain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
-	if err != nil {
-		s.internal(w, "create domain", err)
-		return
+	var d store.Domain
+	if in.DomainID == "" {
+		var ok bool
+		if d, ok = s.createDomain(w, r, in.domainInput, p.ID); !ok {
+			return
+		}
+	} else {
+		d, err = s.store.AttachDomain(r.Context(), in.DomainID, p.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			invalid(w, "domain_id must be an existing domain")
+			return
+		}
+		if s.storeError(w, "attach domain", err, "this domain is already used by another project") {
+			return
+		}
 	}
-	if host == panelDomain {
-		writeError(w, http.StatusConflict, "conflict", "this hostname is the panel's own domain")
-		return
-	}
-	if host == s.registryDomain(r.Context()) {
-		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
-		return
-	}
-	d, err := s.store.CreateDomain(r.Context(), p.ID, host, in.TLSMode)
-	if s.storeError(w, "create domain", err, "this hostname is already used by a project") {
-		return
-	}
-	s.audit(r, "domain.add", "project", p.ID, p.Name, host)
+	s.audit(r, "domain.add", "project", p.ID, p.Name, d.Hostname)
 	s.proxyApplied(w, r, http.StatusCreated, toDomainJSON(d, nil))
+}
+
+// handleDetachDomain takes a domain back from a project. Its routes go; the domain stays.
+func (s *Server) handleDetachDomain(w http.ResponseWriter, r *http.Request) {
+	d, err := s.store.GetDomain(r.Context(), r.PathValue("domainId"))
+	if s.storeError(w, "get domain", err, "") {
+		return
+	}
+	if d.ProjectID == "" || d.ProjectID != r.PathValue("id") {
+		writeError(w, http.StatusNotFound, "not_found", "this project does not use that domain")
+		return
+	}
+	if s.storeError(w, "detach domain", s.store.DetachDomain(r.Context(), d.ID), "") {
+		return
+	}
+	s.audit(r, "domain.remove", "project", d.ProjectID, d.ProjectName, d.Hostname)
+	s.applyProxy(r.Context())
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleUpdateDomain changes a domain's TLS mode.
@@ -1010,7 +1115,7 @@ func (s *Server) handleUpdateDomain(w http.ResponseWriter, r *http.Request) {
 	if d, err = s.store.SetDomainTLS(r.Context(), d.ID, in.TLSMode); s.storeError(w, "update domain", err, "") {
 		return
 	}
-	s.audit(r, "domain.tls", "project", d.ProjectID, s.projectName(r.Context(), d.ProjectID), d.Hostname+": "+in.TLSMode)
+	s.audit(r, "domain.tls", "domain", d.ID, d.Hostname, in.TLSMode)
 	s.proxyApplied(w, r, http.StatusOK, toDomainJSON(d, nil))
 }
 
@@ -1022,16 +1127,13 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "delete domain", s.store.DeleteDomain(r.Context(), d.ID), "") {
 		return
 	}
-	s.audit(r, "domain.remove", "project", d.ProjectID, s.projectName(r.Context(), d.ProjectID), d.Hostname)
+	detail := ""
+	if d.ProjectName != "" {
+		detail = "used by " + d.ProjectName
+	}
+	s.audit(r, "domain.delete", "domain", d.ID, d.Hostname, detail)
 	s.applyProxy(r.Context())
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) projectName(ctx context.Context, projectID string) string {
-	if p, err := s.store.GetProject(ctx, projectID); err == nil {
-		return p.Name
-	}
-	return ""
 }
 
 type routeInput struct {
@@ -1053,7 +1155,7 @@ func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Doma
 	}
 	a, err := s.store.GetApp(r.Context(), in.AppID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && a.ProjectID != d.ProjectID) {
-		invalid(w, "app_id must be an app of the domain's project")
+		invalid(w, "app_id must be an app of the project that uses the domain")
 		return false
 	}
 	if err != nil {

@@ -5,13 +5,14 @@ import { useState, type ReactNode } from 'react'
 import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
 import { Database } from '@phosphor-icons/react/dist/csr/Database'
 import { FolderSimple } from '@phosphor-icons/react/dist/csr/FolderSimple'
+import { Globe } from '@phosphor-icons/react/dist/csr/Globe'
 import { GearSix } from '@phosphor-icons/react/dist/csr/GearSix'
 import { HardDrives } from '@phosphor-icons/react/dist/csr/HardDrives'
 import { Package } from '@phosphor-icons/react/dist/csr/Package'
 import { Plus } from '@phosphor-icons/react/dist/csr/Plus'
 import { SquaresFour } from '@phosphor-icons/react/dist/csr/SquaresFour'
 import type { Icon } from '@phosphor-icons/react'
-import { objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
+import { allDomainsQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
 import { databasesQuery } from '../lib/databases'
 import { useT } from '../lib/i18n'
 import { NewApp } from '../routes/project'
@@ -34,6 +35,7 @@ export function Sidebar() {
   const databases = useQuery(databasesQuery)
   const store = useQuery({ ...objectStoreQuery, retry: false })
   const registries = useQuery(registriesQuery)
+  const domains = useQuery(allDomainsQuery)
   const builtin = useQuery({ ...registrySettingsQuery, retry: false })
   const settingsLabels = useSettingsTabLabels()
   const [creatingIn, setCreatingIn] = useState<Project | null>(null)
@@ -79,6 +81,7 @@ export function Sidebar() {
       </Group>
 
       <Group label={ts.groupInfrastructure}>
+        <NavItem to="/domains" icon={Globe} label={t.domains.title} trailing={<Count n={domains.data?.length} />} />
         <NavItem to="/storage" icon={HardDrives} label={ts.storage} trailing={store.data && <StorageState enabled={store.data.enabled} state={store.data.state} />} />
         <NavItem to="/registry" icon={Package} label={ts.registry} trailing={<Count n={registries.isSuccess ? registryCount : undefined} />} />
       </Group>
@@ -123,7 +126,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage'
+type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains'
 
 // Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
 function NavItem({ to, icon: ItemIcon, label, exact, trailing }: { to: To; icon: Icon; label: string; exact?: boolean; trailing?: ReactNode }) {

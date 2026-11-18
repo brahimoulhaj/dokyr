@@ -55,7 +55,7 @@ func TestAppsRequireAuth(t *testing.T) {
 	for _, c := range [][2]string{
 		{"GET", "/api/projects"}, {"POST", "/api/projects"}, {"GET", "/api/projects/x"}, {"DELETE", "/api/projects/x"},
 		{"GET", "/api/apps/x"}, {"POST", "/api/apps/x/deploy"}, {"POST", "/api/apps/x/stop"}, {"DELETE", "/api/apps/x"},
-		{"POST", "/api/projects/x/domains"}, {"POST", "/api/domains/x/routes"}, {"DELETE", "/api/domains/x"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
+		{"POST", "/api/projects/x/domains"}, {"DELETE", "/api/projects/x/domains/y"}, {"GET", "/api/domains"}, {"POST", "/api/domains"}, {"POST", "/api/domains/x/routes"}, {"DELETE", "/api/domains/x"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
 	} {
 		if code, _ := e.call(c[0], c[1], map[string]any{}); code != 401 {
 			t.Errorf("%s %s signed out = %d, want 401", c[0], c[1], code)
@@ -352,6 +352,76 @@ func TestDomainsAPI(t *testing.T) {
 	e.must(204, "DELETE", "/api/domains/"+did, nil)
 	e.must(404, "DELETE", "/api/domains/"+did, nil)
 	e.must(201, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"hostname": "shop.example.com"})
+}
+
+func TestTopLevelDomainsAPI(t *testing.T) {
+	e := newEnv(t)
+	px := &fakeProxy{}
+	e.srv.SetProxy(px)
+	e.signIn()
+	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
+	web := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
+	pid2 := e.must(201, "POST", "/api/projects", map[string]any{"name": "Blog"})["id"].(string)
+
+	// Added on its own: listed, used by no project, and already known to the proxy.
+	e.must(422, "POST", "/api/domains", map[string]any{"hostname": "nodots"})
+	e.must(422, "POST", "/api/domains", map[string]any{"hostname": "shop.example.com", "project_id": "missing"})
+	d := e.must(201, "POST", "/api/domains", map[string]any{"hostname": " Shop.Example.com ", "tls_mode": "http_only"})
+	if d["hostname"] != "shop.example.com" || d["project_id"] != "" || d["tls_mode"] != "http_only" || px.applied != 1 {
+		t.Fatalf("created = %v, applied %d", d, px.applied)
+	}
+	did := d["id"].(string)
+	e.must(409, "POST", "/api/domains", map[string]any{"hostname": "shop.example.com"})
+	if got := e.list("/api/projects/" + pid + "/domains"); len(got) != 0 {
+		t.Fatalf("project domains before attach = %v", got)
+	}
+	// No routes while no project uses it.
+	e.must(422, "POST", "/api/domains/"+did+"/routes", map[string]any{"path": "/", "app_id": web})
+
+	// A project picks it; a second project cannot.
+	attach := "/api/projects/" + pid + "/domains"
+	e.must(422, "POST", attach, map[string]any{})
+	e.must(422, "POST", attach, map[string]any{"domain_id": "missing"})
+	if m := e.must(201, "POST", attach, map[string]any{"domain_id": did}); m["project_id"] != pid || m["project_name"] != "Shop" {
+		t.Fatalf("attached = %v", m)
+	}
+	e.must(409, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"domain_id": did})
+	e.must(201, "POST", "/api/domains/"+did+"/routes", map[string]any{"path": "/", "app_id": web})
+	all := e.list("/api/domains")
+	if len(all) != 1 || all[0]["project_name"] != "Shop" || len(all[0]["routes"].([]any)) != 1 {
+		t.Fatalf("all domains = %v", all)
+	}
+
+	// Created straight into a project.
+	if m := e.must(201, "POST", "/api/domains", map[string]any{"hostname": "blog.example.com", "project_id": pid2}); m["project_id"] != pid2 {
+		t.Fatalf("created in project = %v", m)
+	}
+	if got := e.list("/api/projects/" + pid2 + "/domains"); len(got) != 1 || got[0]["hostname"] != "blog.example.com" {
+		t.Fatalf("blog domains = %v", got)
+	}
+
+	// Detach: only from the project that uses it; routes go, the domain stays and is free.
+	e.must(404, "DELETE", "/api/projects/"+pid2+"/domains/"+did, nil)
+	e.must(404, "DELETE", "/api/projects/"+pid+"/domains/missing", nil)
+	before := px.applied
+	e.must(204, "DELETE", "/api/projects/"+pid+"/domains/"+did, nil)
+	if px.applied != before+1 {
+		t.Fatal("detach did not reload the proxy")
+	}
+	e.must(404, "DELETE", "/api/projects/"+pid+"/domains/"+did, nil)
+	if got := e.list("/api/apps/" + web + "/routes"); len(got) != 0 {
+		t.Fatalf("routes after detach = %v", got)
+	}
+	if all := e.list("/api/domains"); len(all) != 2 || all[1]["hostname"] != "shop.example.com" || all[1]["project_id"] != "" {
+		t.Fatalf("after detach = %v", all)
+	}
+	e.must(201, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"domain_id": did})
+
+	// Deleting a domain a project uses removes it from the project too.
+	e.must(204, "DELETE", "/api/domains/"+did, nil)
+	if got := e.list("/api/projects/" + pid2 + "/domains"); len(got) != 1 {
+		t.Fatalf("blog domains after delete = %v", got)
+	}
 }
 
 func TestGitAppsAPI(t *testing.T) {

@@ -11,14 +11,16 @@ import (
 	"panel/internal/id"
 )
 
-// Domain is a hostname of a project, with its certificate. Its routes send paths to apps.
+// Domain is a hostname served by this panel, with its certificate. It is added on its own
+// and then used by at most one project, whose apps its routes send paths to.
 type Domain struct {
-	ID        string
-	ProjectID string
-	Hostname  string
-	TLSMode   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          string
+	ProjectID   string // "" while no project uses it
+	ProjectName string
+	Hostname    string
+	TLSMode     string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Route sends a path of a domain (and everything under it) to an app.
@@ -34,12 +36,13 @@ type Route struct {
 	CreatedAt   time.Time
 }
 
-const domainCols = `id, project_id, hostname, tls_mode, created_at, updated_at`
+const domainSelect = `SELECT d.id, COALESCE(d.project_id, ''), COALESCE(p.name, ''), d.hostname, d.tls_mode, d.created_at, d.updated_at
+	FROM domains d LEFT JOIN projects p ON p.id = d.project_id`
 
 func scanDomain(row scanner) (Domain, error) {
 	var d Domain
 	var created, updated string
-	err := row.Scan(&d.ID, &d.ProjectID, &d.Hostname, &d.TLSMode, &created, &updated)
+	err := row.Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Hostname, &d.TLSMode, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Domain{}, ErrNotFound
 	}
@@ -47,14 +50,15 @@ func scanDomain(row scanner) (Domain, error) {
 	return d, err
 }
 
-// CreateDomain returns ErrConflict when the hostname is already taken.
+// CreateDomain adds a hostname, used by projectID or by no project yet when that is "".
+// It returns ErrConflict when the hostname is already taken.
 func (s *Store) CreateDomain(ctx context.Context, projectID, hostname, tlsMode string) (Domain, error) {
 	if tlsMode == "" {
 		tlsMode = TLSAuto
 	}
 	did, ts := id.New(), now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO domains (id, project_id, hostname, tls_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO domains (id, project_id, hostname, tls_mode, created_at, updated_at) VALUES (?, NULLIF(?, ''), ?, ?, ?, ?)`,
 		did, projectID, hostname, tlsMode, ts, ts)
 	if err != nil {
 		return Domain{}, conflict(err)
@@ -63,7 +67,7 @@ func (s *Store) CreateDomain(ctx context.Context, projectID, hostname, tlsMode s
 }
 
 func (s *Store) GetDomain(ctx context.Context, domainID string) (Domain, error) {
-	return scanDomain(s.db.QueryRowContext(ctx, `SELECT `+domainCols+` FROM domains WHERE id = ?`, domainID))
+	return scanDomain(s.db.QueryRowContext(ctx, domainSelect+` WHERE d.id = ?`, domainID))
 }
 
 func (s *Store) DomainExists(ctx context.Context, hostname string) (bool, error) {
@@ -72,8 +76,8 @@ func (s *Store) DomainExists(ctx context.Context, hostname string) (bool, error)
 	return n > 0, err
 }
 
-func (s *Store) ListDomains(ctx context.Context, projectID string) ([]Domain, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+domainCols+` FROM domains WHERE project_id = ? ORDER BY hostname`, projectID)
+func (s *Store) listDomains(ctx context.Context, where string, args ...any) ([]Domain, error) {
+	rows, err := s.db.QueryContext(ctx, domainSelect+where+` ORDER BY d.hostname`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +91,54 @@ func (s *Store) ListDomains(ctx context.Context, projectID string) ([]Domain, er
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// ListDomains lists the domains a project uses.
+func (s *Store) ListDomains(ctx context.Context, projectID string) ([]Domain, error) {
+	return s.listDomains(ctx, ` WHERE d.project_id = ?`, projectID)
+}
+
+// AllDomains lists every domain, used by a project or not.
+func (s *Store) AllDomains(ctx context.Context) ([]Domain, error) {
+	return s.listDomains(ctx, ``)
+}
+
+// AttachDomain gives an unused domain to a project. ErrConflict when another project
+// already uses it; attaching it again to its own project changes nothing.
+func (s *Store) AttachDomain(ctx context.Context, domainID, projectID string) (Domain, error) {
+	err := affected(s.db.ExecContext(ctx,
+		`UPDATE domains SET project_id = ?, updated_at = ? WHERE id = ? AND project_id IS NULL`, projectID, now(), domainID))
+	if errors.Is(err, ErrNotFound) {
+		d, getErr := s.GetDomain(ctx, domainID)
+		if getErr != nil {
+			return Domain{}, getErr
+		}
+		if d.ProjectID != projectID {
+			return Domain{}, ErrConflict
+		}
+		return d, nil
+	}
+	if err != nil {
+		return Domain{}, err
+	}
+	return s.GetDomain(ctx, domainID)
+}
+
+// DetachDomain takes a domain back from its project: its routes go (they point at that
+// project's apps), the domain stays in the list for another project to use.
+func (s *Store) DetachDomain(ctx context.Context, domainID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := affected(tx.ExecContext(ctx, `UPDATE domains SET project_id = NULL, updated_at = ? WHERE id = ?`, now(), domainID)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM domain_routes WHERE domain_id = ?`, domainID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SetDomainTLS(ctx context.Context, domainID, tlsMode string) (Domain, error) {
@@ -165,6 +217,11 @@ func (s *Store) DeleteRoute(ctx context.Context, routeID string) error {
 // ProjectRoutes lists every route of a project's domains.
 func (s *Store) ProjectRoutes(ctx context.Context, projectID string) ([]Route, error) {
 	return s.listRoutes(ctx, `d.project_id = ?`, projectID)
+}
+
+// AllRoutes lists the routes of every domain.
+func (s *Store) AllRoutes(ctx context.Context) ([]Route, error) {
+	return s.listRoutes(ctx, `1 = 1`)
 }
 
 // AppRoutes lists the routes that send traffic to an app.

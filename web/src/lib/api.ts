@@ -224,8 +224,9 @@ export type Deployment = {
 /** A path of a project domain sent to an app. */
 export type Route = { id: string; domain_id: string; hostname: string; path: string; app_id: string; app_name: string; strip_prefix: boolean; url: string }
 
-/** A hostname of a project, with the routes that send its paths to apps. */
-export type Domain = { id: string; project_id: string; hostname: string; tls_mode: string; routes: Route[]; created_at: string }
+/** A hostname of the panel, with the routes that send its paths to apps. project_id is ''
+ * while no project uses it. */
+export type Domain = { id: string; project_id: string; project_name: string; hostname: string; tls_mode: string; routes: Route[]; created_at: string }
 
 export type DnsHint = {
   hostname: string
@@ -317,6 +318,13 @@ export const activeDeploymentsQuery = {
   queryFn: () => api<ActiveDeployment[]>('/deployments/active'),
 }
 
+/** Every domain of the panel, used by a project or not. */
+export const allDomainsQuery = {
+  queryKey: ['domains', 'all'] as const,
+  queryFn: () => api<Domain[]>('/domains'),
+}
+
+/** The domains a project uses. */
 export const domainsQuery = (projectId: string) => ({
   queryKey: ['projects', projectId, 'domains'] as const,
   queryFn: () => api<Domain[]>(`/projects/${projectId}/domains`),

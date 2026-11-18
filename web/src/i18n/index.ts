@@ -35,11 +35,13 @@ import * as dockerMetrics from './dockerMetrics'
 import * as databases from './databases'
 import * as lists from './lists'
 import * as command from './command'
+import * as domains from './domains'
 
 type Code = 'en' | 'fr' | 'ar' | 'es'
 
 const pick = (l: Code) => ({
   databases: databases[l] as typeof databases.en,
+  domains: domains[l] as typeof domains.en,
   lists: lists[l] as typeof lists.en,
   command: command[l] as typeof command.en,
   dockerMetrics: dockerMetrics[l] as typeof dockerMetrics.en,

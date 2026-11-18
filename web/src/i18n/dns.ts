@@ -7,6 +7,8 @@ export const en = {
   failed: 'DNS check failed.',
   checking: 'Checking DNS…',
   checkAgain: 'Check again',
+  verified: 'Verified', elsewhere: 'Other server', unconfirmed: 'Unconfirmed', noRecord: 'No DNS record',
+  checkFailed: 'Check failed', checkingShort: 'Checking', expected: 'expected', status: 'DNS status', about: 'About this status',
   notResolving: 'Does not resolve yet. Create an A record pointing at this server.',
   pointsHere: (addresses: string) => `Resolves to ${addresses} — this server.`,
   pointsElsewhere: (addresses: string, server: string) =>
@@ -18,6 +20,8 @@ export const fr: typeof en = {
   failed: 'La vérification DNS a échoué.',
   checking: 'Vérification du DNS…',
   checkAgain: 'Vérifier à nouveau',
+  verified: 'Vérifié', elsewhere: 'Autre serveur', unconfirmed: 'Non confirmé', noRecord: 'Aucun enregistrement',
+  checkFailed: 'Échec', checkingShort: 'Vérification', expected: 'attendu', status: 'État DNS', about: 'À propos de cet état',
   notResolving: 'Ne se résout pas encore. Créez un enregistrement A pointant vers ce serveur.',
   pointsHere: (addresses) => `Se résout vers ${addresses} — ce serveur.`,
   pointsElsewhere: (addresses, server) =>
@@ -29,6 +33,8 @@ export const ar: typeof en = {
   failed: 'فشل فحص DNS.',
   checking: 'جارٍ فحص DNS…',
   checkAgain: 'إعادة الفحص',
+  verified: 'تم التحقق', elsewhere: 'خادم آخر', unconfirmed: 'غير مؤكد', noRecord: 'لا يوجد سجل',
+  checkFailed: 'فشل الفحص', checkingShort: 'جارٍ الفحص', expected: 'المتوقع', status: 'حالة DNS', about: 'حول هذه الحالة',
   notResolving: 'لا يُحلّ بعد. أنشئ سجل A يشير إلى هذا الخادم.',
   pointsHere: (addresses) => `يُحلّ إلى ${ltr(addresses)} — هذا الخادم.`,
   pointsElsewhere: (addresses, server) =>
@@ -40,6 +46,8 @@ export const es: typeof en = {
   failed: 'La comprobación de DNS ha fallado.',
   checking: 'Comprobando DNS…',
   checkAgain: 'Comprobar de nuevo',
+  verified: 'Verificado', elsewhere: 'Otro servidor', unconfirmed: 'Sin confirmar', noRecord: 'Sin registro',
+  checkFailed: 'Error', checkingShort: 'Comprobando', expected: 'esperado', status: 'Estado DNS', about: 'Sobre este estado',
   notResolving: 'Aún no se resuelve. Crea un registro A que apunte a este servidor.',
   pointsHere: (addresses) => `Se resuelve a ${addresses} — este servidor.`,
   pointsElsewhere: (addresses, server) =>
