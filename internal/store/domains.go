@@ -27,13 +27,29 @@ type Domain struct {
 type Route struct {
 	ID          string
 	DomainID    string
-	Hostname    string // the domain's, for display
+	Hostname    string // the domain's
+	Subdomain   string // "" for the domain itself, labels under it ("shop", "a.b"), or "*"
 	TLSMode     string // the domain's
 	Path        string // "/" or a prefix like "/api"
 	AppID       string
 	AppName     string
 	StripPrefix bool // send /api/users to the app as /users
 	CreatedAt   time.Time
+}
+
+// WildcardSubdomain is the subdomain of a route that answers on every name one label under
+// its domain that no other route or domain claims.
+const WildcardSubdomain = "*"
+
+// Host is the hostname the route answers on: the domain, its subdomain, or "*.<domain>".
+func (r Route) Host() string { return RouteHost(r.Subdomain, r.Hostname) }
+
+// RouteHost joins a route's subdomain ("" for none) and its domain.
+func RouteHost(subdomain, hostname string) string {
+	if subdomain == "" {
+		return hostname
+	}
+	return subdomain + "." + hostname
 }
 
 const domainSelect = `SELECT d.id, COALESCE(d.project_id, ''), COALESCE(p.name, ''), d.hostname, d.tls_mode, d.created_at, d.updated_at
@@ -70,17 +86,28 @@ func (s *Store) GetDomain(ctx context.Context, domainID string) (Domain, error) 
 	return scanDomain(s.db.QueryRowContext(ctx, domainSelect+` WHERE d.id = ?`, domainID))
 }
 
-func (s *Store) DomainExists(ctx context.Context, hostname string) (bool, error) {
+// DomainExists reports whether hostname is taken: it is a domain, or a subdomain a route
+// of some domain answers on.
+// WildcardServesTLS reports whether the domain hostname has a "*" route and is served with
+// certificates (not HTTP-only): names under it may then get one on demand.
+func (s *Store) WildcardServesTLS(ctx context.Context, hostname string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains WHERE hostname = ?`, hostname).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domain_routes r JOIN domains d ON d.id = r.domain_id
+		WHERE d.hostname = ? AND r.subdomain = ? AND d.tls_mode <> ?`, hostname, WildcardSubdomain, TLSHTTPOnly).Scan(&n)
 	return n > 0, err
 }
 
-// DomainServesTLS reports whether hostname is a domain served with certificates (not
-// HTTP-only).
-func (s *Store) DomainServesTLS(ctx context.Context, hostname string) (bool, error) {
+// DomainByHostname finds the domain with exactly this hostname.
+func (s *Store) DomainByHostname(ctx context.Context, hostname string) (Domain, error) {
+	return scanDomain(s.db.QueryRowContext(ctx, domainSelect+` WHERE d.hostname = ?`, hostname))
+}
+
+func (s *Store) DomainExists(ctx context.Context, hostname string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains WHERE hostname = ? AND tls_mode <> ?`, hostname, TLSHTTPOnly).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM domains WHERE hostname = ?1) +
+		(SELECT COUNT(*) FROM domain_routes r JOIN domains d ON d.id = r.domain_id
+			WHERE r.subdomain NOT IN ('', '*') AND r.subdomain || '.' || d.hostname = ?1)`, hostname).Scan(&n)
 	return n > 0, err
 }
 
@@ -161,13 +188,13 @@ func (s *Store) DeleteDomain(ctx context.Context, domainID string) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM domains WHERE id = ?`, domainID))
 }
 
-const routeSelect = `SELECT r.id, r.domain_id, d.hostname, d.tls_mode, r.path, r.app_id, a.name, r.strip_prefix, r.created_at
+const routeSelect = `SELECT r.id, r.domain_id, d.hostname, r.subdomain, d.tls_mode, r.path, r.app_id, a.name, r.strip_prefix, r.created_at
 	FROM domain_routes r JOIN domains d ON d.id = r.domain_id JOIN apps a ON a.id = r.app_id`
 
 func scanRoute(row scanner) (Route, error) {
 	var r Route
 	var created string
-	err := row.Scan(&r.ID, &r.DomainID, &r.Hostname, &r.TLSMode, &r.Path, &r.AppID, &r.AppName, &r.StripPrefix, &created)
+	err := row.Scan(&r.ID, &r.DomainID, &r.Hostname, &r.Subdomain, &r.TLSMode, &r.Path, &r.AppID, &r.AppName, &r.StripPrefix, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Route{}, ErrNotFound
 	}
@@ -176,7 +203,7 @@ func scanRoute(row scanner) (Route, error) {
 }
 
 func (s *Store) listRoutes(ctx context.Context, where string, args ...any) ([]Route, error) {
-	rows, err := s.db.QueryContext(ctx, routeSelect+` WHERE `+where+` ORDER BY d.hostname, r.path`, args...)
+	rows, err := s.db.QueryContext(ctx, routeSelect+` WHERE `+where+` ORDER BY d.hostname, r.subdomain, r.path`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,10 +221,16 @@ func (s *Store) listRoutes(ctx context.Context, where string, args ...any) ([]Ro
 
 // CreateRoute adds a path of a domain; ErrConflict when the domain already routes that path.
 func (s *Store) CreateRoute(ctx context.Context, domainID, path, appID string, strip bool) (Route, error) {
+	return s.CreateRouteAt(ctx, domainID, "", path, appID, strip)
+}
+
+// CreateRouteAt adds a path of a domain's subdomain ("" for the domain itself);
+// ErrConflict when that hostname already routes the path.
+func (s *Store) CreateRouteAt(ctx context.Context, domainID, subdomain, path, appID string, strip bool) (Route, error) {
 	rid, ts := id.New(), now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO domain_routes (id, domain_id, path, app_id, strip_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		rid, domainID, path, appID, strip, ts, ts)
+		`INSERT INTO domain_routes (id, domain_id, subdomain, path, app_id, strip_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		rid, domainID, subdomain, path, appID, strip, ts, ts)
 	if err != nil {
 		return Route{}, conflict(err)
 	}
@@ -208,10 +241,11 @@ func (s *Store) GetRoute(ctx context.Context, routeID string) (Route, error) {
 	return scanRoute(s.db.QueryRowContext(ctx, routeSelect+` WHERE r.id = ?`, routeID))
 }
 
-// UpdateRoute changes a route's path, app or prefix handling; ErrConflict on a taken path.
-func (s *Store) UpdateRoute(ctx context.Context, routeID, path, appID string, strip bool) (Route, error) {
-	_, err := s.db.ExecContext(ctx, `UPDATE domain_routes SET path = ?, app_id = ?, strip_prefix = ?, updated_at = ? WHERE id = ?`,
-		path, appID, strip, now(), routeID)
+// UpdateRoute changes a route's subdomain, path, app or prefix handling; ErrConflict on a
+// taken path.
+func (s *Store) UpdateRoute(ctx context.Context, routeID, subdomain, path, appID string, strip bool) (Route, error) {
+	_, err := s.db.ExecContext(ctx, `UPDATE domain_routes SET subdomain = ?, path = ?, app_id = ?, strip_prefix = ?, updated_at = ? WHERE id = ?`,
+		subdomain, path, appID, strip, now(), routeID)
 	if err != nil {
 		return Route{}, conflict(err)
 	}
@@ -253,30 +287,38 @@ type ProxyPath struct {
 	Upstream string // container:port; empty when the app is stopped or was never deployed
 }
 
-// ProxySites is what the proxy's app routing is built from: every domain, with its routes.
+// ProxySites is what the proxy's app routing is built from: every domain and every
+// subdomain its routes name, each with its routes. A domain without routes of its own is
+// still a site (it answers 404).
 func (s *Store) ProxySites(ctx context.Context) ([]ProxySite, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT dm.hostname, dm.tls_mode, COALESCE(r.id, ''), COALESCE(r.path, ''), COALESCE(r.strip_prefix, 0), COALESCE(a.id, ''),
+		SELECT dm.hostname, COALESCE(r.subdomain, ''), dm.tls_mode, COALESCE(r.id, ''), COALESCE(r.path, ''), COALESCE(r.strip_prefix, 0), COALESCE(a.id, ''),
 			a.desired_state, COALESCE(dp.container_name, ''), COALESCE(dp.port, 0)
 		FROM domains dm
 		LEFT JOIN domain_routes r ON r.domain_id = dm.id
 		LEFT JOIN apps a ON a.id = r.app_id
 		LEFT JOIN deployments dp ON dp.id = a.current_deployment_id
-		ORDER BY dm.hostname`)
+		ORDER BY dm.hostname, COALESCE(r.subdomain, '')`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []ProxySite
+	var lastDomain string
 	for rows.Next() {
-		var host, mode, routeID, path, appID, container string
+		var domain, sub, mode, routeID, path, appID, container string
 		var state sql.NullString
 		var strip bool
 		var port int
-		if err := rows.Scan(&host, &mode, &routeID, &path, &strip, &appID, &state, &container, &port); err != nil {
+		if err := rows.Scan(&domain, &sub, &mode, &routeID, &path, &strip, &appID, &state, &container, &port); err != nil {
 			return nil, err
 		}
-		if len(out) == 0 || out[len(out)-1].Host != host {
+		// Rows of a domain come with its own routes ('') first: the domain is always a site.
+		if domain != lastDomain {
+			out = append(out, ProxySite{Host: domain, HTTPOnly: mode == TLSHTTPOnly})
+			lastDomain = domain
+		}
+		if host := RouteHost(sub, domain); out[len(out)-1].Host != host {
 			out = append(out, ProxySite{Host: host, HTTPOnly: mode == TLSHTTPOnly})
 		}
 		if routeID == "" {

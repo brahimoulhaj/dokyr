@@ -459,7 +459,7 @@ function RouteRow({ route, onEdit, onChanged }: { route: Route; onEdit: () => vo
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
-        <code dir="ltr" className="min-w-16 text-fg">{route.path}</code>
+        <code dir="ltr" className="min-w-16 text-fg [overflow-wrap:anywhere]">{route.subdomain ? route.hostname : ''}{route.subdomain && route.path === '/' ? '' : route.path}</code>
         <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
         <span>{route.app_name}</span>
         {route.strip_prefix && <Badge tone="muted">{t.project.stripped}</Badge>}
@@ -476,12 +476,13 @@ function RouteRow({ route, onEdit, onChanged }: { route: Route; onEdit: () => vo
 function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: string; apps: App[]; domain: Domain; route?: Route; onDone: () => void }) {
   const t = useT()
   const queryClient = useQueryClient()
-  const [path, setPath] = useState(route?.path ?? (domain.routes.some((r) => r.path === '/') ? '/api' : '/'))
+  const [subdomain, setSubdomain] = useState(route?.subdomain ?? '')
+  const [path, setPath] = useState(route?.path ?? (domain.routes.some((r) => r.subdomain === '' && r.path === '/') ? '/api' : '/'))
   const [appId, setAppId] = useState(route?.app_id ?? apps[0]?.id ?? '')
   const [strip, setStrip] = useState(route?.strip_prefix ?? false)
   const save = useMutation({
     mutationFn: () => {
-      const body = { path, app_id: appId, strip_prefix: strip }
+      const body = { subdomain, path, app_id: appId, strip_prefix: strip }
       return route
         ? api<Route>(`/routes/${route.id}`, { method: 'PATCH', body })
         : api<Route>(`/domains/${domain.id}/routes`, { method: 'POST', body })
@@ -496,6 +497,8 @@ function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: stri
   const root = path.trim() === '/' || path.trim() === ''
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
+      <Field label={t.project.routeSubdomain} name="route-subdomain" dir="ltr" placeholder="admin, *" hint={t.project.routeSubdomainHint(domain.hostname)}
+        value={subdomain} onChange={(e) => setSubdomain(e.target.value.trim().toLowerCase())} autoComplete="off" spellCheck={false} />
       <Field label={t.project.routePath} name="route-path" required dir="ltr" placeholder="/api" hint={t.project.routePathHint}
         value={path} onChange={(e) => setPath(e.target.value)} autoComplete="off" spellCheck={false} />
       <label className="block space-y-1.5 text-xs text-muted">

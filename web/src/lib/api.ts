@@ -222,7 +222,7 @@ export type Deployment = {
 }
 
 /** A path of a project domain sent to an app. */
-export type Route = { id: string; domain_id: string; hostname: string; path: string; app_id: string; app_name: string; strip_prefix: boolean; url: string }
+export type Route = { id: string; domain_id: string; hostname: string; subdomain: string; path: string; app_id: string; app_name: string; strip_prefix: boolean; url: string }
 
 /** A hostname of the panel, with the routes that send its paths to apps. project_id is ''
  * while no project uses it. */

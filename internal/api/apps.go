@@ -163,7 +163,8 @@ func toDeploymentJSON(d store.Deployment) deploymentJSON {
 type routeJSON struct {
 	ID          string `json:"id"`
 	DomainID    string `json:"domain_id"`
-	Hostname    string `json:"hostname"`
+	Hostname    string `json:"hostname"`  // where the route answers: the domain, or its subdomain
+	Subdomain   string `json:"subdomain"` // "" for the domain itself, "*" for every other subdomain
 	Path        string `json:"path"`
 	AppID       string `json:"app_id"`
 	AppName     string `json:"app_name"`
@@ -176,11 +177,11 @@ func toRouteJSON(r store.Route) routeJSON {
 	if r.TLSMode == store.TLSHTTPOnly {
 		scheme = "http://"
 	}
-	url := scheme + r.Hostname
+	url := scheme + r.Host()
 	if r.Path != "/" {
 		url += r.Path
 	}
-	return routeJSON{ID: r.ID, DomainID: r.DomainID, Hostname: r.Hostname, Path: r.Path, AppID: r.AppID, AppName: r.AppName, StripPrefix: r.StripPrefix, URL: url}
+	return routeJSON{ID: r.ID, DomainID: r.DomainID, Hostname: r.Host(), Subdomain: r.Subdomain, Path: r.Path, AppID: r.AppID, AppName: r.AppName, StripPrefix: r.StripPrefix, URL: url}
 }
 
 type domainJSON struct {
@@ -978,8 +979,8 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request, in domainI
 		return store.Domain{}, false
 	}
 	host := strings.ToLower(strings.TrimSpace(in.Hostname))
-	if err := proxy.ValidSiteHost(host); err != nil {
-		invalid(w, "hostname must be a domain name like shop.example.com or a wildcard like *.example.com (no scheme, port or path)")
+	if err := proxy.ValidHost(host); err != nil {
+		invalid(w, "hostname must be a domain name like shop.example.com (no scheme, port, path or wildcard)")
 		return store.Domain{}, false
 	}
 	panelDomain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
@@ -993,6 +994,14 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request, in domainI
 	}
 	if host == s.registryDomain(r.Context()) {
 		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
+		return store.Domain{}, false
+	}
+	// A subdomain a route already answers on cannot also be a domain of its own.
+	if taken, err := s.store.DomainExists(r.Context(), host); err != nil {
+		s.internal(w, "create domain", err)
+		return store.Domain{}, false
+	} else if taken {
+		writeError(w, http.StatusConflict, "conflict", "this domain is already added")
 		return store.Domain{}, false
 	}
 	d, err := s.store.CreateDomain(r.Context(), projectID, host, in.TLSMode)
@@ -1137,13 +1146,31 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 type routeInput struct {
+	Subdomain   string `json:"subdomain"` // optional: "shop" serves shop.<domain>, "*" every subdomain no other route names
 	Path        string `json:"path"`
 	AppID       string `json:"app_id"`
 	StripPrefix bool   `json:"strip_prefix"`
 }
 
-// validRoute normalizes the path and checks that the app is in the domain's project.
-func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Domain, in *routeInput) bool {
+// validRoute normalizes the subdomain and the path and checks that the hostname is free
+// and the app is in the domain's project. current is the route being changed, if any.
+func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Domain, in *routeInput, current *store.Route) bool {
+	in.Subdomain = strings.Trim(strings.ToLower(strings.TrimSpace(in.Subdomain)), ".")
+	// "*" needs no check: exact hostnames are matched ahead of it, whoever serves them.
+	if in.Subdomain != "" && in.Subdomain != store.WildcardSubdomain && (current == nil || current.Subdomain != in.Subdomain) {
+		host := store.RouteHost(in.Subdomain, d.Hostname)
+		if proxy.ValidHost(host) != nil {
+			invalid(w, "subdomain must be a name like shop (letters, digits and -), giving shop."+d.Hostname+", or * for every other subdomain")
+			return false
+		}
+		if msg, err := s.hostTaken(r.Context(), d, host); err != nil {
+			s.internal(w, "check hostname", err)
+			return false
+		} else if msg != "" {
+			writeError(w, http.StatusConflict, "conflict", msg)
+			return false
+		}
+	}
 	path, ok := store.NormalizePath(in.Path)
 	if !ok {
 		invalid(w, "path must be / or a prefix like /api (letters, digits, - . _ ~ between slashes)")
@@ -1165,6 +1192,65 @@ func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Doma
 	return true
 }
 
+// handleProxyAsk answers Caddy's on-demand TLS question: may a certificate be issued for
+// ?domain=<name>? Only for a name one label under a domain that has a "*" route and serves
+// HTTPS. Caddy calls it without credentials; it gives away nothing a TLS handshake would not.
+func (s *Server) handleProxyAsk(w http.ResponseWriter, r *http.Request) {
+	name := strings.ToLower(strings.TrimSuffix(r.URL.Query().Get("domain"), "."))
+	_, parent, _ := strings.Cut(name, ".")
+	if proxy.ValidHost(name) != nil || parent == "" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	ok, err := s.store.WildcardServesTLS(r.Context(), parent)
+	if err != nil {
+		s.internal(w, "proxy ask", err)
+		return
+	}
+	if !ok {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// hostTaken says why host, a subdomain of d, cannot be routed: another domain, the panel
+// or a built-in service already answers on it. "" when it is free; its own domain's other
+// routes on the same subdomain are fine.
+func (s *Server) hostTaken(ctx context.Context, d store.Domain, host string) (string, error) {
+	if _, err := s.store.DomainByHostname(ctx, host); err == nil {
+		return host + " is a domain of its own: route it there", nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	// The same name reached through another domain: a.b under example.com, a under b.example.com.
+	routes, err := s.store.AllRoutes(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, rt := range routes {
+		if rt.DomainID != d.ID && rt.Host() == host {
+			return host + " is already routed through the domain " + rt.Hostname, nil
+		}
+	}
+	panelDomain, _, err := s.store.GetSetting(ctx, store.SettingPanelDomain)
+	if err != nil {
+		return "", err
+	}
+	if host == panelDomain {
+		return "this hostname is the panel's own domain", nil
+	}
+	if host == s.registryDomain(ctx) {
+		return "this hostname is the built-in registry's domain", nil
+	}
+	if obs, err := s.store.GetObjectStoreSettings(ctx); err != nil {
+		return "", err
+	} else if obs.Domain != "" && host == obs.Domain {
+		return "this hostname is the built-in storage's domain", nil
+	}
+	return "", nil
+}
+
 func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	var in routeInput
 	if !readJSON(w, r, &in) {
@@ -1174,14 +1260,14 @@ func (s *Server) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get domain", err, "") {
 		return
 	}
-	if !s.validRoute(w, r, d, &in) {
+	if !s.validRoute(w, r, d, &in, nil) {
 		return
 	}
-	rt, err := s.store.CreateRoute(r.Context(), d.ID, in.Path, in.AppID, in.StripPrefix)
-	if s.storeError(w, "create route", err, "this domain already routes "+in.Path) {
+	rt, err := s.store.CreateRouteAt(r.Context(), d.ID, in.Subdomain, in.Path, in.AppID, in.StripPrefix)
+	if s.storeError(w, "create route", err, store.RouteHost(in.Subdomain, d.Hostname)+" already routes "+in.Path) {
 		return
 	}
-	s.audit(r, "route.add", "app", rt.AppID, rt.AppName, d.Hostname+rt.Path)
+	s.audit(r, "route.add", "app", rt.AppID, rt.AppName, rt.Host()+rt.Path)
 	s.proxyApplied(w, r, http.StatusCreated, toRouteJSON(rt))
 }
 
@@ -1198,14 +1284,14 @@ func (s *Server) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get domain", err, "") {
 		return
 	}
-	if !s.validRoute(w, r, d, &in) {
+	if !s.validRoute(w, r, d, &in, &rt) {
 		return
 	}
-	rt, err = s.store.UpdateRoute(r.Context(), rt.ID, in.Path, in.AppID, in.StripPrefix)
-	if s.storeError(w, "update route", err, "this domain already routes "+in.Path) {
+	rt, err = s.store.UpdateRoute(r.Context(), rt.ID, in.Subdomain, in.Path, in.AppID, in.StripPrefix)
+	if s.storeError(w, "update route", err, store.RouteHost(in.Subdomain, d.Hostname)+" already routes "+in.Path) {
 		return
 	}
-	s.audit(r, "route.update", "app", rt.AppID, rt.AppName, d.Hostname+rt.Path)
+	s.audit(r, "route.update", "app", rt.AppID, rt.AppName, rt.Host()+rt.Path)
 	s.proxyApplied(w, r, http.StatusOK, toRouteJSON(rt))
 }
 
@@ -1217,7 +1303,7 @@ func (s *Server) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "delete route", s.store.DeleteRoute(r.Context(), rt.ID), "") {
 		return
 	}
-	s.audit(r, "route.remove", "app", rt.AppID, rt.AppName, rt.Hostname+rt.Path)
+	s.audit(r, "route.remove", "app", rt.AppID, rt.AppName, rt.Host()+rt.Path)
 	s.applyProxy(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1244,39 +1330,8 @@ func (s *Server) handleDomainDNS(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get domain", err, "") {
 		return
 	}
-	// A wildcard record cannot be looked up itself: look up a name under it.
-	name := d.Hostname
-	if proxy.IsWildcard(name) {
-		name = dnsProbeLabel + name[1:]
-	}
-	out := s.dnsHint(r.Context(), name)
-	out["hostname"] = d.Hostname
+	out := s.dnsHint(r.Context(), d.Hostname)
 	writeJSON(w, http.StatusOK, out)
-}
-
-// dnsProbeLabel stands in for the "*" of a wildcard domain when its DNS record is checked.
-const dnsProbeLabel = "dns-check"
-
-// handleProxyAsk answers Caddy's on-demand TLS question: may a certificate be issued for
-// ?domain=<name>? Only for names under a wildcard domain served over HTTPS. Caddy calls it
-// without credentials; it gives away nothing a TLS handshake would not.
-func (s *Server) handleProxyAsk(w http.ResponseWriter, r *http.Request) {
-	name := strings.ToLower(strings.TrimSuffix(r.URL.Query().Get("domain"), "."))
-	wildcard := proxy.WildcardOf(name)
-	if proxy.ValidHost(name) != nil || wildcard == "" {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	ok, err := s.store.DomainServesTLS(r.Context(), wildcard)
-	if err != nil {
-		s.internal(w, "proxy ask", err)
-		return
-	}
-	if !ok {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
 }
 
 // dnsHint looks a hostname up and compares the answer with this server's public addresses.

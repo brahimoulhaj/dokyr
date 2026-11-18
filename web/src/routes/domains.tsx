@@ -140,7 +140,7 @@ export function AddDomain({ projectId, onDone }: { projectId?: string; onDone: (
   })
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); add.mutate() }} className="space-y-5 p-5">
-      <Field label={t.app.hostname} name="hostname" required autoFocus placeholder="shop.example.com, *.example.com" dir="ltr"
+      <Field label={t.app.hostname} name="hostname" required autoFocus placeholder="shop.example.com" dir="ltr"
         hint={httpOnly ? t.app.hostnameHintHttp : t.app.hostnameHintHttps}
         value={hostname} onChange={(e) => setHostname(e.target.value.trim().toLowerCase())} />
       <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />
