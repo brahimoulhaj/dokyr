@@ -247,7 +247,7 @@ function HostSession({ visible, nonce, onState, onExit }: { visible: boolean; no
   useEffect(() => {
     if (!host.current) return
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono", monospace', fontSize: 13, lineHeight: 1.25,
+      fontFamily: '"JetBrains Mono", monospace', fontSize: 12, lineHeight: 1.25,
       cursorBlink: true, cursorStyle: 'bar', scrollback: 5000,
       disableStdin: true, allowProposedApi: false, screenReaderMode: true,
     })

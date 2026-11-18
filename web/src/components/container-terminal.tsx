@@ -91,7 +91,7 @@ export default function ContainerTerminal({ app, visible }: { app: App; visible:
   useEffect(() => {
     if (!host.current) return
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono", monospace', fontSize: 13, lineHeight: 1.25,
+      fontFamily: '"JetBrains Mono", monospace', fontSize: 12, lineHeight: 1.25,
       cursorBlink: true, cursorStyle: 'bar', scrollback: 5000, smoothScrollDuration: 80,
       disableStdin: true, allowProposedApi: false, screenReaderMode: true,
     })

@@ -41,6 +41,11 @@
   color-scheme: dark;
 }
 
+/* The panel's density: every rem-based size (spacing, type, widths) follows this. */
+html {
+  font-size: 90%;
+}
+
 html,
 body,
 #root {
@@ -51,7 +56,7 @@ body {
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
