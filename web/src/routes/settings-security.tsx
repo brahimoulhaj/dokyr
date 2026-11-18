@@ -8,6 +8,7 @@ import { dateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { passkeysSupported, registerPasskey } from '../lib/passkeys'
 import { ActiveSessions } from './settings-sessions'
+import { useCan } from '../lib/roles'
 
 type Security = {
   passkeys: { id: string; name: string; rp_id: string; created_at: string; last_used_at: string | null }[]
@@ -25,6 +26,7 @@ export function SecuritySettings() {
 
 function SecurityForm({ data }: { data: Security }) {
   const t = useT()
+  const can = useCan()
   const text = t.security
   const qc = useQueryClient()
   const search = useSearch({ strict: false }) as { auth_error?: string }
@@ -82,9 +84,9 @@ function SecurityForm({ data }: { data: Security }) {
         {data.github_identity ? <div className="flex flex-wrap items-center justify-between gap-3 border border-line p-3">
           <span className="text-sm" dir="ltr">@{data.github_identity.login}</span>
           <Button type="button" variant="danger" onClick={() => confirm({ title: text.unlink, confirm: text.unlink, detail: `@${data.github_identity!.login}`, tone: 'danger', onConfirm: (password) => api('/auth/github/link', { method: 'DELETE', body: { password } }) })}>{text.unlink}</Button>
-        </div> : <Button type="button" variant="ghost" disabled={!!data.origin_error} onClick={() => confirm({ title: text.linkGitHub, confirm: text.continueGitHub, onConfirm: linkGitHub })}>{text.linkGitHub}</Button>}
-        {!data.github_configured && <p className="text-xs text-muted">{text.automaticGitHubHint}</p>}
-        {data.github_configured && <div className="border-t border-line pt-3">
+        </div> : <Button type="button" variant="ghost" disabled={!!data.origin_error || (!data.github_configured && !can.admin)} onClick={() => confirm({ title: text.linkGitHub, confirm: text.continueGitHub, onConfirm: linkGitHub })}>{text.linkGitHub}</Button>}
+        {!data.github_configured && can.admin && <p className="text-xs text-muted">{text.automaticGitHubHint}</p>}
+        {data.github_configured && can.admin && <div className="border-t border-line pt-3">
           <Button type="button" variant="danger" className="h-7 px-2 text-xs" onClick={() => confirm({ title: text.disableGitHub, confirm: text.disableGitHub, detail: text.disableGitHubHint, tone: 'danger', onConfirm: (password) => api('/auth/github/config', { method: 'PUT', body: { client_id: '', client_secret: '', password } }) })}>{text.disableGitHub}</Button>
         </div>}
       </div>

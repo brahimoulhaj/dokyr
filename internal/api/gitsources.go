@@ -123,14 +123,14 @@ func (s *Server) handleStartGitHub(w http.ResponseWriter, r *http.Request) {
 
 // handleGitHubCallback is where GitHub sends the browser once the app exists. It stores
 // the app and goes on to GitHub's page that installs it on repositories; that page
-// returns to Settings. A failure returns to Settings with the reason.
+// returns to the Git connections page. A failure returns there with the reason.
 func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	c, err := s.git.FinishGitHub(r.Context(), q.Get("code"), q.Get("state"))
 	if err != nil {
 		s.log.Warn("github callback", "error", err)
 		msg := strings.TrimPrefix(err.Error(), gitsource.ErrInvalid.Error()+": ")
-		http.Redirect(w, r, "/settings?tab=git&git_error="+url.QueryEscape(msg), http.StatusFound)
+		http.Redirect(w, r, "/git?git_error="+url.QueryEscape(msg), http.StatusFound)
 		return
 	}
 	s.audit(r, "git_source.add", "git_source", c.ID, c.Name, "GitHub App")

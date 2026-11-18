@@ -5,8 +5,9 @@ import { api, tokensQuery, type ApiToken } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
 
-/** API tokens: long-lived bearer credentials for scripts and CI. */
-export function ApiTokens() {
+/** API tokens: long-lived bearer credentials for scripts and CI. `bare` drops the section
+ * title where the page already names it. */
+export function ApiTokens({ bare = false }: { bare?: boolean }) {
   const queryClient = useQueryClient()
   const t = useT()
   const tokens = useQuery(tokensQuery)
@@ -17,9 +18,7 @@ export function ApiTokens() {
   }
 
   return (
-    <Panel title={t.settingsTokens.title} actions={<HelpTip label={t.settingsTokens.title}>
-      {rich(t.settingsTokens.intro, { header: () => <code dir="ltr">Authorization: Bearer &lt;token&gt;</code> })}
-    </HelpTip>}>
+    <Panel title={bare ? undefined : t.settingsTokens.title} actions={bare ? undefined : <TokensHelp />}>
       {created ? <NewSecret token={created} onDone={closeSecret} /> : <CreateToken onCreated={setCreated} />}
       {!tokens.data && (
         <div className="border-t border-line p-4">
@@ -39,6 +38,16 @@ export function ApiTokens() {
           </ul>
         ))}
     </Panel>
+  )
+}
+
+/** What a token is for and how to send it, behind a ? next to the title. */
+export function TokensHelp() {
+  const t = useT()
+  return (
+    <HelpTip label={t.settingsTokens.title}>
+      {rich(t.settingsTokens.intro, { header: () => <code dir="ltr">Authorization: Bearer &lt;token&gt;</code> })}
+    </HelpTip>
   )
 }
 

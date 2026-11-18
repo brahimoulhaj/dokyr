@@ -5,6 +5,7 @@ import { api, s3ConnectionsQuery, type S3Connection } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet, SheetActions } from '../components/sheet'
+import { useCan } from '../lib/roles'
 
 /** Settings → Storage: S3-compatible connections — add (checked by writing a small file),
  * test again, remove. */
@@ -89,6 +90,7 @@ function AddS3({ onDone }: { onDone: () => void }) {
 }
 
 function S3Row({ conn }: { conn: S3Connection }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const tt = useT()
   const t = tt.settingsStorage
@@ -114,7 +116,7 @@ function S3Row({ conn }: { conn: S3Connection }) {
         <Button variant="ghost" disabled={test.isPending} onClick={() => test.mutate()}>
           {test.isPending ? t.testing : t.test}
         </Button>
-        <ConfirmButton label={tt.common.remove} confirm={tt.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+        {can.remove && <ConfirmButton label={tt.common.remove} confirm={tt.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
       </div>
     </li>
   )

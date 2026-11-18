@@ -16,6 +16,7 @@ import { withToast } from '../lib/toasts'
 import { ActionsMenu } from '../components/actions-menu'
 import { ConfirmModal } from '../components/confirm-dialog'
 import { AddDomain } from './domains'
+import { useCan } from '../lib/roles'
 
 export const projectTabs = ['apps', 'databases', 'domains', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
@@ -150,6 +151,7 @@ function AppRow({ app }: { app: App }) {
 }
 
 function ProjectSettings({ project }: { project: Project }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [name, setName] = useState(project.name)
@@ -188,7 +190,7 @@ function ProjectSettings({ project }: { project: Project }) {
           {save.isPending ? t.common.saving : t.common.save}
         </Button>
       </form>
-      <section className="space-y-3 border-t border-danger/30 p-5">
+      {can.remove && <section className="space-y-3 border-t border-danger/30 p-5">
         <h3 className="font-pixel text-xs text-danger uppercase">{t.project.deleteProject}</h3>
         <p className="text-xs text-muted">{project.app_count > 0 ? t.project.deleteBlocked : t.project.deleteWarning}</p>
         <ConfirmButton
@@ -199,7 +201,7 @@ function ProjectSettings({ project }: { project: Project }) {
           onConfirm={() => remove.mutate()}
         />
         {remove.error && <ErrorNote>{remove.error.message}</ErrorNote>}
-      </section>
+      </section>}
     </>
   )
 }
@@ -295,6 +297,7 @@ function ProjectDomains({ projectId, apps }: { projectId: string; apps: App[] })
 }
 
 function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId: string; onRoute: (r?: Route) => void }) {
+  const can = useCan()
   const t = useT()
   const queryClient = useQueryClient()
   const dns = useQuery(dnsQuery(domain.id))
@@ -339,7 +342,7 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
           disabled={busy}
           items={[
             { label: httpOnly ? t.app.useHttps : t.common.httpOnly, onSelect: () => setMode.mutate(httpOnly ? 'auto' : 'http_only') },
-            { label: t.project.detachDomain, danger: true, onSelect: () => setConfirming(true) },
+            ...(can.remove ? [{ label: t.project.detachDomain, danger: true, onSelect: () => setConfirming(true) }] : []),
           ]}
         />
       </div>
@@ -366,6 +369,7 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
 }
 
 function RouteRow({ route, projectId, onEdit, onChanged }: { route: Route; projectId: string; onEdit: () => void; onChanged: () => void }) {
+  const can = useCan()
   const t = useT()
   const remove = useMutation({ mutationFn: () => api<void>(`/routes/${route.id}`, { method: 'DELETE' }), onSettled: onChanged })
   return (
@@ -378,7 +382,7 @@ function RouteRow({ route, projectId, onEdit, onChanged }: { route: Route; proje
       </div>
       <span className="flex items-center gap-2">
         <Button variant="ghost" onClick={onEdit}>{t.common.edit}</Button>
-        <ConfirmButton label={t.project.removeRoute} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+        {can.remove && <ConfirmButton label={t.project.removeRoute} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
       </span>
       {remove.error && <p className="w-full text-xs text-danger">{remove.error.message}</p>}
     </li>

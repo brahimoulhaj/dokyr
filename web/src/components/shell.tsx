@@ -57,7 +57,7 @@ export function Shell() {
           </div>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-2 sm:justify-between sm:px-4">
-          <CommandPalette onOpenTerminal={me?.role === 'owner' ? () => setTerminal('open') : undefined} />
+          <CommandPalette onOpenTerminal={me && me.role !== 'maintainer' ? () => setTerminal('open') : undefined} />
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               type="button"
@@ -68,7 +68,7 @@ export function Shell() {
             >
               <PaletteIcon />
             </button>
-            {me?.role === 'owner' && (
+            {me && me.role !== 'maintainer' && (
               <button
                 type="button"
                 onClick={() => setTerminal((state) => (state === 'open' ? 'hidden' : 'open'))}
@@ -168,7 +168,7 @@ function UserMenu({ user, onPickTheme }: { user: User; onPickTheme: () => void }
             <p dir="ltr" className="truncate text-start text-sm" title={user.email}>
               {user.email}
             </p>
-            <p className="text-xs text-muted capitalize">{user.role === 'owner' ? t.shell.owner : user.role}</p>
+            <p className="text-xs text-muted">{t.users.roles[user.role] ?? user.role}</p>
           </div>
           <div className="p-1">
             <button

@@ -107,9 +107,26 @@ For local development, CLI commands must use the same data directory as the API:
 `DOKYR_DATA_DIR=./.data ./tmp/panel owner reset-password` (no `sudo`).
 With `make dev`, use `docker compose exec api go run ./cmd/panel owner reset-password`.
 
+## Users and roles
+
+Settings → Users (owner only) invites people with a one-time link, valid 7 days. Copy the
+link and send it yourself; the invited person opens it, picks a password and is signed in.
+
+| | Owner | Admin | Maintainer |
+|---|---|---|---|
+| Create, deploy and configure apps, databases, domains | yes | yes | yes |
+| Delete apps, databases, domains, projects, backups and other resources | yes | yes | no |
+| Host terminal, panel backups, GitHub sign-in configuration | yes | yes | no |
+| Invite and remove users, change roles | yes | no | no |
+
+There is one owner, who cannot be changed or removed. A role change applies at once;
+removing a user ends their sessions and API tokens, and what they created stays. An API
+token carries the role of its user. Roles are guardrails, not a sandbox: a maintainer can
+still open an app's container terminal or mount a host path into an app.
+
 ## Sign-in methods
 
-Settings → Security manages passkeys and GitHub sign-in for the current owner.
+Settings → Security manages passkeys and GitHub sign-in for the signed-in user.
 Enter the current password to register/remove a passkey, link/unlink GitHub, or
 disable GitHub sign-in. Password sign-in and CLI password recovery
 remain available.
@@ -119,7 +136,7 @@ IP address, sign-in time and last activity. Sign out an individual session or us
 **Log out other sessions** to keep the current browser signed in and revoke every
 other session. Revoking another session requires password confirmation; signing
 out the current browser uses the normal logout flow. Session lists are scoped to
-the signed-in owner and never expose tokens or token hashes. Existing sessions
+the signed-in user and never expose tokens or token hashes. Existing sessions
 survive the schema update and acquire device information on their next request.
 
 - **Passkeys:** choose a name, click **Add passkey**, and complete the browser's

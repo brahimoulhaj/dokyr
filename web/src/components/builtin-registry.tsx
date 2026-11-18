@@ -17,6 +17,7 @@ import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet, SheetActions } from './sheet'
 import { withToast } from '../lib/toasts'
+import { useCan } from '../lib/roles'
 
 /** The built-in registry's settings: to turn it on (in a sheet), or to change it once on
  * (its Settings tab). Saving may pull the registry image first, so it runs under a toast. */
@@ -203,6 +204,7 @@ function NewToken({ token, onDone }: { token: RegistryToken; onDone: () => void 
 }
 
 function TokenRow({ token }: { token: RegistryToken }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const t = useT().builtinRegistry
   const revoke = useMutation({
@@ -219,7 +221,7 @@ function TokenRow({ token }: { token: RegistryToken }) {
         </p>
         {revoke.error && <p className="text-xs text-danger">{revoke.error.message}</p>}
       </div>
-      <ConfirmButton label={t.revoke} confirm={t.yesRevoke} pending={revoke.isPending} onConfirm={() => revoke.mutate()} />
+      {can.remove && <ConfirmButton label={t.revoke} confirm={t.yesRevoke} pending={revoke.isPending} onConfirm={() => revoke.mutate()} />}
     </li>
   )
 }
@@ -294,6 +296,7 @@ function RepoRows({ domain, repo }: { domain: string; repo: Repository }) {
 }
 
 function TagRow({ domain, repo, tag, nested }: { domain: string; repo: string; tag: RepositoryTag; nested?: boolean }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const t = useT().builtinRegistry
   const [copied, setCopied] = useState(false)
@@ -315,7 +318,7 @@ function TagRow({ domain, repo, tag, nested }: { domain: string; repo: string; t
       <td className="px-4 py-2 text-muted" dir="ltr">{tag.platforms.length ? tag.platforms.join(', ') : '—'}</td>
       <td className="px-4 py-2" dir="ltr">{tag.digest ? formatBytes(tag.size) : '—'}</td>
       <td className="px-4 py-2 text-end">
-        <ConfirmButton label={t.deleteTag} confirm={t.yesDelete} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+        {can.remove && <ConfirmButton label={t.deleteTag} confirm={t.yesDelete} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
         {remove.error && <span className="ms-2 text-xs text-danger">{remove.error.message}</span>}
       </td>
     </tr>

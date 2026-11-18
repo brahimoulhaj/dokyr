@@ -22,6 +22,7 @@ import { SignOut } from '@phosphor-icons/react/dist/csr/SignOut'
 import { Check } from '@phosphor-icons/react/dist/csr/Check'
 import { TerminalWindow } from '@phosphor-icons/react/dist/csr/TerminalWindow'
 import { api, projectsQuery } from '../lib/api'
+import { useCan } from '../lib/roles'
 import { languages, setLang, useLang, useT } from '../lib/i18n'
 import { setTheme, themes, useTheme } from '../lib/theme'
 import { useLogout } from '../lib/logout'
@@ -58,6 +59,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
   const pendingEnter = useRef(false)
   const listId = useId()
   const debounced = useDebounced(query.trim(), 150)
+  const can = useCan()
   const resources = useQuery({
     queryKey: ['command-search', debounced],
     queryFn: () => api<{ items: Resource[]; truncated: boolean }>(`/search?q=${encodeURIComponent(debounced)}`),
@@ -119,7 +121,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       case 'database': return navigate({ to: '/databases/$databaseId', params: { databaseId: resource.id } })
       case 'domain': return navigate({ to: '/domains' })
       case 'registry': return navigate({ to: '/registry' })
-      case 'git': return navigate({ to: '/settings', search: { tab: 'git' } })
+      case 'git': return navigate({ to: '/git' })
       case 'storage': return navigate({ to: '/settings', search: { tab: 'storage' } })
     }
   }
@@ -146,10 +148,13 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       ['registry', t.shell.registry, Package, '/registry'],
       ['storage', t.storage.title, HardDrives, '/storage'],
       ['settings', t.common.settings, GearSix, '/settings'],
+      ['git', t.settingsGit.title, GitBranch, '/git'],
+      ['tokens', t.settingsTokens.title, GearSix, '/tokens'],
+      ...(!can.admin ? [] : [['backup', t.settingsBackup.title, ClockCounterClockwise, '/backups'] as const]),
     ] as const).map(([id, label, icon, to]) => ({ id, label, icon, group: c.pages, keywords: id, run: () => { setOpen(false); void navigate({ to }) } })),
     ...([
-      ['git', t.settingsGit.title, GitBranch], ['storage', t.settingsStorage.title, HardDrives],
-      ['builds', t.settingsBuilds.title, GearSix], ['backup', t.settingsBackup.title, ClockCounterClockwise], ['notifications', t.settingsNotifications.title, GearSix], ['tokens', t.settingsTokens.title, GearSix],
+      ['storage', t.settingsStorage.title, HardDrives],
+      ['builds', t.settingsBuilds.title, GearSix], ['notifications', t.settingsNotifications.title, GearSix],
     ] as const).map(([tab, label, icon]) => ({ id: `settings-${tab}`, label, icon, group: c.pages, keywords: tab, run: () => { setOpen(false); void navigate({ to: '/settings', search: { tab } }) } })),
   ]
   const terms = fold(query).trim().split(/\s+/).filter(Boolean)

@@ -164,7 +164,7 @@ func (s *Service) message(ctx context.Context, event string, e store.Event) Mess
 	case "database":
 		m.URL, _ = s.panelURL(ctx, "/databases/"+e.TargetID+"?tab=backups")
 	case "panel":
-		m.URL, _ = s.panelURL(ctx, "/settings?tab=backup")
+		m.URL, _ = s.panelURL(ctx, "/backups")
 	default:
 		m.URL, _ = s.panelURL(ctx, "/")
 	}

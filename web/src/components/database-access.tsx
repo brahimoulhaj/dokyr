@@ -9,6 +9,7 @@ import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
 import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, Empty, ErrorNote, Field, Panel, QueryState } from './ui'
+import { useCan } from '../lib/roles'
 
 const levels: DatabaseAccessLevel[] = ['none', 'read_only', 'read_write', 'full']
 function useAccessLabels() {
@@ -21,6 +22,7 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
   const ready = d.status === 'running' && d.runtime === 'running'
   const catalog = useQuery({ ...databaseCatalogQuery(d.id), enabled: ready })
   const labels = useAccessLabels()
+  const can = useCan()
   const [creating, setCreating] = useState<'database_create' | 'user_create' | null>(null)
   const [editing, setEditing] = useState<DatabaseUser | null>(null)
   const [connection, setConnection] = useState<DatabaseUser | null>(null)
@@ -49,7 +51,7 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
       <Panel title={t.databases.databasesList} actions={<Button className="h-8! px-3! text-xs!" disabled={busy} onClick={() => setCreating('database_create')}>{t.databases.newDatabase}</Button>}>
         {catalog.data.databases.length ? <ul className="divide-y divide-line">{catalog.data.databases.map((db) => <li key={db.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
           <span className="flex items-center gap-2"><code dir="ltr">{db.name}</code>{db.name === d.database_name && <Badge tone="muted">{t.databases.initialAccess}</Badge>}</span>
-          {db.name !== d.database_name && <ActionsMenu label={t.databases.actions} ariaLabel={`${t.databases.actions} · ${db.name}`} disabled={busy || change.isPending} items={[
+          {can.remove && db.name !== d.database_name && <ActionsMenu label={t.databases.actions} ariaLabel={`${t.databases.actions} · ${db.name}`} disabled={busy || change.isPending} items={[
             { label: t.databases.deleteResource, danger: true, onSelect: () => ask({ action: 'database_delete', id: db.id, name: db.name }) },
           ]} />}
         </li>)}</ul> : <Empty title={t.databases.noDatabases} />}
@@ -66,7 +68,7 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
             { label: t.databases.permissions, disabled: busy, onSelect: () => setEditing(user) },
             { label: t.databases.connection, onSelect: () => setConnection(user) },
             { label: t.databases.rotatePassword, disabled: busy || change.isPending, onSelect: () => ask({ action: 'password_rotate', id: user.id, name: user.name, initial: user.initial }) },
-            ...(user.initial ? [] : [{ label: t.databases.deleteResource, danger: true, disabled: busy || change.isPending, onSelect: () => ask({ action: 'user_delete', id: user.id, name: user.name }) }]),
+            ...(user.initial || !can.remove ? [] : [{ label: t.databases.deleteResource, danger: true, disabled: busy || change.isPending, onSelect: () => ask({ action: 'user_delete', id: user.id, name: user.name }) }]),
           ]} />
         </li>)}</ul> : <Empty title={t.databases.noUsers} />}
       </Panel>

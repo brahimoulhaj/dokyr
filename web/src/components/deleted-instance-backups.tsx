@@ -10,6 +10,7 @@ import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
 import { Sheet, SheetActions } from './sheet'
 import { Badge, Button, ErrorNote, Field, Panel } from './ui'
+import { useCan } from '../lib/roles'
 
 type OrphanBackup = {
   id: string; instance_id: string; instance_name: string; project_id: string; engine: string; version: string
@@ -23,6 +24,7 @@ const engineLabel = (engine: string) => engine === 'postgres' ? 'PostgreSQL' : '
 /** Backups whose instance was deleted: restore them elsewhere or delete them. Hidden when there are none. */
 export function DeletedInstanceBackups() {
   const all = useT()
+  const can = useCan()
   const t = all.databases, tc = all.common
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -72,7 +74,7 @@ export function DeletedInstanceBackups() {
         </div>
         <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${b.id}`} items={[
           { label: b.scope === 'instance' ? t.restoreInstance : t.restoreBackup, disabled: !b.ready || b.status !== 'succeeded', onSelect: () => { restore.reset(); setName(''); setTarget(''); setProject(''); setRestoring(b) } },
-          { label: remove.isPending && remove.variables === b.id ? tc.working : t.deleteBackup, danger: true, disabled: remove.isPending, onSelect: () => setDeleting(b.id) },
+          ...(can.remove ? [{ label: remove.isPending && remove.variables === b.id ? tc.working : t.deleteBackup, danger: true, disabled: remove.isPending, onSelect: () => setDeleting(b.id) }] : []),
         ]} />
       </li>)}</ul>
     </Panel>

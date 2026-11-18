@@ -97,7 +97,12 @@ export const dockerMetricsQuery = {
   staleTime: 10_000,
   retry: 1,
 }
-export type User = { id: string; email: string; role: string; created_at: string }
+export type Role = 'owner' | 'admin' | 'maintainer'
+export type User = { id: string; email: string; role: Role; created_at: string }
+/** A pending invitation; `token` (the secret of its link) only in the response that creates it. */
+export type Invite = { id: string; email: string; role: Role; expires_at: string; created_at: string; expired: boolean; token?: string }
+export const usersQuery = { queryKey: ['users'] as const, queryFn: () => api<User[]>('/users') }
+export const invitesQuery = { queryKey: ['invites'] as const, queryFn: () => api<Invite[]>('/invites') }
 
 export const metaQuery = {
   queryKey: ['meta'] as const,

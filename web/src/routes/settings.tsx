@@ -2,20 +2,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { DnsHintText } from '../components/dns'
 import { Link, useSearch } from '@tanstack/react-router'
-import { GitConnections } from './settings-git'
-import { ApiTokens } from './settings-tokens'
 import { SecuritySettings } from './settings-security'
 import { PanelUpdates } from './settings-updates'
 import { BuildSettingsSection } from './settings-builds'
 import { StorageSettings } from './settings-storage'
 import { NotificationSettings } from './settings-notifications'
-import { PanelBackupSettings } from './settings-backup'
+import { UsersSettings } from './settings-users'
+import { useCan } from '../lib/roles'
 import { Button, CheckOption, ConfirmButton, cx, ErrorNote, Field, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
 import { rich, useT } from '../lib/i18n'
 import { api, ApiError, panelDnsQuery, panelSettingsQuery, type PanelSettings } from '../lib/api'
 
-export const settingsTabs = ['general', 'security', 'git', 'builds', 'storage', 'backup', 'notifications', 'tokens'] as const
+// Git connections, the panel backup and API tokens are pages of the main menu, not sections here.
+export const settingsTabs = ['general', 'security', 'users', 'builds', 'storage', 'notifications'] as const
 export type SettingsTab = (typeof settingsTabs)[number]
+
+/** The settings sections the signed-in user's role may open: users are the owner's. */
+export function useSettingsTabs(): SettingsTab[] {
+  const can = useCan()
+  return settingsTabs.filter((tab) => tab !== 'users' || can.manageUsers)
+}
 
 /** The name of each settings section, for the page's tabs and the sidebar. */
 export function useSettingsTabLabels(): Record<SettingsTab, string> {
@@ -23,24 +29,18 @@ export function useSettingsTabLabels(): Record<SettingsTab, string> {
   return {
     general: t.settings.general,
     security: t.security.title,
-    git: t.settingsGit.title,
+    users: t.users.title,
     builds: t.settingsBuilds.title,
     storage: t.settingsStorage.title,
-    backup: t.settingsBackup.title,
     notifications: t.settingsNotifications.title,
-    tokens: t.settingsTokens.title,
   }
 }
 
 export function SettingsPage() {
   const t = useT()
-  const search = useSearch({ strict: false }) as { tab?: string; git_error?: string }
-  // An unknown tab falls back; GitHub's callback may come back with git_error and no tab.
-  const tab: SettingsTab = settingsTabs.includes(search.tab as SettingsTab)
-    ? (search.tab as SettingsTab)
-    : search.git_error
-      ? 'git'
-      : 'general'
+  const search = useSearch({ strict: false }) as { tab?: string }
+  const tabs = useSettingsTabs()
+  const tab: SettingsTab = tabs.includes(search.tab as SettingsTab) ? (search.tab as SettingsTab) : 'general'
   const label = useSettingsTabLabels()
   return (
     <div className="space-y-6">
@@ -53,7 +53,7 @@ export function SettingsPage() {
         }
       />
       <nav className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line" aria-label={t.settings.sections}>
-        {settingsTabs.map((name) => (
+        {tabs.map((name) => (
           <Link
             key={name}
             to="/settings"
@@ -74,13 +74,11 @@ export function SettingsPage() {
           <PanelDomain />
         </>
       )}
-      {tab === 'git' && <GitConnections />}
       {tab === 'security' && <SecuritySettings />}
+      {tab === 'users' && <UsersSettings />}
       {tab === 'builds' && <BuildSettingsSection />}
       {tab === 'storage' && <StorageSettings />}
-      {tab === 'backup' && <PanelBackupSettings />}
       {tab === 'notifications' && <NotificationSettings />}
-      {tab === 'tokens' && <ApiTokens />}
     </div>
   )
 }

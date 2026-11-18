@@ -9,6 +9,7 @@ import { Badge, Button, cx, Empty, ErrorNote, Field, HttpOnlyChoice, PageHeader,
 import { allDomainsQuery, api, dnsQuery, hostHref, type Domain } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
+import { useCan } from '../lib/roles'
 
 /** The Domains page: every hostname the panel serves. A domain is added here once; a
  * project then picks it and routes its paths to apps. */
@@ -45,6 +46,7 @@ export function DomainsPage() {
 
 function DomainRow({ domain }: { domain: Domain }) {
   const t = useT()
+  const can = useCan()
   const td = t.domains
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -104,7 +106,7 @@ function DomainRow({ domain }: { domain: Domain }) {
               onSelect: () => void navigate({ to: '/projects/$projectId', params: { projectId: domain.project_id }, search: { tab: 'domains' } }),
             }] : []),
             { label: httpOnly ? t.app.useHttps : t.common.httpOnly, onSelect: () => setMode.mutate(httpOnly ? 'auto' : 'http_only') },
-            { label: td.remove, danger: true, onSelect: () => setConfirming(true) },
+            ...(can.remove ? [{ label: td.remove, danger: true, onSelect: () => setConfirming(true) }] : []),
           ]}
         />
       </div>

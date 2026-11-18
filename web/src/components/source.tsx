@@ -199,7 +199,7 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
         searchPlaceholder={t.source.searchConnections}
         hint={rich(t.source.accessHint, {
           a: (c) => (
-            <Link to="/settings" search={{ tab: 'git' }} className="text-accent hover:underline">
+            <Link to="/git" className="text-accent hover:underline">
               {c}
             </Link>
           ),

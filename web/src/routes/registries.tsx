@@ -7,6 +7,7 @@ import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, Panel, Quer
 import { api, registriesQuery, registrySettingsQuery, registryTokensQuery, s3ConnectionsQuery, type Registry, type RegistrySettings } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 
 type SheetKind = 'external' | 'builtin' | null
 
@@ -113,6 +114,7 @@ function BuiltinRow({ settings }: { settings: RegistrySettings }) {
 }
 
 function ExternalRow({ registry }: { registry: Registry }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const t = useT()
   const remove = useMutation({
@@ -132,7 +134,7 @@ function ExternalRow({ registry }: { registry: Registry }) {
         </p>
         {remove.error && <p className="text-xs text-danger">{remove.error.message}</p>}
       </div>
-      <ConfirmButton label={t.common.remove} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+      {can.remove && <ConfirmButton label={t.common.remove} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
     </li>
   )
 }

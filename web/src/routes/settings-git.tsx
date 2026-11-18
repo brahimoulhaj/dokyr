@@ -4,9 +4,11 @@ import { Badge, Button, ConfirmButton, Empty, ErrorNote, Field, HelpTip, Panel, 
 import { api, gitSourcesQuery, type GitHubManifest, type GitSource } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 
-/** Git connections: a GitHub App or a GitLab token, for private repositories. */
-export function GitConnections() {
+/** Git connections: a GitHub App or a GitLab token, for private repositories. `bare` drops
+ * the section title where the page already names it. */
+export function GitConnections({ bare = false }: { bare?: boolean }) {
   const sources = useQuery(gitSourcesQuery)
   const [adding, setAdding] = useState<'github' | 'gitlab' | 'deploy_key' | null>(null)
   // GitHub sends the browser back here; a failed connection arrives with its reason.
@@ -15,7 +17,7 @@ export function GitConnections() {
 
   return (
     <Panel
-      title={<span className="inline-flex items-center gap-2">{t.settingsGit.title}<HelpTip label={t.settingsGit.title}>{t.settingsGit.intro}</HelpTip></span>}
+      title={bare ? undefined : <span className="inline-flex items-center gap-2">{t.settingsGit.title}<HelpTip label={t.settingsGit.title}>{t.settingsGit.intro}</HelpTip></span>}
       actions={
         !adding && (
           <span className="flex gap-2">
@@ -266,6 +268,7 @@ function PublicKey({ value }: { value: string }) {
 }
 
 function SourceRow({ source }: { source: GitSource }) {
+  const can = useCan()
   const queryClient = useQueryClient()
   const t = useT()
   const github = source.type === 'github_app'
@@ -300,11 +303,11 @@ function SourceRow({ source }: { source: GitSource }) {
         )}
         {deployKey && source.public_key && <PublicKey value={source.public_key} />}
         {remove.error && <p className="text-xs text-danger">{remove.error.message}</p>}
-        {github && remove.isIdle && (
+        {github && can.remove && remove.isIdle && (
           <p className="mt-1 text-xs text-muted">{t.settingsGit.removeNote}</p>
         )}
       </div>
-      <ConfirmButton label={t.common.remove} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />
+      {can.remove && <ConfirmButton label={t.common.remove} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
     </li>
   )
 }

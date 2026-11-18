@@ -36,6 +36,7 @@ import { withToast } from '../lib/toasts'
 import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, duration, repoName, timeAgo, type Tone } from '../lib/format'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { poll } from '../lib/live'
+import { useCan } from '../lib/roles'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
 export const appTabs = ['overview', 'deployments', 'logs', 'metrics', 'terminal', 'settings'] as const
@@ -624,15 +625,18 @@ export type SettingsSection = (typeof settingsSections)[number]
 /** App settings, grouped by family: a vertical menu (a strip on phones) and one section. */
 function Settings({ app }: { app: App }) {
   const t = useT()
+  const can = useCan()
+  // Deleting the app is not for maintainers, and that is all the danger section holds.
+  const sections = settingsSections.filter((name) => name !== 'danger' || can.remove)
   const raw = (useSearch({ strict: false }) as { section?: string }).section
-  const section: SettingsSection = settingsSections.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'general'
+  const section: SettingsSection = sections.includes(raw as SettingsSection) ? (raw as SettingsSection) : 'general'
   return (
     <div className="flex flex-col gap-6 md:flex-row md:items-start">
       <nav
         aria-label={t.app.settingsSections.label}
         className="flex shrink-0 gap-1 overflow-x-auto border-b border-line md:sticky md:top-0 md:w-48 md:flex-col md:overflow-visible md:border-b-0"
       >
-        {settingsSections.map((name) => (
+        {sections.map((name) => (
           <Link
             key={name}
             to="/projects/$projectId/apps/$appId"

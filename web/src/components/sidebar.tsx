@@ -7,16 +7,20 @@ import { Database } from '@phosphor-icons/react/dist/csr/Database'
 import { FolderSimple } from '@phosphor-icons/react/dist/csr/FolderSimple'
 import { Globe } from '@phosphor-icons/react/dist/csr/Globe'
 import { GearSix } from '@phosphor-icons/react/dist/csr/GearSix'
+import { GitBranch } from '@phosphor-icons/react/dist/csr/GitBranch'
+import { Key } from '@phosphor-icons/react/dist/csr/Key'
+import { Vault } from '@phosphor-icons/react/dist/csr/Vault'
 import { HardDrives } from '@phosphor-icons/react/dist/csr/HardDrives'
 import { Package } from '@phosphor-icons/react/dist/csr/Package'
 import { Plus } from '@phosphor-icons/react/dist/csr/Plus'
 import { SquaresFour } from '@phosphor-icons/react/dist/csr/SquaresFour'
 import type { Icon } from '@phosphor-icons/react'
-import { allDomainsQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
+import { allDomainsQuery, gitSourcesQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
+import { useCan } from '../lib/roles'
 import { databasesQuery } from '../lib/databases'
 import { useT } from '../lib/i18n'
 import { NewProject } from '../routes/projects'
-import { settingsTabs, useSettingsTabLabels } from '../routes/settings'
+import { useSettingsTabLabels, useSettingsTabs } from '../routes/settings'
 import { Sheet } from './sheet'
 import { cx } from './ui'
 
@@ -36,7 +40,10 @@ export function Sidebar() {
   const registries = useQuery(registriesQuery)
   const domains = useQuery(allDomainsQuery)
   const builtin = useQuery({ ...registrySettingsQuery, retry: false })
+  const gitSources = useQuery({ ...gitSourcesQuery, retry: false })
+  const can = useCan()
   const settingsLabels = useSettingsTabLabels()
+  const settingsTabs = useSettingsTabs()
   const navigate = useNavigate()
   const [creatingProject, setCreatingProject] = useState(false)
 
@@ -83,9 +90,12 @@ export function Sidebar() {
         <NavItem to="/domains" icon={Globe} label={t.domains.title} trailing={<Count n={domains.data?.length} />} />
         <NavItem to="/storage" icon={HardDrives} label={ts.storage} trailing={store.data && <StorageState enabled={store.data.enabled} state={store.data.state} />} />
         <NavItem to="/registry" icon={Package} label={ts.registry} trailing={<Count n={registries.isSuccess ? registryCount : undefined} />} />
+        <NavItem to="/git" icon={GitBranch} label={t.settingsGit.title} trailing={<Count n={gitSources.data?.length} />} />
       </Group>
 
       <Group label={ts.groupSystem}>
+        {can.admin && <NavItem to="/backups" icon={Vault} label={t.settingsBackup.title} />}
+        <NavItem to="/tokens" icon={Key} label={t.settingsTokens.title} />
         <NavItem to="/settings" icon={GearSix} label={t.common.settings} />
         {onSettings && (
           <ul className="ms-5 hidden border-s border-line ps-1.5 md:block">
@@ -122,7 +132,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains'
+type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains' | '/git' | '/backups' | '/tokens'
 
 // Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
 function NavItem({ to, icon: ItemIcon, label, exact, trailing }: { to: To; icon: Icon; label: string; exact?: boolean; trailing?: ReactNode }) {

@@ -15,9 +15,11 @@ import { ProjectsPage } from './routes/projects'
 import { NewAppPage } from './routes/new-app'
 import { SettingsPage, settingsTabs, type SettingsTab } from './routes/settings'
 import { SetupPage } from './routes/setup'
+import { InvitePage } from './routes/invite'
 import { DatabasesPage } from './routes/databases'
 import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
 import { StoragePage } from './routes/storage'
+import { BackupsPage, GitPage, TokensPage } from './routes/system-pages'
 
 type Ctx = { queryClient: QueryClient }
 
@@ -60,7 +62,19 @@ const loginRoute = createRoute({
   component: LoginPage,
 })
 
-async function requireOwner(queryClient: QueryClient) {
+// Where an invite link lands. Open to everyone: the token is the proof.
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite',
+  validateSearch: (s: Record<string, unknown>) => ({ token: typeof s.token === 'string' ? s.token : '' }),
+  beforeLoad: async ({ context }) => {
+    const meta = await context.queryClient.ensureQueryData(metaQuery)
+    if (meta.setup_required) throw redirect({ to: '/setup', search: { token: '' } })
+  },
+  component: InvitePage,
+})
+
+async function requireUser(queryClient: QueryClient) {
   const meta = await queryClient.ensureQueryData(metaQuery)
   if (meta.setup_required) throw redirect({ to: '/setup', search: { token: '' } })
   if (!(await queryClient.ensureQueryData(meQuery))) throw redirect({ to: '/login' })
@@ -74,7 +88,7 @@ const onboardingRoute = createRoute({
     const n = Number(s.step)
     return { step: Number.isInteger(n) && n >= 0 ? n : 0 }
   },
-  beforeLoad: ({ context }) => requireOwner(context.queryClient),
+  beforeLoad: ({ context }) => requireUser(context.queryClient),
   component: OnboardingPage,
 })
 
@@ -82,7 +96,7 @@ const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'app',
   beforeLoad: async ({ context }) => {
-    await requireOwner(context.queryClient)
+    await requireUser(context.queryClient)
     const onboarding = await context.queryClient.ensureQueryData(onboardingQuery)
     if (!onboarding.completed) throw redirect({ to: '/onboarding', search: { step: 0 } })
   },
@@ -123,23 +137,51 @@ const builtinRegistryRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { tab?: BuiltinTab } => (builtinTabs.includes(s.tab as BuiltinTab) ? { tab: s.tab as BuiltinTab } : {}),
   component: BuiltinRegistryPage,
 })
+// Once sections of Settings. Old links (a GitHub App's setup URL, an alert email) still say
+// /settings?tab=git and the like; the settings route sends them here.
+const movedTabs = { git: '/git', backup: '/backups', tokens: '/tokens' } as const
+const gitRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/git',
+  // GitHub sends the browser back here; a failed connection arrives with its reason.
+  validateSearch: (s: Record<string, unknown>): { git_error?: string } => (typeof s.git_error === 'string' ? { git_error: s.git_error } : {}),
+  component: GitPage,
+})
+const backupsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/backups',
+  // The panel's own backups are not for maintainers; the server refuses them as well.
+  beforeLoad: async ({ context }) => {
+    if ((await context.queryClient.ensureQueryData(meQuery))?.role === 'maintainer') throw redirect({ to: '/' })
+  },
+  component: BackupsPage,
+})
+const tokensRoute = createRoute({ getParentRoute: () => appRoute, path: '/tokens', component: TokensPage })
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
-  validateSearch: (s: Record<string, unknown>): { tab?: SettingsTab; git_error?: string; auth_error?: string } => ({
-    ...(settingsTabs.includes(s.tab as SettingsTab) ? { tab: s.tab as SettingsTab } : {}),
+  validateSearch: (s: Record<string, unknown>): { tab?: SettingsTab | keyof typeof movedTabs; git_error?: string; auth_error?: string } => ({
+    ...(settingsTabs.includes(s.tab as SettingsTab) || (s.tab as string) in movedTabs ? { tab: s.tab as SettingsTab } : {}),
     ...(typeof s.git_error === 'string' ? { git_error: s.git_error } : {}),
     ...(typeof s.auth_error === 'string' ? { auth_error: s.auth_error } : {}),
   }),
+  beforeLoad: ({ search }) => {
+    if (search.git_error && !search.tab) throw redirect({ to: '/git', search: { git_error: search.git_error } })
+    if (search.tab && search.tab in movedTabs) {
+      const to = movedTabs[search.tab as keyof typeof movedTabs]
+      throw to === '/git' ? redirect({ to, search: search.git_error ? { git_error: search.git_error } : {} }) : redirect({ to })
+    }
+  },
   component: SettingsPage,
 })
 
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
+  inviteRoute,
   onboardingRoute,
   appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
-    builtinRegistryRoute, settingsRoute, databasesRoute, databaseRoute]),
+    builtinRegistryRoute, settingsRoute, gitRoute, backupsRoute, tokensRoute, databasesRoute, databaseRoute]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {

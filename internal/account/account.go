@@ -20,6 +20,14 @@ const (
 	MinPassword   = 8
 	MaxPassword   = 256
 
+	InviteTTL = 7 * 24 * time.Hour
+
+	// Roles. The owner does everything. An admin does everything but manage users. A
+	// maintainer also cannot delete resources; see the api package for the exact rules.
+	RoleOwner      = "owner"
+	RoleAdmin      = "admin"
+	RoleMaintainer = "maintainer"
+
 	keySetupHash    = "setup_token_hash"
 	keySetupExpires = "setup_token_expires_at"
 )
@@ -31,6 +39,9 @@ var (
 	ErrBadSetupToken      = errors.New("setup token is invalid or expired")
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrEmailTaken         = errors.New("a user with this email already exists")
+	ErrInvalidRole        = errors.New("choose the admin or maintainer role")
+	ErrBadInvite          = errors.New("this invite link is invalid or has expired")
+	ErrOwnerProtected     = errors.New("the owner's account cannot be changed or removed")
 )
 
 type Service struct {
@@ -127,6 +138,10 @@ func (s *Service) CreateOwner(ctx context.Context, email, password string) (stor
 }
 
 func (s *Service) createOwner(ctx context.Context, email, password string) (store.User, error) {
+	return s.createUser(ctx, email, password, RoleOwner)
+}
+
+func (s *Service) createUser(ctx context.Context, email, password, role string) (store.User, error) {
 	email, err := normalizeEmail(email)
 	if err != nil {
 		return store.User{}, err
@@ -143,7 +158,85 @@ func (s *Service) createOwner(ctx context.Context, email, password string) (stor
 	if err != nil {
 		return store.User{}, err
 	}
-	return s.store.CreateUser(ctx, email, hash, "owner")
+	return s.store.CreateUser(ctx, email, hash, role)
+}
+
+func invitableRole(role string) bool { return role == RoleAdmin || role == RoleMaintainer }
+
+// Invite creates a one-time link token for the email to join with the role. Inviting
+// the same email again replaces the earlier invite, so its old link stops working.
+func (s *Service) Invite(ctx context.Context, inviterID, email, role string) (store.Invite, string, error) {
+	email, err := normalizeEmail(email)
+	if err != nil {
+		return store.Invite{}, "", err
+	}
+	if !invitableRole(role) {
+		return store.Invite{}, "", ErrInvalidRole
+	}
+	if _, err := s.store.GetUserByEmail(ctx, email); err == nil {
+		return store.Invite{}, "", ErrEmailTaken
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return store.Invite{}, "", err
+	}
+	token := auth.NewToken()
+	inv, err := s.store.SaveInvite(ctx, email, role, auth.HashToken(token), inviterID, time.Now().Add(InviteTTL))
+	return inv, token, err
+}
+
+// InviteByToken returns the pending invite behind a link token.
+func (s *Service) InviteByToken(ctx context.Context, token string) (store.Invite, error) {
+	if token == "" {
+		return store.Invite{}, ErrBadInvite
+	}
+	inv, err := s.store.InviteByToken(ctx, auth.HashToken(token))
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Invite{}, ErrBadInvite
+	}
+	return inv, err
+}
+
+// AcceptInvite creates the invited user with the password they chose and uses up the invite.
+func (s *Service) AcceptInvite(ctx context.Context, token, password string) (store.User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inv, err := s.InviteByToken(ctx, token)
+	if err != nil {
+		return store.User{}, err
+	}
+	u, err := s.createUser(ctx, inv.Email, password, inv.Role)
+	if err != nil {
+		return store.User{}, err
+	}
+	_, err = s.store.DeleteInvite(ctx, inv.ID)
+	return u, err
+}
+
+// SetRole changes a member's role. Owners are never changed, and nobody becomes one here.
+func (s *Service) SetRole(ctx context.Context, userID, role string) (store.User, error) {
+	if !invitableRole(role) {
+		return store.User{}, ErrInvalidRole
+	}
+	u, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return store.User{}, err
+	}
+	if u.Role == RoleOwner {
+		return store.User{}, ErrOwnerProtected
+	}
+	u.Role = role
+	return u, s.store.UpdateUserRole(ctx, userID, role)
+}
+
+// RemoveUser deletes a member and everything that signs them in. Owners are never removed.
+func (s *Service) RemoveUser(ctx context.Context, userID string) (store.User, error) {
+	u, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return store.User{}, err
+	}
+	if u.Role == RoleOwner {
+		return store.User{}, ErrOwnerProtected
+	}
+	return u, s.store.DeleteUser(ctx, userID)
 }
 
 // ResetPassword sets a new password and signs the user out everywhere.

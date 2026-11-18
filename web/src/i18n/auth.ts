@@ -2,7 +2,7 @@
 
 export const en = {
   signIn: 'Sign in',
-  signInSubtitle: 'Use the owner account for this server.',
+  signInSubtitle: 'Use your account on this server.',
   signingIn: 'Signing in…',
   setupNeeded: 'Setup link needed',
   noOwnerYet: 'This server has no owner yet.',
@@ -17,7 +17,7 @@ export const en = {
 
 export const fr: typeof en = {
   signIn: 'Connexion',
-  signInSubtitle: 'Utilisez le compte propriétaire de ce serveur.',
+  signInSubtitle: 'Utilisez votre compte sur ce serveur.',
   signingIn: 'Connexion…',
   setupNeeded: 'Lien de configuration requis',
   noOwnerYet: "Ce serveur n'a pas encore de propriétaire.",
@@ -33,7 +33,7 @@ export const fr: typeof en = {
 
 export const ar: typeof en = {
   signIn: 'تسجيل الدخول',
-  signInSubtitle: 'استخدم حساب مالك هذا الخادم.',
+  signInSubtitle: 'استخدم حسابك على هذا الخادم.',
   signingIn: 'جارٍ تسجيل الدخول…',
   setupNeeded: 'رابط الإعداد مطلوب',
   noOwnerYet: 'ليس لهذا الخادم مالك بعد.',
@@ -48,7 +48,7 @@ export const ar: typeof en = {
 
 export const es: typeof en = {
   signIn: 'Iniciar sesión',
-  signInSubtitle: 'Usa la cuenta de propietario de este servidor.',
+  signInSubtitle: 'Usa tu cuenta en este servidor.',
   signingIn: 'Iniciando sesión…',
   setupNeeded: 'Se necesita el enlace de configuración',
   noOwnerYet: 'Este servidor aún no tiene propietario.',

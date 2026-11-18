@@ -40,6 +40,7 @@ import * as templates from './templates'
 import * as compose from './compose'
 import * as newApp from './newApp'
 import * as connectDb from './connectDb'
+import * as users from './users'
 
 type Code = 'en' | 'fr' | 'ar' | 'es'
 
@@ -50,6 +51,7 @@ const pick = (l: Code) => ({
   compose: compose[l] as typeof compose.en,
   newApp: newApp[l] as typeof newApp.en,
   connectDb: connectDb[l] as typeof connectDb.en,
+  users: users[l] as typeof users.en,
   lists: lists[l] as typeof lists.en,
   command: command[l] as typeof command.en,
   dockerMetrics: dockerMetrics[l] as typeof dockerMetrics.en,

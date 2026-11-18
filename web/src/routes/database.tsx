@@ -12,11 +12,13 @@ import { DatabaseSelect, DatabaseStatus } from './databases'
 import { DatabaseBackups } from '../components/database-backups'
 import { DatabaseAccess } from '../components/database-access'
 import { DatabasePublicAccess, PublicConnection } from '../components/database-public'
+import { useCan } from '../lib/roles'
 
 export const databaseTabs = ['overview', 'access', 'connection', 'backups', 'logs', 'metrics', 'settings'] as const
 export type DatabaseTab = typeof databaseTabs[number]
 
 export function DatabasePage() {
+  const can = useCan()
   const { databaseId } = useParams({ from: '/app/databases/$databaseId' })
   const { tab = 'overview' } = useSearch({ from: '/app/databases/$databaseId' })
   const db = useQuery(databaseQuery(databaseId))
@@ -71,7 +73,7 @@ export function DatabasePage() {
       {tab === 'settings' && <div className="space-y-5">
         <DatabaseProject key={`${d.id}:${d.project_id}`} d={d} busy={busy} />
         <DatabasePublicAccess d={d} busy={busy} />
-        <RemoveDatabase d={d} busy={busy} />
+        {can.remove && <RemoveDatabase d={d} busy={busy} />}
       </div>}
     </>}
   </div>

@@ -113,6 +113,11 @@ export const en = {
     'git_source.remove': 'removed the Git connection',
     'token.create': 'created the API token',
     'token.revoke': 'revoked the API token',
+    'user.invite': 'invited',
+    'user.invite_revoke': 'revoked the invite of',
+    'user.join': 'joined:',
+    'user.role': 'changed the role of',
+    'user.remove': 'removed the user',
   },
 }
 
@@ -228,6 +233,11 @@ export const fr: typeof en = {
     'git_source.remove': 'a supprimé la connexion Git',
     'token.create': "a créé le jeton d'API",
     'token.revoke': "a révoqué le jeton d'API",
+    'user.invite': 'a invité',
+    'user.invite_revoke': "a révoqué l'invitation de",
+    'user.join': 'a rejoint :',
+    'user.role': 'a changé le rôle de',
+    'user.remove': "a retiré l'utilisateur",
   },
 }
 
@@ -347,6 +357,11 @@ export const ar: typeof en = {
     'git_source.remove': 'أزال اتصال Git',
     'token.create': 'أنشأ رمز API',
     'token.revoke': 'ألغى رمز API',
+    'user.invite': 'دعا',
+    'user.invite_revoke': 'ألغى دعوة',
+    'user.join': 'انضم:',
+    'user.role': 'غيّر دور',
+    'user.remove': 'أزال المستخدم',
   },
 }
 
@@ -462,5 +477,10 @@ export const es: typeof en = {
     'git_source.remove': 'eliminó la conexión Git',
     'token.create': 'creó el token de API',
     'token.revoke': 'revocó el token de API',
+    'user.invite': 'invitó a',
+    'user.invite_revoke': 'revocó la invitación de',
+    'user.join': 'se unió:',
+    'user.role': 'cambió el rol de',
+    'user.remove': 'quitó al usuario',
   },
 }

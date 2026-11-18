@@ -59,14 +59,10 @@ type HostTerminal func(ctx context.Context, cols, rows uint) (executor.Terminal,
 
 func (s *Server) SetHostTerminal(open HostTerminal) { s.hostTerminal = open }
 
-// handleHostTerminal is a root shell on the host: browser session of the owner only.
+// handleHostTerminal is a root shell on the host: browser session of the owner or an admin only.
 func (s *Server) handleHostTerminal(w http.ResponseWriter, r *http.Request) {
 	if !terminalOrigin(r) {
 		writeError(w, http.StatusForbidden, "cross_origin", "cross-origin terminal blocked")
-		return
-	}
-	if userFrom(r.Context()).Role != "owner" {
-		writeError(w, http.StatusForbidden, "forbidden", "only the owner can open the host terminal")
 		return
 	}
 	if s.hostTerminal == nil {

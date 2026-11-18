@@ -10,6 +10,7 @@ import { timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 import { DatabaseSelect } from './databases'
+import { useCan } from '../lib/roles'
 
 type Kind = { id: string; fields: string[]; secret: string[]; required: string[] }
 type Channel = { id: string; name: string; kind: string; config: Record<string, string | boolean>; last_sent_at: string | null; last_error: string; created_at: string }
@@ -29,6 +30,7 @@ export function NotificationSettings() {
 
 function Channels() {
   const t = useT().settingsNotifications
+  const can = useCan()
   const qc = useQueryClient()
   const channels = useQuery(channelsQuery)
   const [editing, setEditing] = useState<Channel | 'new' | null>(null)
@@ -57,7 +59,7 @@ function Channels() {
           <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${c.name}`} items={[
             { label: t.test, disabled: test.isPending, onSelect: () => test.mutate(c) },
             { label: t.editChannel, onSelect: () => open(c) },
-            { label: t.deleteChannel, danger: true, onSelect: () => setDeleting(c) },
+            ...(can.remove ? [{ label: t.deleteChannel, danger: true, onSelect: () => setDeleting(c) }] : []),
           ]} />
         </li>)}</ul>}
     </Panel>}
@@ -113,6 +115,7 @@ function ChannelForm({ channel, onDone }: { channel: Channel | null; onDone: () 
 
 function Rules() {
   const t = useT().settingsNotifications
+  const can = useCan()
   const qc = useQueryClient()
   const rules = useQuery(rulesQuery)
   const channels = useQuery(channelsQuery)
@@ -139,7 +142,7 @@ function Rules() {
           </div>
           <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${t.events[r.event] ?? r.event}`} items={[
             { label: r.enabled ? t.disable : t.enable, disabled: toggle.isPending, onSelect: () => toggle.mutate(r) },
-            { label: t.deleteRule, danger: true, disabled: remove.isPending, onSelect: () => remove.mutate(r) },
+            ...(can.remove ? [{ label: t.deleteRule, danger: true, disabled: remove.isPending, onSelect: () => remove.mutate(r) }] : []),
           ]} />
         </li>)}</ul>}
     </Panel>}

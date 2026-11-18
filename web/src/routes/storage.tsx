@@ -10,6 +10,7 @@ import { api, objectStoreQuery, type ObjectStore } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { locale, useT } from '../lib/i18n'
 import { poll } from '../lib/live'
+import { useCan } from '../lib/roles'
 
 type Bucket = { name: string; created_at: string; size: number; objects: number; truncated: boolean }
 
@@ -168,6 +169,7 @@ function Credentials({ accessKey }: { accessKey: string }) {
 
 function Buckets({ onCreate }: { onCreate: () => void }) {
   const ts = useT().storage
+  const can = useCan()
   const qc = useQueryClient()
   const buckets = useQuery({ queryKey: bucketsKey, queryFn: () => api<Bucket[]>('/object-store/buckets'), retry: 2 })
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -209,8 +211,8 @@ function Buckets({ onCreate }: { onCreate: () => void }) {
                   <td className="px-4 py-2 text-end text-muted">{formatBytes(b.size)}</td>
                   <td className="px-4 py-2 text-muted" title={dateTime(b.created_at)}>{timeAgo(b.created_at)}</td>
                   <td className="px-4 py-2 text-end">
-                    <ActionsMenu label={ts.actions} ariaLabel={`${ts.actions}: ${b.name}`}
-                      items={[{ label: ts.delete, danger: true, onSelect: () => setDeleting(b.name) }]} />
+                    {can.remove && <ActionsMenu label={ts.actions} ariaLabel={`${ts.actions}: ${b.name}`}
+                      items={[{ label: ts.delete, danger: true, onSelect: () => setDeleting(b.name) }]} />}
                   </td>
                 </tr>
               ))}

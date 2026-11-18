@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"panel/internal/account"
 	"panel/internal/auth"
 	"panel/internal/brand"
 	"panel/internal/store"
@@ -139,6 +140,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "sign in to continue")
 			return
 		}
+		if !allowed(w, r, u) {
+			return
+		}
 		if err := s.store.TouchSession(r.Context(), auth.HashToken(c.Value), browserSessionDetails(r)); err != nil {
 			s.log.Error("session activity", "error", err)
 		}
@@ -161,11 +165,61 @@ func (s *Server) tokenAuth(w http.ResponseWriter, r *http.Request, header string
 		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or revoked API token")
 		return
 	}
+	if !allowed(w, r, u) {
+		return
+	}
 	if err := s.store.TouchAPIToken(r.Context(), t.ID); err != nil {
 		s.log.Error("api token touch", "error", err)
 	}
 	ctx := context.WithValue(context.WithValue(r.Context(), userKey, u), tokenKey, &t)
 	next(w, r.WithContext(ctx))
+}
+
+// ownDeletes are the DELETE endpoints a maintainer keeps: their own sessions, login
+// methods and API tokens, and the reset of the build limits (which deletes nothing).
+// Turning an app's deploy hook off is a switch, not a deletion, and stays open too.
+var ownDeletes = []string{"/api/auth/", "/api/tokens/", "/api/settings/builds"}
+
+// allowed applies the one rule that covers a whole class of endpoints: a maintainer
+// cannot delete. It is checked for every authenticated request, so a DELETE endpoint
+// added later is closed to maintainers without anyone remembering to say so.
+func allowed(w http.ResponseWriter, r *http.Request, u store.User) bool {
+	if u.Role == account.RoleOwner || u.Role == account.RoleAdmin || r.Method != http.MethodDelete {
+		return true
+	}
+	if strings.HasSuffix(r.URL.Path, "/deploy-hook") {
+		return true
+	}
+	for _, p := range ownDeletes {
+		if strings.HasPrefix(r.URL.Path, p) {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, "forbidden", "your role cannot delete this; ask an admin")
+	return false
+}
+
+// ownerOnly is for managing users and their roles.
+func ownerOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if userFrom(r.Context()).Role != account.RoleOwner {
+			writeError(w, http.StatusForbidden, "forbidden", "only the owner can manage users")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// adminOnly keeps maintainers away from what would let them step around their role:
+// the host shell, the panel's own backups and how people sign in.
+func adminOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if role := userFrom(r.Context()).Role; role != account.RoleOwner && role != account.RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden", "your role cannot do this; ask an admin")
+			return
+		}
+		next(w, r)
+	}
 }
 
 // sessionOnly refuses API tokens: managing tokens needs the browser session, so a leaked
