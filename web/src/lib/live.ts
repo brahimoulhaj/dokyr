@@ -33,6 +33,8 @@ const readers: Record<string, QueryKey[]> = {
   settings: [['settings'], ['registry']],
   api_tokens: [['tokens']],
   sessions: [['auth', 'sessions']],
+  cron_jobs: [['cron-jobs']],
+  cron_job_runs: [['cron-jobs']],
 }
 
 let connected = false

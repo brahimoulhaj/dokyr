@@ -32,6 +32,7 @@ import (
 	"panel/internal/dockermetrics"
 	"panel/internal/executor"
 	"panel/internal/gitsource"
+	"panel/internal/hostcron"
 	"panel/internal/hostmetrics"
 	containermetrics "panel/internal/metrics"
 	"panel/internal/notify"
@@ -354,15 +355,22 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetDeployer(deployer)
 	// The helper needs only nsenter. The panel's own image has it; a panel running outside
 	// a container (development) borrows the proxy's image, which Docker already has.
-	apiSrv.SetHostTerminal(func(ctx context.Context, user string, cols, rows uint) (executor.Terminal, error) {
-		image := cfg.Proxy.Image
+	helperImage := func(ctx context.Context) string {
 		if databases.GateImage != nil {
 			if self, err := databases.GateImage(ctx); err == nil {
-				image = self
+				return self
 			}
 		}
-		return ex.OpenHostTerminal(ctx, image, user, cols, rows)
+		return cfg.Proxy.Image
+	}
+	apiSrv.SetHostTerminal(func(ctx context.Context, user string, cols, rows uint) (executor.Terminal, error) {
+		return ex.OpenHostTerminal(ctx, helperImage(ctx), user, cols, rows)
 	})
+	cronJobs := hostcron.New(ctx, st, log, func(ctx context.Context, user, command string, out io.Writer) (int, error) {
+		return ex.RunHostCommand(ctx, helperImage(ctx), user, command, out)
+	})
+	go cronJobs.Watch(schedulerCtx)
+	apiSrv.SetCronJobs(cronJobs)
 	apiSrv.SetGitSources(git)
 	apiSrv.SetRegistry(reg)
 	apiSrv.SetObjectStore(objects)

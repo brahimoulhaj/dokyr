@@ -113,6 +113,19 @@ export const metaQuery = {
 export type HostTerminalSettings = { enabled: boolean; user: string; available: boolean; unlocked: boolean }
 export const hostTerminalQuery = { queryKey: ['host-terminal'] as const, queryFn: () => api<HostTerminalSettings>('/host/terminal/settings') }
 
+export type CronRun = {
+  id: string; source: 'schedule' | 'manual'; actor: string; status: 'running' | 'ok' | 'failed'
+  started_at: string; finished_at: string | null; exit_code: number; error: string; output: string
+}
+export type CronJob = {
+  id: string; name: string; schedule: string; command: string; user: string; enabled: boolean
+  next_run_at: string | null; last_run: CronRun | null; created_at: string; updated_at: string
+}
+/** `enabled` is the host access switch of Settings; `default_user` its run-as user ('' when none is set). */
+export type CronJobList = { jobs: CronJob[]; enabled: boolean; default_user: string; unlocked: boolean }
+export const cronJobsQuery = { queryKey: ['cron-jobs'] as const, queryFn: () => api<CronJobList>('/cron-jobs') }
+export const cronRunsQuery = (id: string) => ({ queryKey: ['cron-jobs', id, 'runs'] as const, queryFn: () => api<CronRun[]>(`/cron-jobs/${id}/runs`) })
+
 // Resolves to null when signed out, so "no session" is data rather than an error.
 export const meQuery = {
   queryKey: ['me'] as const,

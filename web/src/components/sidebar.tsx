@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-route
 import { useState, type ReactNode } from 'react'
 // Per-icon imports keep the bundle to the icons used.
 import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
+import { Timer } from '@phosphor-icons/react/dist/csr/Timer'
 import { Database } from '@phosphor-icons/react/dist/csr/Database'
 import { FolderSimple } from '@phosphor-icons/react/dist/csr/FolderSimple'
 import { Globe } from '@phosphor-icons/react/dist/csr/Globe'
@@ -95,6 +96,7 @@ export function Sidebar() {
 
       <Group label={ts.groupSystem}>
         {can.admin && <NavItem to="/backups" icon={Vault} label={t.settingsBackup.title} />}
+        {can.admin && <NavItem to="/cron" icon={Timer} label={t.cronJobs.title} />}
         <NavItem to="/tokens" icon={Key} label={t.settingsTokens.title} />
         <NavItem to="/settings" icon={GearSix} label={t.common.settings} />
         {onSettings && (
@@ -132,7 +134,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains' | '/git' | '/backups' | '/tokens'
+type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains' | '/git' | '/backups' | '/tokens' | '/cron'
 
 // Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
 function NavItem({ to, icon: ItemIcon, label, exact, trailing }: { to: To; icon: Icon; label: string; exact?: boolean; trailing?: ReactNode }) {

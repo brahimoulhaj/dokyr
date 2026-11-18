@@ -116,7 +116,7 @@ link and send it yourself; the invited person opens it, picks a password and is 
 |---|---|---|---|
 | Create, deploy and configure apps, databases, domains | yes | yes | yes |
 | Delete apps, databases, domains, projects, backups and other resources | yes | yes | no |
-| Host terminal, panel backups, GitHub sign-in configuration | yes | yes | no |
+| Host terminal, cron jobs, panel backups, GitHub sign-in configuration | yes | yes | no |
 | Invite and remove users, change roles | yes | no | no |
 
 There is one owner, who cannot be changed or removed. A role change applies at once;
@@ -127,6 +127,25 @@ still open an app's container terminal or mount a host path into an app.
 The host terminal asks for the password again before a shell opens (valid 15 minutes for
 that browser session). Settings → Security chooses the user it opens as (root by default)
 or switches it off for everyone.
+
+## Cron jobs
+
+Cron jobs (main menu, owner and admins) runs commands on the server on a schedule, in
+place of `crontab -e`: a 5-field cron expression in UTC, a bash script, the user it runs as,
+an optional name. Each job can be run now, switched off, edited or deleted, and keeps its
+last 20 runs with what they printed (the last 64 KiB) and their exit code.
+
+The panel keeps the schedule itself and runs each job on the host through the helper the
+host terminal uses. So the jobs need no cron daemon, do not appear in `crontab -l`, leave
+hand-written crontabs alone, and run only while the panel is up: a slot missed while it
+was stopped is not caught up. A job still running at its next slot is skipped, and a run
+is stopped after 6 hours.
+
+A job is a command on the host, so it follows the host terminal's rules: browser session
+of the owner or an admin only (no API token), the password again before adding, changing,
+enabling or running one, and nothing runs or changes while host access is switched off in
+Settings → Security. A new job runs as the user set there; root has to be typed. Changes,
+manual runs and failed runs are recorded in Activity.
 
 ## Sign-in methods
 
@@ -227,6 +246,7 @@ internal/account/     owner setup, login, recovery (shared by API and CLI)
 internal/executor/    container host seam; local Docker implementation
 internal/proxy/       Caddy container, admin API client, config builder
 internal/deploy/      deploy pipeline: pull, start, switch route, remove old; start/stop/restart
+internal/hostcron/    cron jobs: schedule and runs of commands on the host
 internal/database/    project-scoped Postgres/MariaDB provisioning, lifecycle, connection references
 internal/api/         HTTP handlers, middleware, embedded SPA
 internal/webui/       go:embed target for the built web app

@@ -32,6 +32,7 @@ type Server struct {
 	updater        Updater
 	hostTerminal   HostTerminal
 	hostUnlocks    hostUnlocks
+	cronJobs       CronJobs
 	git            *gitsource.Service
 	metrics        HostMetrics
 	dockerMetrics  DockerMetrics
@@ -236,6 +237,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/host/terminal/settings", s.requireAuth(sessionOnly(adminOnly(s.handleGetHostTerminalSettings))))
 	mux.HandleFunc("PUT /api/host/terminal/settings", s.requireAuth(sessionOnly(adminOnly(s.handlePutHostTerminalSettings))))
 	mux.HandleFunc("POST /api/host/terminal/unlock", s.requireAuth(sessionOnly(adminOnly(s.limit(s.authRate, s.handleUnlockHostTerminal)))))
+	// Cron jobs are commands on the host: the same people, and never an API token.
+	mux.HandleFunc("GET /api/cron-jobs", s.requireAuth(sessionOnly(adminOnly(s.handleListCronJobs))))
+	mux.HandleFunc("GET /api/cron-jobs/schedule", s.requireAuth(sessionOnly(adminOnly(s.handleCronSchedule))))
+	mux.HandleFunc("POST /api/cron-jobs", s.requireAuth(sessionOnly(adminOnly(s.handleCreateCronJob))))
+	mux.HandleFunc("PUT /api/cron-jobs/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleUpdateCronJob))))
+	mux.HandleFunc("PUT /api/cron-jobs/{id}/enabled", s.requireAuth(sessionOnly(adminOnly(s.handleEnableCronJob))))
+	mux.HandleFunc("DELETE /api/cron-jobs/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleDeleteCronJob))))
+	mux.HandleFunc("POST /api/cron-jobs/{id}/run", s.requireAuth(sessionOnly(adminOnly(s.handleRunCronJob))))
+	mux.HandleFunc("GET /api/cron-jobs/{id}/runs", s.requireAuth(sessionOnly(adminOnly(s.handleListCronRuns))))
 	mux.HandleFunc("GET /api/apps/{id}/routes", s.requireAuth(s.handleAppRoutes))
 	mux.HandleFunc("GET /api/notifications/kinds", s.requireAuth(s.handleNotificationKinds))
 	mux.HandleFunc("GET /api/notification-channels", s.requireAuth(s.handleListChannels))

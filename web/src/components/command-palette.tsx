@@ -21,6 +21,7 @@ import { Translate } from '@phosphor-icons/react/dist/csr/Translate'
 import { SignOut } from '@phosphor-icons/react/dist/csr/SignOut'
 import { Check } from '@phosphor-icons/react/dist/csr/Check'
 import { TerminalWindow } from '@phosphor-icons/react/dist/csr/TerminalWindow'
+import { Timer } from '@phosphor-icons/react/dist/csr/Timer'
 import { Gift } from '@phosphor-icons/react/dist/csr/Gift'
 import { api, projectsQuery } from '../lib/api'
 import { useCan } from '../lib/roles'
@@ -153,7 +154,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       ['settings', t.common.settings, GearSix, '/settings'],
       ['git', t.settingsGit.title, GitBranch, '/git'],
       ['tokens', t.settingsTokens.title, GearSix, '/tokens'],
-      ...(!can.admin ? [] : [['backup', t.settingsBackup.title, ClockCounterClockwise, '/backups'] as const]),
+      ...(!can.admin ? [] : [['backup', t.settingsBackup.title, ClockCounterClockwise, '/backups'] as const, ['cron', t.cronJobs.title, Timer, '/cron'] as const]),
     ] as const).map(([id, label, icon, to]) => ({ id, label, icon, group: c.pages, keywords: id, run: () => { setOpen(false); void navigate({ to }) } })),
     ...([
       ['storage', t.settingsStorage.title, HardDrives],

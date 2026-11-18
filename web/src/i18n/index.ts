@@ -41,6 +41,7 @@ import * as compose from './compose'
 import * as newApp from './newApp'
 import * as connectDb from './connectDb'
 import * as users from './users'
+import * as cronJobs from './cronJobs'
 
 type Code = 'en' | 'fr' | 'ar' | 'es'
 
@@ -52,6 +53,7 @@ const pick = (l: Code) => ({
   newApp: newApp[l] as typeof newApp.en,
   connectDb: connectDb[l] as typeof connectDb.en,
   users: users[l] as typeof users.en,
+  cronJobs: cronJobs[l] as typeof cronJobs.en,
   lists: lists[l] as typeof lists.en,
   command: command[l] as typeof command.en,
   dockerMetrics: dockerMetrics[l] as typeof dockerMetrics.en,

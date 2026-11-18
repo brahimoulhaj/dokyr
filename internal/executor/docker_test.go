@@ -505,3 +505,31 @@ func TestDockerEntrypointOverride(t *testing.T) {
 		t.Errorf("start command printed %q", out)
 	}
 }
+
+func TestRunHostCommand(t *testing.T) {
+	d := newTestDocker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := d.PullImage(ctx, testImage, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	code, err := d.RunHostCommand(ctx, testImage, "root", "echo to-stdout; echo to-stderr >&2\nexit 3", &out)
+	if err != nil || code != 3 || !strings.Contains(out.String(), "to-stdout\n") || !strings.Contains(out.String(), "to-stderr\n") {
+		t.Fatalf("code %d, err %v, output %q", code, err, out.String())
+	}
+	out.Reset()
+	if code, err := d.RunHostCommand(ctx, testImage, "no-such-user-here", "true", &out); err != nil || code != 127 || !strings.Contains(out.String(), "does not exist") {
+		t.Fatalf("missing user: code %d, err %v, output %q", code, err, out.String())
+	}
+	if _, err := d.RunHostCommand(ctx, testImage, "bad name", "true", &out); err == nil {
+		t.Fatal("invalid user accepted")
+	}
+	// Ending the context stops a command that is still running.
+	short, stop := context.WithTimeout(ctx, 2*time.Second)
+	defer stop()
+	started := time.Now()
+	if _, err := d.RunHostCommand(short, testImage, "", "sleep 60", &out); !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 20*time.Second {
+		t.Fatalf("timeout: %v after %s", err, time.Since(started))
+	}
+}

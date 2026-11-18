@@ -20,6 +20,7 @@ import { DatabasesPage } from './routes/databases'
 import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
 import { StoragePage } from './routes/storage'
 import { BackupsPage, GitPage, TokensPage } from './routes/system-pages'
+import { CronJobsPage } from './routes/cron-jobs'
 
 type Ctx = { queryClient: QueryClient }
 
@@ -156,6 +157,15 @@ const backupsRoute = createRoute({
   },
   component: BackupsPage,
 })
+const cronRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/cron',
+  // Commands on the host are not for maintainers; the server refuses them as well.
+  beforeLoad: async ({ context }) => {
+    if ((await context.queryClient.ensureQueryData(meQuery))?.role === 'maintainer') throw redirect({ to: '/' })
+  },
+  component: CronJobsPage,
+})
 const tokensRoute = createRoute({ getParentRoute: () => appRoute, path: '/tokens', component: TokensPage })
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -181,7 +191,7 @@ const routeTree = rootRoute.addChildren([
   inviteRoute,
   onboardingRoute,
   appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
-    builtinRegistryRoute, settingsRoute, gitRoute, backupsRoute, tokensRoute, databasesRoute, databaseRoute]),
+    builtinRegistryRoute, settingsRoute, gitRoute, backupsRoute, cronRoute, tokensRoute, databasesRoute, databaseRoute]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {

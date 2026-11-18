@@ -25,7 +25,7 @@ var watchedTables = map[string]bool{
 	"db_databases": true, "db_users": true, "db_user_grants": true,
 	"registries": true, "registry_tokens": true, "git_sources": true, "s3_connections": true,
 	"notification_channels": true, "alert_rules": true, "settings": true, "api_tokens": true,
-	"sessions": true,
+	"sessions": true, "cron_jobs": true, "cron_job_runs": true,
 }
 
 // Subscription collects the tables changed since it was last drained.
