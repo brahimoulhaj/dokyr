@@ -12,6 +12,7 @@ import { ThemePicker } from './themepicker'
 import { DeployToasts } from './deploy-toasts'
 import { QueueMenu } from './queue-menu'
 import { UpdateCheck } from './update-check'
+import { WhatsNew } from './whats-new'
 import { Badge, cx } from './ui'
 import { useDatabaseOperations } from '../lib/database-operations'
 import { CommandPalette } from './command-palette'
@@ -87,6 +88,7 @@ export function Shell() {
             >
               <PaletteIcon />
             </button>
+            <WhatsNew version={meta.version} />
             {canTerminal && (
               <button
                 type="button"

@@ -21,6 +21,7 @@ import { Translate } from '@phosphor-icons/react/dist/csr/Translate'
 import { SignOut } from '@phosphor-icons/react/dist/csr/SignOut'
 import { Check } from '@phosphor-icons/react/dist/csr/Check'
 import { TerminalWindow } from '@phosphor-icons/react/dist/csr/TerminalWindow'
+import { Gift } from '@phosphor-icons/react/dist/csr/Gift'
 import { api, projectsQuery } from '../lib/api'
 import { useCan } from '../lib/roles'
 import { languages, setLang, useLang, useT } from '../lib/i18n'
@@ -31,6 +32,7 @@ import { NewDatabase } from '../routes/databases'
 import { AddExternal } from '../routes/registries'
 import { fold, useDebounced } from './list-controls'
 import { Sheet } from './sheet'
+import { openWhatsNew } from './whats-new'
 import { cx } from './ui'
 
 type ResourceKind = 'project' | 'app' | 'database' | 'domain' | 'registry' | 'git' | 'storage'
@@ -138,6 +140,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
     ...(onOpenTerminal ? [{ id: 'host-terminal', label: t.shell.hostTerminal, icon: TerminalWindow, group: c.actions, keywords: 'open terminal shell console ssh host server root command line', run: () => { setOpen(false); onOpenTerminal() } }] : []),
     { id: 'choose-theme', label: t.shell.chooseTheme, detail: theme.name, icon: Palette, group: c.preferences, keywords: 'theme switch appearance dark light', run: () => chooseMode('theme') },
     { id: 'choose-language', label: t.shell.chooseLanguage, detail: languages.find((l) => l.code === lang)?.name, icon: Translate, group: c.preferences, keywords: 'language switch locale translate', run: () => chooseMode('language') },
+    { id: 'whats-new', label: t.shell.whatsNew, icon: Gift, group: c.preferences, keywords: 'whats new changelog release notes version changes news', run: () => { setOpen(false); openWhatsNew() } },
     { id: 'sign-out', label: logout.isPending ? t.shell.signingOut : t.shell.signOut, icon: SignOut, group: c.preferences, keywords: 'logout log out sign out disconnect', disabled: logout.isPending, run: () => { if (!logout.isPending) logout.mutate() } },
     ...([
       ['overview', t.shell.overview, SquaresFour, '/'],
