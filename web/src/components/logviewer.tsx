@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { MAX_LINES, useLogStream, type LogLine } from '../lib/logstream'
+import { logLevel, type LogLevel } from '../lib/loglevel'
 import { useT } from '../lib/i18n'
 import { cx } from './ui'
 
@@ -104,7 +105,7 @@ export function LogViewer({ url, refused }: { url: string | null; refused?: stri
               )}
               <span
                 className={cx(
-                  l.stream === 'stderr' ? 'text-warn/90' : 'text-fg/85',
+                  tone(l),
                   wrap ? '[overflow-wrap:anywhere] whitespace-pre-wrap' : 'whitespace-pre',
                 )}
                 title={l.stream}
@@ -139,6 +140,28 @@ export function LogViewer({ url, refused }: { url: string | null; refused?: stri
       </div>
     </div>
   )
+}
+
+const TONES: Record<LogLevel, string> = {
+  error: 'text-danger',
+  warn: 'text-warn/90',
+  info: 'text-fg/85',
+  debug: 'text-muted',
+}
+const tones = new WeakMap<LogLine, string>()
+
+/**
+ * The colour of a line: the level it declares for itself, else its stream.
+ * Many programs write everything to stderr, so the stream only decides when no level is found.
+ */
+function tone(l: LogLine): string {
+  let c = tones.get(l)
+  if (c === undefined) {
+    const level = logLevel(l.text)
+    c = level ? TONES[level] : l.stream === 'stderr' ? 'text-warn/90' : 'text-fg/85'
+    tones.set(l, c)
+  }
+  return c
 }
 
 function Toggle(props: { on: boolean; onClick: () => void; title: string; children: ReactNode }) {
