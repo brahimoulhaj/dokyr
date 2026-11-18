@@ -113,73 +113,143 @@ function Arrow({ side, onClick }: { side: 'left' | 'right'; onClick: () => void 
   )
 }
 
-// A miniature of the panel, drawn with the theme's own tokens. Sizes are in em off a
-// container-relative font size, so it scales with the card.
+// A miniature of the panel's overview, drawn with the theme's own tokens. Sizes are in em
+// off a container-relative font size, so it scales with the card.
 function Preview({ theme, brand }: { theme: Theme; brand: string }) {
   return (
     <div style={themeStyle(theme)} className="@container aspect-[16/10] w-full overflow-hidden bg-bg text-left text-fg">
-      <div className="flex h-full flex-col font-mono text-[1.55cqw] leading-tight">
-        <div className="flex h-[2.8em] shrink-0 items-center justify-between border-b border-line bg-surface px-[1.2em]">
-          <span className="font-pixel text-[1.25em] text-accent">{brand}</span>
-          <span className="flex size-[1.8em] items-center justify-center border border-line bg-raised font-pixel text-accent">a</span>
+      <div className="flex h-full flex-col font-mono text-[1.4cqw] leading-tight whitespace-nowrap">
+        <div className="flex h-[3em] shrink-0 border-b border-line bg-surface">
+          <div className="flex w-[21%] shrink-0 items-center justify-between border-r border-line px-[1em]">
+            <span className="font-pixel text-[1.2em] text-accent">{brand}</span>
+            <span className="text-[0.8em] text-muted">dev</span>
+          </div>
+          <div className="flex min-w-0 flex-1 items-center justify-between px-[1em]">
+            <span className="flex w-[18em] items-center justify-between border border-line bg-bg px-[0.7em] py-[0.35em] text-muted">
+              Search anything…
+              <span className="border border-line px-[0.4em] text-[0.75em]">⌘ K</span>
+            </span>
+            <span className="flex items-center gap-[1.1em]">
+              {[0, 1, 2, 3].map((i) => (
+                <Glyph key={i} className="text-muted" />
+              ))}
+              <span className="flex size-[1.9em] items-center justify-center border border-line bg-raised font-pixel text-accent">b</span>
+            </span>
+          </div>
         </div>
         <div className="flex min-h-0 flex-1">
-          <div className="w-[22%] space-y-[0.3em] border-r border-line bg-surface p-[0.7em]">
-            {['Overview', 'Projects', 'Activity', 'Databases', 'Settings'].map((l, i) => (
-              <div
-                key={l}
-                className={cx(
-                  'border px-[0.7em] py-[0.3em]',
-                  i === 1 ? 'border-line bg-raised text-fg' : 'border-transparent text-muted',
-                  i === 3 && 'opacity-50',
-                )}
-              >
-                {l}
-              </div>
-            ))}
-          </div>
-          <div className="min-w-0 flex-1 space-y-[1.1em] p-[1.4em]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-pixel text-[1.2em] uppercase">Projects</p>
-                <p className="text-muted">A project groups the apps that belong together.</p>
-              </div>
-              <span className="bg-accent px-[0.9em] py-[0.45em] font-medium text-accent-fg">New project</span>
-            </div>
-            <div className="border border-line bg-surface">
-              <p className="border-b border-line px-[1em] py-[0.5em] font-pixel text-[0.85em] text-muted uppercase">Apps</p>
-              {[
-                ['web', 'caddy · port 80', 'running', 'accent'],
-                ['api', 'ghcr.io/acme/api', 'deploying', 'warn'],
-                ['worker', 'acme/worker:2', 'failed', 'danger'],
-              ].map(([name, sub, label, tone]) => (
-                <div key={name} className="flex items-center justify-between border-b border-line px-[1em] py-[0.55em] last:border-b-0">
-                  <span>
-                    {name} <span className="text-muted">{sub}</span>
-                  </span>
-                  <span
-                    className={cx(
-                      'border px-[0.4em] py-[0.15em] font-pixel text-[0.75em] uppercase',
-                      tone === 'accent' && 'border-accent text-accent',
-                      tone === 'warn' && 'border-warn text-warn',
-                      tone === 'danger' && 'border-danger text-danger',
-                    )}
-                  >
-                    {label}
-                  </span>
-                </div>
+          <div className="w-[21%] shrink-0 border-r border-line bg-surface p-[0.6em]">
+            <NavItem label="Overview" active />
+            <NavItem label="Activity" />
+            <NavLabel>Workloads</NavLabel>
+            <NavItem label="Projects" count="2" />
+            <div className="ml-[1.2em] border-l border-line pl-[0.8em] text-[0.9em] text-muted">
+              {['demo2', 'demo'].map((l) => (
+                <p key={l} className="flex items-center gap-[0.6em] py-[0.25em]">
+                  <span className="size-[0.4em] rounded-full bg-accent" />
+                  {l}
+                </p>
               ))}
             </div>
-            <div className="space-y-[0.2em] border border-line bg-bg px-[1em] py-[0.7em] text-[0.9em]">
-              <p className="text-muted">pulling caddy:2 …</p>
-              <p>
-                <span className="text-accent">✓</span> container started
-              </p>
-              <p className="text-danger">health check failed: connection refused</p>
+            <NavItem label="Databases" count="2" />
+            <NavLabel>Infrastructure</NavLabel>
+            <NavItem label="Domains" count="3" />
+            <NavItem label="Storage" />
+            <NavItem label="Registry" count="0" />
+            <NavLabel>System</NavLabel>
+            <NavItem label="Backup" />
+            <NavItem label="Settings" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-[1.1em] p-[1.6em]">
+            <div>
+              <p className="font-pixel text-[1.15em] uppercase">Overview</p>
+              <p className="mt-[0.2em] text-muted">Signed in as admin@example.com.</p>
             </div>
+            <Card
+              title="Host metrics"
+              aside={
+                <span className="flex items-center gap-[0.5em]">
+                  <span className="size-[0.45em] rounded-full bg-accent" />
+                  Live · every 5s
+                </span>
+              }
+            >
+              <Tile label="CPU" value="15.7%" sub="12 logical CPUs" meter={[16, 'bg-accent']} spark="0,7 8,6 14,8 22,5 30,7 38,6 46,8 54,4 62,7 70,6 78,3 86,7 100,6" />
+              <Tile label="RAM" value="83%" sub="19.9 / 24 GiB used" meter={[83, 'bg-warn']} spark="0,4 20,4 40,3 60,4 80,3 100,3" />
+              <Tile label="Data disk" value="92.9%" sub="32.8 GiB available" meter={[93, 'bg-danger']} />
+              <Tile label="Network" value="↓ 383 KiB/s" sub="↑ 15.8 KiB/s" spark="0,5 8,4 14,6 22,4 30,6 38,3 46,5 50,1 54,6 62,4 70,5 78,3 86,6 94,4 100,5" />
+            </Card>
+            <Card title="Docker" aside={<span className="border border-accent px-[0.5em] py-[0.1em] font-pixel text-[0.8em] text-accent uppercase">Connected</span>}>
+              <Tile label="Containers" value="22" sub="22 running · 0 stopped" />
+              <Tile label="Images" value="59" sub="14.6 GiB used" />
+              <Tile label="Volumes" value="137" sub="8 GiB used" />
+              <Tile label="Build cache" value="6.2 GiB" sub="4.7 GiB reclaimable" />
+            </Card>
+            <Card title="Projects" aside="2 projects · 9 apps" rows>
+              {[
+                ['demo', '7 apps'],
+                ['demo2', '2 apps'],
+              ].map(([name, apps]) => (
+                <div key={name} className="flex items-center justify-between border-b border-line px-[1.1em] py-[0.6em] last:border-b-0">
+                  {name}
+                  <span className="border border-line-strong px-[0.5em] py-[0.1em] font-pixel text-[0.75em] text-muted uppercase">{apps}</span>
+                </div>
+              ))}
+            </Card>
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// A stand-in for an icon at this size.
+function Glyph({ className }: { className?: string }) {
+  return <span className={cx('size-[0.85em] shrink-0 border border-current', className)} />
+}
+
+function NavLabel({ children }: { children: React.ReactNode }) {
+  return <p className="px-[0.7em] pt-[1.1em] pb-[0.4em] font-pixel text-[0.7em] text-muted uppercase">{children}</p>
+}
+
+function NavItem({ label, count, active }: { label: string; count?: string; active?: boolean }) {
+  return (
+    <div className={cx('flex items-center gap-[0.7em] border px-[0.7em] py-[0.35em]', active ? 'border-line bg-raised text-fg' : 'border-transparent text-muted')}>
+      <Glyph className={active ? 'text-accent' : undefined} />
+      <span className="flex-1">{label}</span>
+      {count && <span className="border border-line px-[0.4em] text-[0.75em]">{count}</span>}
+    </div>
+  )
+}
+
+function Card({ title, aside, rows, children }: { title: string; aside: React.ReactNode; rows?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="border border-line bg-surface">
+      <div className="flex items-center justify-between border-b border-line px-[1.1em] py-[0.6em] text-[0.9em] text-muted">
+        <span className="font-pixel text-[0.9em] uppercase">{title}</span>
+        {aside}
+      </div>
+      {rows ? children : <div className="grid grid-cols-4 gap-px bg-line">{children}</div>}
+    </div>
+  )
+}
+
+function Tile({ label, value, sub, meter, spark }: { label: string; value: string; sub: string; meter?: [number, string]; spark?: string }) {
+  return (
+    <div className="min-w-0 space-y-[0.6em] overflow-hidden bg-surface px-[1.1em] py-[0.9em]">
+      <p className="text-[0.85em] text-muted">{label}</p>
+      <p className="text-[1.45em] leading-none">{value}</p>
+      {meter && (
+        <div className="h-[0.25em] bg-line">
+          <div className={cx('h-full', meter[1])} style={{ width: `${meter[0]}%` }} />
+        </div>
+      )}
+      {spark && (
+        <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-[1.6em] w-full text-accent" aria-hidden>
+          <polyline points={spark} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+      <p className="text-[0.85em] text-muted">{sub}</p>
     </div>
   )
 }
