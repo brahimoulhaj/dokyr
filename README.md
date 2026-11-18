@@ -124,6 +124,10 @@ removing a user ends their sessions and API tokens, and what they created stays.
 token carries the role of its user. Roles are guardrails, not a sandbox: a maintainer can
 still open an app's container terminal or mount a host path into an app.
 
+The host terminal asks for the password again before a shell opens (valid 15 minutes for
+that browser session). Settings → Security chooses the user it opens as (root by default)
+or switches it off for everyone.
+
 ## Sign-in methods
 
 Settings → Security manages passkeys and GitHub sign-in for the signed-in user.

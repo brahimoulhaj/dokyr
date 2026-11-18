@@ -1,9 +1,9 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
-import { Button, ErrorNote, Field, Panel, QueryState } from '../components/ui'
+import { Button, CheckOption, ErrorNote, Field, Panel, QueryState } from '../components/ui'
 import { PasswordConfirmDialog, type PasswordAction } from '../components/password-confirm-dialog'
-import { api } from '../lib/api'
+import { api, hostTerminalQuery, type HostTerminalSettings } from '../lib/api'
 import { dateTime } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { passkeysSupported, registerPasskey } from '../lib/passkeys'
@@ -92,6 +92,33 @@ function SecurityForm({ data }: { data: Security }) {
       </div>
     </Panel>
     <ActiveSessions confirm={confirm} />
+    {can.admin && <HostTerminalSettingsPanel />}
     {confirmation && <PasswordConfirmDialog action={confirmation} onClose={() => setConfirmation(null)} onComplete={completed} />}
   </div>
+}
+
+function HostTerminalSettingsPanel() {
+  const t = useT()
+  const text = t.security
+  const qc = useQueryClient()
+  const q = useQuery(hostTerminalQuery)
+  const [draft, setDraft] = useState<{ enabled: boolean; user: string } | null>(null)
+  const value = draft ?? { enabled: q.data?.enabled ?? true, user: q.data?.user ?? '' }
+  const save = useMutation({
+    mutationFn: () => api<HostTerminalSettings>('/host/terminal/settings', { method: 'PUT', body: { enabled: value.enabled, user: value.user.trim() } }),
+    onSuccess: (saved) => { qc.setQueryData(hostTerminalQuery.queryKey, saved); setDraft(null) },
+  })
+  if (!q.data) return null
+  return <Panel title={text.hostTerminal}>
+    <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-4 p-4">
+      <CheckOption checked={value.enabled} onChange={(enabled) => setDraft({ ...value, enabled })} label={text.hostTerminalOn} hint={text.hostTerminalOnHint} />
+      <div className="max-w-xs">
+        <Field label={text.hostTerminalUser} hint={text.hostTerminalUserHint} hintTooltip name="host-terminal-user" dir="ltr" placeholder="root" maxLength={32}
+          autoCapitalize="none" autoComplete="off" spellCheck={false} disabled={!value.enabled}
+          value={value.user} onChange={(e) => setDraft({ ...value, user: e.target.value })} />
+      </div>
+      {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
+      <Button type="submit" disabled={!draft || save.isPending}>{save.isPending ? t.common.working : t.common.save}</Button>
+    </form>
+  </Panel>
 }

@@ -3,7 +3,9 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"regexp"
 	"sync"
 	"time"
 
@@ -73,18 +75,34 @@ func (t *dockerTerminal) Resize(ctx context.Context, cols, rows uint) error {
 	return err
 }
 
-// HostTerminalExecutor opens a root shell on the Docker host itself.
+// HostTerminalExecutor opens a shell on the Docker host itself.
 type HostTerminalExecutor interface {
-	OpenHostTerminal(ctx context.Context, image string, cols, rows uint) (Terminal, error)
+	OpenHostTerminal(ctx context.Context, image, user string, cols, rows uint) (Terminal, error)
 }
 
-// hostShell prefers bash when the host has it. It runs after nsenter, so on the host.
-const hostShell = `cd "$HOME" 2>/dev/null || cd /; command -v bash >/dev/null 2>&1 && exec bash -l; exec sh -l`
+var hostUser = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
+
+// ValidHostUser reports whether name can be a user of the host; empty stands for root.
+func ValidHostUser(name string) bool { return name == "" || hostUser.MatchString(name) }
+
+// hostShell runs after nsenter, so on the host. With HOST_USER set it becomes that user's
+// login shell; otherwise root's, bash when the host has it.
+const hostShell = `if [ -n "$HOST_USER" ]; then u=$HOST_USER; unset HOST_USER
+id -u "$u" >/dev/null 2>&1 || { echo "User $u does not exist on this server. Create it, or choose another in Settings > Security."; exit 1; }
+exec su - "$u"; fi
+cd "$HOME" 2>/dev/null || cd /; command -v bash >/dev/null 2>&1 && exec bash -l; exec sh -l`
 
 // OpenHostTerminal starts a short-lived privileged container in the host's PID namespace
-// and enters every namespace of PID 1, which is a root shell on the host. The image only
-// needs nsenter (BusyBox has it); the container is removed when the session ends.
-func (d *Docker) OpenHostTerminal(ctx context.Context, image string, cols, rows uint) (Terminal, error) {
+// and enters every namespace of PID 1, which is a root shell on the host; a user other
+// than root is reached from there with su. The image only needs nsenter (BusyBox has it);
+// the container is removed when the session ends.
+func (d *Docker) OpenHostTerminal(ctx context.Context, image, user string, cols, rows uint) (Terminal, error) {
+	if !ValidHostUser(user) {
+		return nil, fmt.Errorf("invalid host user %q", user)
+	}
+	if user == "root" {
+		user = ""
+	}
 	created, err := d.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:      image,
@@ -93,6 +111,7 @@ func (d *Docker) OpenHostTerminal(ctx context.Context, image string, cols, rows 
 			Env: []string{
 				"TERM=xterm-256color", "HOME=/root",
 				"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"HOST_USER=" + user,
 			},
 			Tty: true, OpenStdin: true, AttachStdin: true, AttachStdout: true, AttachStderr: true,
 			// Not labelled as managed: deployment and metrics code must not see it as a workload.

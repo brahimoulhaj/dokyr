@@ -139,14 +139,37 @@ func TestHostTerminal(t *testing.T) {
 	server, process := net.Pipe()
 	defer process.Close()
 	defer server.Close()
-	e.srv.SetHostTerminal(func(_ context.Context, cols, rows uint) (executor.Terminal, error) {
-		if cols != 80 || rows != 24 {
-			t.Errorf("size %dx%d", cols, rows)
+	e.srv.SetHostTerminal(func(_ context.Context, user string, cols, rows uint) (executor.Terminal, error) {
+		if cols != 80 || rows != 24 || user != "deploy" {
+			t.Errorf("size %dx%d as %q", cols, rows, user)
 		}
 		return &testPTY{Conn: server, sizes: make(chan [2]uint, 1)}, nil
 	})
 	if _, res, err := (&websocket.Dialer{}).Dial(url, origin); err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("signed-out host terminal: %v %v", res, err)
+	}
+	refused := func(why string) {
+		t.Helper()
+		if _, res, err := dialer.Dial(url, origin); err == nil || res == nil || res.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s host terminal: %v %v", why, res, err)
+		}
+	}
+
+	// The session alone is not enough: the password is asked again.
+	refused("locked")
+	e.must(401, "POST", "/api/host/terminal/unlock", map[string]any{"password": "wrong"})
+	refused("wrong password")
+	e.must(204, "POST", "/api/host/terminal/unlock", map[string]any{"password": "s3cret-pass"})
+	if got := e.must(200, "GET", "/api/host/terminal/settings", nil); got["unlocked"] != true || got["enabled"] != true || got["user"] != "" {
+		t.Fatalf("settings = %v", got)
+	}
+
+	// Switched off, nobody opens it, unlocked or not.
+	e.must(422, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": "bad name; id"})
+	e.must(200, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": false, "user": "deploy"})
+	refused("switched off")
+	if got := e.must(200, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": "deploy"}); got["user"] != "deploy" {
+		t.Fatalf("settings = %v", got)
 	}
 	ws, _, err := dialer.Dial(url, origin)
 	if err != nil {

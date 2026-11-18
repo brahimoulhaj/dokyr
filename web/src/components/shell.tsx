@@ -1,8 +1,9 @@
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { TerminalWindow } from '@phosphor-icons/react'
-import { meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
+import { api, hostTerminalQuery, meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
+import { PasswordConfirmDialog } from './password-confirm-dialog'
 import { useLogout } from '../lib/logout'
 import { useT } from '../lib/i18n'
 import { useTheme } from '../lib/theme'
@@ -32,6 +33,24 @@ export function Shell() {
   // 'hidden' keeps the shells running under a collapsed dock.
   const [terminal, setTerminal] = useState<'closed' | 'open' | 'hidden'>('closed')
   const t = useT()
+  const qc = useQueryClient()
+  const mayOpen = !!me && me.role !== 'maintainer'
+  const hostTerminal = useQuery({ ...hostTerminalQuery, enabled: mayOpen })
+  const canTerminal = mayOpen && hostTerminal.data?.enabled !== false
+  // What waits for the password: the host terminal asks for it again before a shell opens.
+  const [unlock, setUnlock] = useState<{ run: () => void; user: string } | null>(null)
+  async function guard(run: () => void) {
+    try {
+      const now = await qc.fetchQuery({ ...hostTerminalQuery, staleTime: 0 })
+      if (!now.enabled) return
+      if (!now.unlocked) { setUnlock({ run, user: now.user || 'root' }); return }
+    } catch { /* the terminal reports what is wrong */ }
+    run()
+  }
+  const openTerminal = () => (terminal === 'closed' ? guard(() => setTerminal('open')) : setTerminal('open'))
+  useEffect(() => {
+    if (!canTerminal) setTerminal('closed')
+  }, [canTerminal])
 
   // The router restores window scroll, which no longer moves; a new page starts at the top.
   useEffect(() => {
@@ -57,7 +76,7 @@ export function Shell() {
           </div>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-2 sm:justify-between sm:px-4">
-          <CommandPalette onOpenTerminal={me && me.role !== 'maintainer' ? () => setTerminal('open') : undefined} />
+          <CommandPalette onOpenTerminal={canTerminal ? openTerminal : undefined} />
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               type="button"
@@ -68,10 +87,10 @@ export function Shell() {
             >
               <PaletteIcon />
             </button>
-            {me && me.role !== 'maintainer' && (
+            {canTerminal && (
               <button
                 type="button"
-                onClick={() => setTerminal((state) => (state === 'open' ? 'hidden' : 'open'))}
+                onClick={() => (terminal === 'open' ? setTerminal('hidden') : openTerminal())}
                 aria-label={t.shell.hostTerminal}
                 aria-pressed={terminal === 'open'}
                 title={t.shell.hostTerminal}
@@ -101,12 +120,24 @@ export function Shell() {
           </main>
           {terminal !== 'closed' && (
             <Suspense fallback={null}>
-              <HostTerminalDock hidden={terminal === 'hidden'} onHide={() => setTerminal('hidden')} onClose={() => setTerminal('closed')} />
+              <HostTerminalDock hidden={terminal === 'hidden'} guard={guard} onHide={() => setTerminal('hidden')} onClose={() => setTerminal('closed')} />
             </Suspense>
           )}
         </div>
       </div>
       <DeployToasts databaseOperations={databaseOperations.operations} onDismissDatabase={databaseOperations.dismiss} />
+      {unlock && (
+        <PasswordConfirmDialog
+          action={{
+            title: t.shell.hostTerminal,
+            confirm: t.shell.openTerminal,
+            detail: t.shell.hostTerminalAs(unlock.user),
+            onConfirm: (password) => api('/host/terminal/unlock', { method: 'POST', body: { password } }),
+          }}
+          onClose={() => setUnlock(null)}
+          onComplete={() => { unlock.run(); setUnlock(null) }}
+        />
+      )}
       {picking && <ThemePicker brand={meta.name} onClose={() => setPicking(false)} />}
     </div>
   )

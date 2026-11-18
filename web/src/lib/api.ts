@@ -110,6 +110,9 @@ export const metaQuery = {
   staleTime: Infinity,
 }
 
+export type HostTerminalSettings = { enabled: boolean; user: string; available: boolean; unlocked: boolean }
+export const hostTerminalQuery = { queryKey: ['host-terminal'] as const, queryFn: () => api<HostTerminalSettings>('/host/terminal/settings') }
+
 // Resolves to null when signed out, so "no session" is data rather than an error.
 export const meQuery = {
   queryKey: ['me'] as const,

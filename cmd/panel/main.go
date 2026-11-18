@@ -354,14 +354,14 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetDeployer(deployer)
 	// The helper needs only nsenter. The panel's own image has it; a panel running outside
 	// a container (development) borrows the proxy's image, which Docker already has.
-	apiSrv.SetHostTerminal(func(ctx context.Context, cols, rows uint) (executor.Terminal, error) {
+	apiSrv.SetHostTerminal(func(ctx context.Context, user string, cols, rows uint) (executor.Terminal, error) {
 		image := cfg.Proxy.Image
 		if databases.GateImage != nil {
 			if self, err := databases.GateImage(ctx); err == nil {
 				image = self
 			}
 		}
-		return ex.OpenHostTerminal(ctx, image, cols, rows)
+		return ex.OpenHostTerminal(ctx, image, user, cols, rows)
 	})
 	apiSrv.SetGitSources(git)
 	apiSrv.SetRegistry(reg)

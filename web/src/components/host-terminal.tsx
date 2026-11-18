@@ -29,7 +29,13 @@ function storedHeight() {
  * Root shells on the host, docked under the page like a browser's devtools. Hiding the
  * dock keeps the sessions; closing it (or the last tab) ends them.
  */
-export default function HostTerminalDock({ hidden, onHide, onClose }: { hidden: boolean; onHide: () => void; onClose: () => void }) {
+export default function HostTerminalDock({ hidden, guard, onHide, onClose }: {
+  hidden: boolean
+  /** Runs its argument once the password is confirmed, asking for it when needed. */
+  guard: (run: () => void) => void
+  onHide: () => void
+  onClose: () => void
+}) {
   const t = useT()
   const nextID = useRef(2)
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, state: 'connecting', nonce: 0 }])
@@ -130,7 +136,7 @@ export default function HostTerminalDock({ hidden, onHide, onClose }: { hidden: 
               </button>
             </div>
           ))}
-          <button type="button" aria-label={t.shell.newTab} title={t.shell.newTab} disabled={tabs.length >= MAX_TABS} onClick={add} className={tool}>
+          <button type="button" aria-label={t.shell.newTab} title={t.shell.newTab} disabled={tabs.length >= MAX_TABS} onClick={() => guard(add)} className={tool}>
             <Plus size={14} aria-hidden />
           </button>
         </div>
@@ -139,7 +145,7 @@ export default function HostTerminalDock({ hidden, onHide, onClose }: { hidden: 
             type="button"
             aria-label={t.terminal.reconnect}
             title={t.terminal.reconnect}
-            onClick={() => patch(active, { nonce: (tabs.find((tab) => tab.id === active)?.nonce ?? 0) + 1 })}
+            onClick={() => guard(() => patch(active, { nonce: (tabs.find((tab) => tab.id === active)?.nonce ?? 0) + 1 }))}
             className={tool}
           >
             <ArrowClockwise size={14} aria-hidden />
@@ -158,6 +164,7 @@ export default function HostTerminalDock({ hidden, onHide, onClose }: { hidden: 
             key={tab.id}
             visible={!hidden && tab.id === active}
             nonce={tab.nonce}
+            guard={guard}
             onState={(state) => patch(tab.id, { state })}
             onExit={() => close(tab.id)}
           />
@@ -168,7 +175,7 @@ export default function HostTerminalDock({ hidden, onHide, onClose }: { hidden: 
 }
 
 /** One shell: an xterm bridged to /api/host/terminal. Connects on mount and when nonce changes. */
-function HostSession({ visible, nonce, onState, onExit }: { visible: boolean; nonce: number; onState: (state: State) => void; onExit: () => void }) {
+function HostSession({ visible, nonce, guard, onState, onExit }: { visible: boolean; nonce: number; guard: (run: () => void) => void; onState: (state: State) => void; onExit: () => void }) {
   const t = useT().terminal
   const theme = useTheme()
   const host = useRef<HTMLDivElement>(null)
@@ -311,7 +318,7 @@ function HostSession({ visible, nonce, onState, onExit }: { visible: boolean; no
       {(message || ended) && (
         <p role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-3 py-1.5 text-xs text-warn">
           <span>{message || t.ended}</span>
-          <button type="button" onClick={connect} className="shrink-0 text-fg underline underline-offset-2 hover:text-accent">{t.reconnect}</button>
+          <button type="button" onClick={() => guard(connect)} className="shrink-0 text-fg underline underline-offset-2 hover:text-accent">{t.reconnect}</button>
         </p>
       )}
       <div className="relative min-h-0 flex-1">

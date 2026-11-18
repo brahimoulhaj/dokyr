@@ -23,6 +23,8 @@ const (
 	SettingBuildMemory = "build_memory_mb"     // memory cap (MB) shared by Git builds; "0" = none; absent = the environment's default
 	SettingRegistry    = "registry"            // JSON RegistrySettings of the built-in registry
 	SettingRegistryS3  = "registry_s3"         // id of the S3 connection the registry stores in; absent = a Docker volume
+	SettingHostTermOff = "host_terminal_off"   // "true": nobody can open the host terminal
+	SettingHostTermUsr = "host_terminal_user"  // user the host terminal opens as; absent = root
 )
 
 // BuildLimits caps the CPU and memory that Git builds share. Zero leaves a resource uncapped.

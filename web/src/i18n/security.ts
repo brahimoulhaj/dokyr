@@ -40,6 +40,11 @@ export const en = {
   unknownBrowser: 'Unknown browser',
   signedIn: 'Signed in',
   lastActive: 'Last active',
+  hostTerminal: 'Host terminal',
+  hostTerminalOn: 'Allow the host terminal',
+  hostTerminalOnHint: 'When off, nobody can open a shell on the server from this panel. Opening one always asks for your password.',
+  hostTerminalUser: 'Open as user',
+  hostTerminalUserHint: 'A user that exists on this server. Leave empty to open as root.',
 }
 
 export const fr: typeof en = {
@@ -84,6 +89,11 @@ export const fr: typeof en = {
   unknownBrowser: 'Navigateur inconnu',
   signedIn: 'Connexion',
   lastActive: 'Dernière activité',
+  hostTerminal: 'Terminal de l’hôte',
+  hostTerminalOn: 'Autoriser le terminal de l’hôte',
+  hostTerminalOnHint: 'Désactivé, personne ne peut ouvrir un shell sur le serveur depuis ce panneau. L’ouverture demande toujours votre mot de passe.',
+  hostTerminalUser: 'Ouvrir en tant que',
+  hostTerminalUserHint: 'Un utilisateur qui existe sur ce serveur. Laissez vide pour ouvrir en tant que root.',
 }
 
 export const ar: typeof en = {
@@ -128,6 +138,11 @@ export const ar: typeof en = {
   unknownBrowser: 'متصفح غير معروف',
   signedIn: 'وقت الدخول',
   lastActive: 'آخر نشاط',
+  hostTerminal: 'طرفية الخادم',
+  hostTerminalOn: 'السماح بطرفية الخادم',
+  hostTerminalOnHint: 'عند الإيقاف، لا يمكن لأحد فتح صدفة على الخادم من هذه اللوحة. الفتح يطلب كلمة مرورك دائمًا.',
+  hostTerminalUser: 'الفتح باسم المستخدم',
+  hostTerminalUserHint: 'مستخدم موجود على هذا الخادم. اتركه فارغًا للفتح باسم root.',
 }
 
 export const es: typeof en = {
@@ -172,4 +187,9 @@ export const es: typeof en = {
   unknownBrowser: 'Navegador desconocido',
   signedIn: 'Inicio de sesión',
   lastActive: 'Última actividad',
+  hostTerminal: 'Terminal del servidor',
+  hostTerminalOn: 'Permitir el terminal del servidor',
+  hostTerminalOnHint: 'Desactivado, nadie puede abrir un shell en el servidor desde este panel. Abrirlo siempre pide tu contraseña.',
+  hostTerminalUser: 'Abrir como usuario',
+  hostTerminalUserHint: 'Un usuario que existe en este servidor. Déjalo vacío para abrir como root.',
 }
