@@ -12,6 +12,7 @@ import { OnboardingPage } from './routes/onboarding'
 import { OverviewPage } from './routes/overview'
 import { ProjectPage, projectTabs, type ProjectTab } from './routes/project'
 import { ProjectsPage } from './routes/projects'
+import { NewAppPage } from './routes/new-app'
 import { SettingsPage, settingsTabs, type SettingsTab } from './routes/settings'
 import { SetupPage } from './routes/setup'
 import { DatabasesPage } from './routes/databases'
@@ -97,6 +98,7 @@ const projectRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { tab?: ProjectTab } => (projectTabs.includes(s.tab as ProjectTab) ? { tab: s.tab as ProjectTab } : {}),
   component: ProjectPage,
 })
+const newAppRoute = createRoute({ getParentRoute: () => appRoute, path: '/projects/$projectId/new', component: NewAppPage })
 const appPageRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/apps/$appId',
@@ -136,7 +138,7 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
   onboardingRoute,
-  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
+  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
     builtinRegistryRoute, settingsRoute, databasesRoute, databaseRoute]),
 ])
 

@@ -25,7 +25,6 @@ import { api, projectsQuery } from '../lib/api'
 import { languages, setLang, useLang, useT } from '../lib/i18n'
 import { setTheme, themes, useTheme } from '../lib/theme'
 import { useLogout } from '../lib/logout'
-import { NewApp } from '../routes/project'
 import { NewProject } from '../routes/projects'
 import { NewDatabase } from '../routes/databases'
 import { AddExternal } from '../routes/registries'
@@ -35,7 +34,7 @@ import { cx } from './ui'
 
 type ResourceKind = 'project' | 'app' | 'database' | 'domain' | 'registry' | 'git' | 'storage'
 type Resource = { kind: ResourceKind; id: string; name: string; detail: string; project_id: string; project_name: string }
-type Creation = { kind: 'app'; projectId: string } | { kind: 'project' | 'database' | 'registry' }
+type Creation = { kind: 'project' | 'database' | 'registry' }
 type Entry = { id: string; label: string; detail?: string; icon: Icon; group: string; keywords?: string; current?: boolean; disabled?: boolean; run: () => void }
 const icons: Record<ResourceKind, Icon> = { project: FolderSimple, app: Cube, database: Database, domain: Globe, registry: Package, git: GitBranch, storage: HardDrives }
 
@@ -159,7 +158,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
   const entries: Entry[] = choosingProject
     ? (projects.data ?? []).filter((p) => matches(`${p.name} ${p.description}`))
       .sort((a, b) => Number(b.id === projectId) - Number(a.id === projectId))
-      .map((p) => ({ id: p.id, label: p.name, detail: p.description, icon: FolderSimple, group: t.shell.projects, run: () => create({ kind: 'app', projectId: p.id }) }))
+      .map((p) => ({ id: p.id, label: p.name, detail: p.description, icon: FolderSimple, group: t.shell.projects, run: () => { setOpen(false); void navigate({ to: '/projects/$projectId/new', params: { projectId: p.id } }) } }))
     : mode === 'theme'
       ? themes.filter((item) => matches(`${item.name} ${item.mode} ${t.theme[item.mode]}`)).map((item) => ({
         id: item.id, label: item.name, detail: t.theme[item.mode], icon: Palette, group: t.shell.theme, current: item.id === theme.id,
@@ -199,7 +198,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
   const modeTitle = choosingProject ? c.chooseProject : mode === 'theme' ? t.shell.chooseTheme : mode === 'language' ? t.shell.chooseLanguage : c.placeholder
   const hasMore = resources.data?.truncated ?? false
   const done = () => setCreation(null)
-  const title = creation?.kind === 'app' ? t.project.newApp : creation?.kind === 'project' ? t.projects.newProject : creation?.kind === 'database' ? t.databases.add : t.registries.addExternal
+  const title = creation?.kind === 'project' ? t.projects.newProject : creation?.kind === 'database' ? t.databases.add : t.registries.addExternal
 
   return <>
     <Dialog.Root open={open} onOpenChange={changeOpen}>
@@ -277,7 +276,6 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       </Dialog.Portal>
     </Dialog.Root>
     <Sheet open={creation !== null} onOpenChange={(value) => !value && done()} title={title}>
-      {creation?.kind === 'app' && <NewApp projectId={creation.projectId} onDone={done} />}
       {creation?.kind === 'project' && <NewProject onDone={done} />}
       {creation?.kind === 'database' && <NewDatabase projectId={projectId} onDone={done} />}
       {creation?.kind === 'registry' && <AddExternal onDone={done} />}

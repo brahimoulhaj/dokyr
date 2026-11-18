@@ -320,7 +320,7 @@ func (d *Docker) CreateContainer(ctx context.Context, spec ContainerSpec) (strin
 			},
 		},
 		NetworkingConfig: &network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{d.network: {}},
+			EndpointsConfig: map[string]*network.EndpointSettings{d.network: {Aliases: spec.Aliases}},
 		},
 	})
 	if err != nil {

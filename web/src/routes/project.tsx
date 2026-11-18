@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
-import { SourceFields, sourceForm, sourceInput } from '../components/source'
-import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, HelpTip, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
-import { environmentMap, parseEnvironment } from '../lib/environment'
+import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
 import { allDomainsQuery, api, appQuery, appsQuery, dnsQuery, domainsQuery, hostHref, isWildcard, projectQuery, projectsQuery, type App, type Domain, type Project, type Route } from '../lib/api'
 import { appSource, appStatus } from '../lib/format'
 import { useT } from '../lib/i18n'
@@ -28,8 +26,8 @@ export function ProjectPage() {
   const apps = useQuery(appsQuery(projectId))
   const domains = useQuery(domainsQuery(projectId))
   const databases = useQuery(projectDatabasesQuery(projectId))
-  const [adding, setAdding] = useState(false)
   const [addingDatabase, setAddingDatabase] = useState(false)
+  const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { tab?: string }
   const tab: ProjectTab = projectTabs.includes(search.tab as ProjectTab) ? (search.tab as ProjectTab) : 'apps'
   const t = useT()
@@ -57,7 +55,7 @@ export function ProjectPage() {
             </>
           )
         }
-        actions={tab === 'apps' ? <Button onClick={() => setAdding(true)}>{t.project.newApp}</Button>
+        actions={tab === 'apps' ? <Button onClick={() => navigate({ to: '/projects/$projectId/new', params: { projectId: p.id } })}>{t.project.newApp}</Button>
           : tab === 'databases' ? <Button onClick={() => setAddingDatabase(true)}>{t.databases.add}</Button> : undefined}
       />
 
@@ -117,9 +115,6 @@ export function ProjectPage() {
         </Panel>
       )}
 
-      <Sheet open={adding} onOpenChange={setAdding} title={t.project.newApp} description={t.project.portHint}>
-        {adding && <NewApp projectId={p.id} onDone={() => setAdding(false)} />}
-      </Sheet>
       <Sheet open={addingDatabase} onOpenChange={setAddingDatabase} title={t.databases.add}>
         {addingDatabase && <NewDatabase projectId={p.id} onDone={() => setAddingDatabase(false)} />}
       </Sheet>
@@ -151,94 +146,6 @@ function AppRow({ app }: { app: App }) {
         <span aria-hidden className="me-1 font-mono">&gt;_</span>{t.terminal.title}
       </Link>
     </li>
-  )
-}
-
-export function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const [name, setName] = useState('')
-  const [source, setSource] = useState(sourceForm())
-  const [port, setPort] = useState('80')
-  const [envText, setEnvText] = useState('')
-  const [envError, setEnvError] = useState('')
-  const [limits, setLimits] = useState({ cpu: '0', memory: '0' })
-  const t = useT()
-
-  const create = useMutation({
-    mutationFn: (environment: Record<string, string>) =>
-      api<App>(`/projects/${projectId}/apps`, {
-        method: 'POST',
-        body: { name, port: Number(port), ...sourceInput(source), environment, cpu_limit: Number(limits.cpu) || 0, memory_limit_mb: Number(limits.memory) || 0 },
-      }),
-    onSuccess: (a) => {
-      queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
-      navigate({ to: '/projects/$projectId/apps/$appId', params: { projectId, appId: a.id } })
-    },
-  })
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    let environment: Record<string, string>
-    try { environment = environmentMap(parseEnvironment(envText)) } catch { setEnvError(t.app.environmentInvalid); return }
-    setEnvError('')
-    create.mutate(environment)
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-5 p-5">
-      <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
-        <Field
-          label={t.common.name}
-          name="name"
-          required
-          autoFocus
-          dir="ltr"
-          placeholder="web"
-          pattern="[a-z0-9]([a-z0-9\-]{0,38}[a-z0-9])?"
-          title={t.project.nameTitle}
-          value={name}
-          onChange={(e) => setName(e.target.value.toLowerCase())}
-        />
-        <Field label={t.project.containerPort} name="port" type="number" required min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} />
-      </div>
-      <SourceFields form={source} onChange={setSource} />
-      <details className="group border border-line" open={!!envError || undefined}>
-        <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm text-muted hover:text-fg">
-          <span>{t.app.environment} <span className="text-xs">({t.common.optional})</span></span>
-          <span aria-hidden className="text-xs transition-transform group-open:rotate-90">›</span>
-        </summary>
-        <div className="space-y-1.5 border-t border-line p-3">
-          <div className="flex items-center gap-1.5 text-xs text-muted">
-            <label htmlFor="new-app-env" dir="ltr">.env</label>
-            <HelpTip label={t.app.environment}>{t.app.environmentFormat}</HelpTip>
-          </div>
-          <textarea id="new-app-env" dir="ltr" spellCheck={false} value={envText} onChange={(e) => { setEnvText(e.target.value); setEnvError('') }}
-            className="min-h-32 w-full resize-y border border-line bg-bg p-3 font-mono text-xs text-fg placeholder:text-muted/60 focus:border-accent focus:outline-none"
-            placeholder={'APP_ENV=production\nDATABASE_URL=${db.main.URL}'} />
-          {envError && <ErrorNote>{envError}</ErrorNote>}
-        </div>
-      </details>
-      <details className="group border border-line">
-        <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm text-muted hover:text-fg">
-          <span>{t.app.settingsSections.resources} <span className="text-xs">({t.common.optional})</span></span>
-          <span aria-hidden className="text-xs transition-transform group-open:rotate-90">›</span>
-        </summary>
-        <div className="grid gap-4 border-t border-line p-3 sm:grid-cols-2">
-          <Field label={t.app.cpuLimit} name="cpu" dir="ltr" type="number" min={0} max={256} step="0.05" hintTooltip hint={t.app.zeroUnlimited} value={limits.cpu} onChange={(e) => setLimits({ ...limits, cpu: e.target.value })} />
-          <Field label={t.app.memoryLimit} name="memory" dir="ltr" type="number" min={0} step="1" hintTooltip hint={t.app.zeroUnlimited} value={limits.memory} onChange={(e) => setLimits({ ...limits, memory: e.target.value })} />
-        </div>
-      </details>
-      {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
-      <SheetActions>
-        <Button type="submit" disabled={create.isPending}>
-          {create.isPending ? t.common.creating : t.project.createApp}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onDone}>
-          {t.common.cancel}
-        </Button>
-      </SheetActions>
-    </form>
   )
 }
 

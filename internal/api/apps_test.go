@@ -697,3 +697,47 @@ func TestRouteSubdomainsAPI(t *testing.T) {
 		t.Errorf("ask after the * route moved = %d, want 403", got)
 	}
 }
+
+// An app says its settings moved on since the running deployment, until the next deploy.
+func TestNeedsRedeploy(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	_, p := e.call("POST", "/api/projects", map[string]any{"name": "shop"})
+	_, a := e.call("POST", "/api/projects/"+p["id"].(string)+"/apps", map[string]any{"name": "web", "image": "nginx:1.27", "port": 80})
+	path := "/api/apps/" + a["id"].(string)
+	needs := func() bool { _, got := e.call("GET", path, nil); return got["needs_redeploy"].(bool) }
+	deploy := func() {
+		t.Helper()
+		if code, _ := e.call("POST", path+"/deploy", nil); code != 202 {
+			t.Fatalf("deploy = %d", code)
+		}
+		e.deployer.Wait()
+	}
+	if needs() {
+		t.Fatal("an app never deployed has nothing to redeploy")
+	}
+	deploy()
+	if needs() {
+		t.Fatal("just deployed: nothing changed")
+	}
+	e.call("PATCH", path, map[string]any{"name": "site"})
+	if needs() {
+		t.Fatal("a new name needs no deploy")
+	}
+	e.call("PATCH", path, map[string]any{"environment": map[string]string{"A": "1"}})
+	if !needs() {
+		t.Fatal("a new variable needs a deploy")
+	}
+	deploy()
+	if needs() {
+		t.Fatal("deployed again: up to date")
+	}
+	e.call("PATCH", path, map[string]any{"port": 8080})
+	if !needs() {
+		t.Fatal("a new port needs a deploy")
+	}
+	e.call("PATCH", path, map[string]any{"port": 80})
+	if needs() {
+		t.Fatal("back to the deployed settings: nothing to deploy")
+	}
+}

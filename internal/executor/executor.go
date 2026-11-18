@@ -72,7 +72,8 @@ type Executor interface {
 // ContainerSpec describes a container to create. Kind and ResourceID become labels,
 // which is how the panel recognises its own containers after a restart.
 type ContainerSpec struct {
-	Name       string // container name, also its DNS name on the shared network
+	Name       string   // container name, also its DNS name on the shared network
+	Aliases    []string // more DNS names on the shared network, kept across the containers of one app
 	Image      string
 	Kind       Kind
 	ResourceID string            // id of the app, database or service this container belongs to

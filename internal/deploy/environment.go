@@ -49,6 +49,48 @@ func resolveEnvironment(app, project map[string]string, inherit bool) (map[strin
 	return out, nil
 }
 
+// AppHost is the name an app answers on inside the shared network. Unlike a container's
+// name it stays the same from one deployment to the next, so other apps can keep it.
+func AppHost(appID string) string { return "app-" + strings.ToLower(appID) }
+
+// appRef is a reference to another app of the project: ${app.NAME.HOST} or ${app.NAME.PORT}.
+var appRef = regexp.MustCompile(`\$\{app\.([a-z0-9][a-z0-9-]{0,39})\.([A-Z_]+)\}`)
+
+// resolveAppRefs replaces every ${app.NAME.HOST} and ${app.NAME.PORT} by the internal
+// hostname and the port of that app of the project. An unknown app or field is an error.
+func resolveAppRefs(env map[string]string, apps []store.App) (map[string]string, error) {
+	out := make(map[string]string, len(env))
+	for key, value := range env {
+		if !strings.Contains(value, "${app.") {
+			out[key] = value
+			continue
+		}
+		var refErr error
+		out[key] = appRef.ReplaceAllStringFunc(value, func(ref string) string {
+			m := appRef.FindStringSubmatch(ref)
+			for _, a := range apps {
+				if a.Name != m[1] {
+					continue
+				}
+				switch m[2] {
+				case "HOST":
+					return AppHost(a.ID)
+				case "PORT":
+					return fmt.Sprint(a.Port)
+				}
+				refErr = fmt.Errorf("unknown app field in %s: use HOST or PORT", ref)
+				return ref
+			}
+			refErr = fmt.Errorf("app reference %s does not exist in this project", ref)
+			return ref
+		})
+		if refErr != nil {
+			return nil, refErr
+		}
+	}
+	return out, nil
+}
+
 // buildVars is the part of a resolved environment the image build gets: the variables
 // scoped to the build, the secret ones apart so they travel as build secrets. A variable
 // the app inherits from its project has no scope of its own and stays out of the build.

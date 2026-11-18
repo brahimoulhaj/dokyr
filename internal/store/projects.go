@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -152,6 +154,8 @@ type App struct {
 	PushDeploy          bool   // an image on the built-in registry deploys when its tag is pushed
 	RegistryID          string // registry an image app is pulled from with credentials; "" = public
 	StartCommand        string // replaces the image's entrypoint and command, run by /bin/sh -c; "" = the image's own
+	Template            string // id of the template the app was created from; "" = none
+	DeployedConfig      string // ConfigHash at the running deployment; "" = unknown
 	Port                int
 	CPULimit            float64
 	MemoryMB            int64
@@ -164,7 +168,7 @@ type App struct {
 
 const appCols = `id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb,
 	desired_state, COALESCE(current_deployment_id, ''),
-	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order`
+	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order, template, deployed_config`
 
 func (s *Store) scanApp(row scanner) (App, error) {
 	var a App
@@ -172,7 +176,7 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.Name, &a.SourceType, &a.Image, &a.Port, &a.CPULimit, &a.MemoryMB,
 		&a.DesiredState, &a.CurrentDeploymentID,
-		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder)
+		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder, &a.Template, &a.DeployedConfig)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -262,6 +266,7 @@ type AppInput struct {
 	RegistryID   string // image apps: private registry to pull from; "" = public
 	Git          GitSource
 	StartCommand string
+	Template     string // set at creation only; an update leaves it
 	Port         int
 	CPULimit     float64
 	MemoryMB     int64
@@ -298,10 +303,10 @@ func (s *Store) CreateApp(ctx context.Context, projectID string, in AppInput) (A
 	aid, ts := id.New(), now()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO apps (id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb, desired_state,
-			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order)
-		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ? FROM projects WHERE id = ?`,
+			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order, template)
+		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ? FROM projects WHERE id = ?`,
 		aid, in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB, StateStopped,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), projectID)
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), in.Template, projectID)
 	if err != nil {
 		return App{}, conflict(err)
 	}
@@ -370,6 +375,36 @@ func (s *Store) UpdateApp(ctx context.Context, appID string, in AppInput) (App, 
 func (s *Store) SetAppDesiredState(ctx context.Context, appID, state string) error {
 	return affected(s.db.ExecContext(ctx,
 		`UPDATE apps SET desired_state = ?, updated_at = ? WHERE id = ?`, state, now(), appID))
+}
+
+// ConfigHash is a fingerprint of everything a deployment takes from the app's settings.
+// Two apps' hashes mean nothing to each other; one app's tell whether its settings changed
+// since a deployment. The name, the deploy webhook and what a Git branch now holds are not
+// settings a deploy applies, and stay out.
+func (a App) ConfigHash(check HealthCheck) string {
+	raw, err := json.Marshal(struct {
+		Source, Image, Registry, Start string
+		Git                            GitSource
+		Port                           int
+		CPU                            float64
+		Memory                         int64
+		Env                            map[string]string
+		Meta                           map[string]EnvVarMeta
+		Mounts                         []AppMount
+		Processes                      []AppProcess
+		Check                          HealthCheck
+	}{a.SourceType, a.Image, a.RegistryID, a.StartCommand, a.Git, a.Port, a.CPULimit, a.MemoryMB,
+		a.Environment, nonNilMeta(a.EnvMeta), append([]AppMount{}, a.Mounts...), append([]AppProcess{}, a.Processes...), check})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// SetAppDeployedConfig records the settings fingerprint of the deployment now running.
+func (s *Store) SetAppDeployedConfig(ctx context.Context, appID, hash string) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE apps SET deployed_config = ? WHERE id = ?`, hash, appID))
 }
 
 // SetAppCurrentDeployment points the app at a deployment (empty clears it) and sets the

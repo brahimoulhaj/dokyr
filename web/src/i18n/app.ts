@@ -63,6 +63,8 @@ export const en = {
   },
   deploy: 'Deploy',
   redeploy: 'Redeploy',
+  pendingChanges: 'Changes not deployed',
+  pendingChangesHint: 'Settings changed since the running deployment. Redeploy to apply them.',
   deploying: 'Deploying…',
 
   sections: 'App sections',
@@ -258,6 +260,8 @@ export const fr: typeof en = {
   },
   deploy: 'Déployer',
   redeploy: 'Redéployer',
+  pendingChanges: 'Modifications non déployées',
+  pendingChangesHint: 'Les réglages ont changé depuis le déploiement en cours. Redéployez pour les appliquer.',
   deploying: 'Déploiement…',
 
   sections: 'Sections de l’application',
@@ -455,6 +459,8 @@ export const ar: typeof en = {
   },
   deploy: 'نشر',
   redeploy: 'إعادة النشر',
+  pendingChanges: 'تغييرات غير منشورة',
+  pendingChangesHint: 'تغيّرت الإعدادات منذ النشر الحالي. أعد النشر لتطبيقها.',
   deploying: 'جارٍ النشر…',
 
   sections: 'أقسام التطبيق',
@@ -650,6 +656,8 @@ export const es: typeof en = {
   },
   deploy: 'Desplegar',
   redeploy: 'Volver a desplegar',
+  pendingChanges: 'Cambios sin desplegar',
+  pendingChangesHint: 'Los ajustes cambiaron desde el despliegue en curso. Vuelve a desplegar para aplicarlos.',
   deploying: 'Desplegando…',
 
   sections: 'Secciones de la aplicación',

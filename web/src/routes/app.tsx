@@ -30,6 +30,7 @@ import {
   isWildcard,
 } from '../lib/api'
 import { SourceFields, sourceChanged, sourceForm, sourceInput } from '../components/source'
+import { DatabasePrompt } from '../components/connect-database'
 import { rich, useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, duration, repoName, timeAgo, type Tone } from '../lib/format'
@@ -142,6 +143,12 @@ export function AppPage() {
         }
         actions={
           <>
+            {a.needs_redeploy && !deploying && (
+              <span title={t.app.pendingChangesHint} className="inline-flex items-center gap-1.5 text-xs text-warn">
+                <span aria-hidden className="size-1.5 rounded-full bg-warn" />
+                {t.app.pendingChanges}
+              </span>
+            )}
             {deployed && a.desired_state === 'running' && (
               <>
                 <Button variant="ghost" disabled={busy} onClick={() => action.mutate('restart')}>
@@ -165,6 +172,7 @@ export function AppPage() {
       />
 
       {actionError && <ErrorNote>{actionError.message}</ErrorNote>}
+      <DatabasePrompt app={a} />
 
       <nav className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line" aria-label={t.app.sections}>
         {appTabs.map((name) => (

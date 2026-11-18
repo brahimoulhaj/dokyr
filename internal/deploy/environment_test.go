@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"panel/internal/database"
 	"panel/internal/store"
@@ -49,6 +50,48 @@ func TestDeployDatabaseEnvironment(t *testing.T) {
 	dep = e.deploy()
 	if dep.Status != "failed" || !strings.Contains(dep.Error, "must be running") {
 		t.Fatalf("stopped DB deploy = %+v", dep)
+	}
+}
+
+// A database still being created (made with the app from a template, deployed right after) is waited for.
+func TestDeployWaitsForStartingDatabase(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	d, err := e.st.CreateDBInstance(ctx, store.DBInstance{ProjectID: e.app.ProjectID, Name: "main", Engine: "mariadb", Version: "11.4", DatabaseName: "app", Username: "app"}, map[string]string{"password": "p", "root_password": "r"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetDBInstanceState(ctx, d.ID, "running", "provisioning", ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.app, err = e.st.UpdateApp(ctx, e.app.ID, appInputWithEnv(e, map[string]string{"DB": "${db.main.URL}"})); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.opts.DatabaseWait = 50 * time.Millisecond
+	if dep := e.deploy(); dep.Status != "failed" || !strings.Contains(dep.Error, "must be running") {
+		t.Fatalf("deploy with a database that never starts = %+v", dep)
+	}
+	e.svc.opts.DatabaseWait = time.Minute
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		e.st.SetDBInstanceState(ctx, d.ID, "running", "running", "")
+	}()
+	dep := e.deploy()
+	if dep.Status != "succeeded" || !strings.Contains(e.log(dep), "Waiting for the database") {
+		t.Fatalf("deploy = %s\n%s", dep.Status, e.log(dep))
+	}
+}
+
+func TestResolveAppRefs(t *testing.T) {
+	apps := []store.App{{ID: "01ABC", Name: "db", Port: 3306}, {ID: "01DEF", Name: "web", Port: 80}}
+	got, err := resolveAppRefs(map[string]string{"A": "${app.db.HOST}:${app.db.PORT}", "B": "plain", "C": "http://${app.web.HOST}/"}, apps)
+	if err != nil || got["A"] != "app-01abc:3306" || got["B"] != "plain" || got["C"] != "http://app-01def/" {
+		t.Fatalf("resolveAppRefs = %v, %v", got, err)
+	}
+	if _, err := resolveAppRefs(map[string]string{"A": "${app.gone.HOST}"}, apps); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("unknown app = %v", err)
+	}
+	if _, err := resolveAppRefs(map[string]string{"A": "${app.db.URL}"}, apps); err == nil || !strings.Contains(err.Error(), "HOST or PORT") {
+		t.Fatalf("unknown field = %v", err)
 	}
 }
 

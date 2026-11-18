@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -99,6 +100,9 @@ type Options struct {
 	// StartGrace is how long a new container must stay up before traffic is switched to
 	// it, for an app with no health check saved. It catches images that crash on start.
 	StartGrace time.Duration
+	// DatabaseWait is how long a deployment waits for a database it references that is
+	// still being created; 0 = 5 minutes.
+	DatabaseWait time.Duration
 	// Dial opens the connections of health checks; nil = a plain net.Dialer. The panel
 	// shares a Docker network with the apps, so it reaches a container by its name.
 	Dial func(ctx context.Context, network, address string) (net.Conn, error)
@@ -150,6 +154,9 @@ type cancellable struct {
 
 // New returns a Service whose background deploys stop when ctx is cancelled.
 func New(ctx context.Context, opts Options) *Service {
+	if opts.DatabaseWait == 0 {
+		opts.DatabaseWait = 5 * time.Minute
+	}
 	if opts.StartGrace == 0 {
 		opts.StartGrace = 3 * time.Second
 	}
@@ -658,6 +665,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	}
 	containerID, err := ex.CreateContainer(ctx, executor.ContainerSpec{
 		Name:       name,
+		Aliases:    []string{AppHost(app.ID)},
 		Image:      image,
 		Kind:       executor.KindApp,
 		ResourceID: app.ID,
@@ -687,6 +695,8 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail(containerID, err)
 		return
 	}
+	// What this deployment was made from, to tell later that the settings moved on.
+	configHash := app.ConfigHash(check)
 	if !saved {
 		check = store.HealthCheck{Type: store.HealthRunning, Drain: store.DefaultDrain}
 	}
@@ -714,9 +724,13 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail(containerID, err)
 		return
 	}
+	if err := st.SetAppDeployedConfig(final, app.ID, configHash); err != nil {
+		s.opts.Log.Error("record deployed settings", "app", app.ID, "error", err)
+	}
 	logw.printf("Switching traffic to the new container")
 	if err := s.route(ctx, app.ID, []string{store.Upstream(name, dep.Port)}); err != nil {
 		// Put the database back so it matches what the proxy still serves.
+		_ = st.SetAppDeployedConfig(final, app.ID, app.DeployedConfig)
 		if rbErr := st.SetAppCurrentDeployment(final, app.ID, previous, app.DesiredState); rbErr != nil {
 			s.opts.Log.Error("revert current deployment", "error", rbErr)
 		}
@@ -1052,7 +1066,32 @@ func (s *Service) environment(ctx context.Context, app store.App, logw *logWrite
 	if err != nil {
 		return nil, err
 	}
-	return database.ResolveEnvironment(ctx, s.opts.Store, app.ProjectID, env)
+	if slices.ContainsFunc(slices.Collect(maps.Values(env)), func(v string) bool { return strings.Contains(v, "${app.") }) {
+		apps, err := s.opts.Store.ListApps(ctx, app.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("project apps: %w", err)
+		}
+		if env, err = resolveAppRefs(env, apps); err != nil {
+			return nil, err
+		}
+	}
+	// A database created a moment ago (with the app, from a template) is given time to start.
+	deadline := time.Now().Add(s.opts.DatabaseWait)
+	for waiting := false; ; {
+		out, err := database.ResolveEnvironment(ctx, s.opts.Store, app.ProjectID, env)
+		if !errors.Is(err, database.ErrStarting) || time.Now().After(deadline) {
+			return out, err
+		}
+		if !waiting {
+			waiting = true
+			logw.printf("Waiting for the database to start")
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // containerEnv is the app's environment, plus PORT set to port (the deployment's) for a

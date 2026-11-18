@@ -57,32 +57,44 @@ export function sourceChanged(f: SourceForm, app: App): boolean {
 const sourceKind = { github_app: 'GitHub', gitlab: 'GitLab', deploy_key: 'SSH' } as const
 const sourceLabel = (s: GitSource) => `${sourceKind[s.type]} · ${s.name}`
 
-/** Image or Git repository, and the fields of the chosen one. */
-export function SourceFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceForm) => void }) {
+/** What a new app can be made from, beyond the two sources an app keeps. */
+export type OtherSource = 'compose' | 'template'
+
+/** The source picker: an image, a Git repository and, where a new app is made, a Compose file or a template. */
+export function SourceToggle({ value, onChange, withOthers }: { value: SourceForm['source_type'] | OtherSource; onChange: (v: SourceForm['source_type'] | OtherSource) => void; withOthers?: boolean }) {
   const t = useT()
-  const choices: { value: SourceForm['source_type']; label: string }[] = [
+  const choices: { value: SourceForm['source_type'] | OtherSource; label: string }[] = [
     { value: 'image', label: t.source.image },
     { value: 'git', label: t.source.gitRepository },
+    ...(withOthers ? [{ value: 'compose' as const, label: t.compose.compose }, { value: 'template' as const, label: t.templates.template }] : []),
   ]
   return (
+    <div role="radiogroup" aria-label={t.source.source} className="inline-flex max-w-full overflow-x-auto border border-line">
+      {choices.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          role="radio"
+          aria-checked={value === c.value}
+          onClick={() => onChange(c.value)}
+          className={cx(
+            'h-8 shrink-0 px-3 text-sm whitespace-nowrap transition-colors',
+            value === c.value ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg',
+          )}
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Image or Git repository, and the fields of the chosen one. onOther adds the Compose and template choices. */
+export function SourceFields({ form, onChange, onOther }: { form: SourceForm; onChange: (f: SourceForm) => void; onOther?: (v: OtherSource) => void }) {
+  return (
     <div className="space-y-4">
-      <div role="radiogroup" aria-label={t.source.source} className="inline-flex border border-line">
-        {choices.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            role="radio"
-            aria-checked={form.source_type === c.value}
-            onClick={() => onChange({ ...form, source_type: c.value })}
-            className={cx(
-              'h-8 px-3 text-sm transition-colors',
-              form.source_type === c.value ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg',
-            )}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
+      <SourceToggle value={form.source_type} withOthers={!!onOther}
+        onChange={(v) => (v === 'image' || v === 'git' ? onChange({ ...form, source_type: v }) : onOther?.(v))} />
       {form.source_type === 'image' ? (
         <ImageFields form={form} onChange={onChange} />
       ) : (

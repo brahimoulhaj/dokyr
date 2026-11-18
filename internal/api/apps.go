@@ -100,8 +100,10 @@ type appJSON struct {
 	BuildContext        string                      `json:"build_context"`
 	DockerfilePath      string                      `json:"dockerfile_path"`
 	StartCommand        string                      `json:"start_command"`
-	Strategy            string                      `json:"strategy"`    // rolling or recreate, from the mounts
-	PushDeploy          bool                        `json:"push_deploy"` // image apps on the built-in registry: deploy when the tag is pushed
+	Template            string                      `json:"template"`       // id of the template the app was created from; "" = none
+	NeedsRedeploy       bool                        `json:"needs_redeploy"` // settings changed since the running deployment; only on GET /api/apps/{id}
+	Strategy            string                      `json:"strategy"`       // rolling or recreate, from the mounts
+	PushDeploy          bool                        `json:"push_deploy"`    // image apps on the built-in registry: deploy when the tag is pushed
 	RuntimeState        string                      `json:"runtime_state,omitempty"`
 	Health              *deploy.AppHealth           `json:"health,omitempty"` // only on GET /api/apps/{id}, for a running app
 	CreatedAt           time.Time                   `json:"created_at"`
@@ -119,10 +121,10 @@ func toAppJSON(a store.App) appJSON {
 		GitSourceID:         a.Git.ConnectionID,
 		GitRepository:       a.Git.Repository, GitBranch: a.Git.Branch, Builder: a.Git.Builder,
 		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile,
-		StartCommand: a.StartCommand,
-		Strategy:     a.Strategy(),
-		PushDeploy:   a.PushDeploy,
-		CreatedAt:    a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		StartCommand: a.StartCommand, Template: a.Template,
+		Strategy:   a.Strategy(),
+		PushDeploy: a.PushDeploy,
+		CreatedAt:  a.CreatedAt, UpdatedAt: a.UpdatedAt,
 	}
 }
 
@@ -686,6 +688,11 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := toAppJSON(a)
+	if a.CurrentDeploymentID != "" && a.DeployedConfig != "" {
+		if check, _, err := s.store.AppHealthCheck(r.Context(), a.ID); err == nil {
+			out.NeedsRedeploy = a.ConfigHash(check) != a.DeployedConfig
+		}
+	}
 	if s.deployer != nil {
 		out.RuntimeState = s.deployer.RuntimeState(r.Context(), a.ID)
 		if h, ok := s.deployer.AppHealth(a.ID); ok {

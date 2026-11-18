@@ -121,18 +121,19 @@ export function DatabaseSelect({ label, value, onChange, children }: { label: st
   </label>
 }
 
-export function NewDatabase({ onDone, projectId }: { onDone: () => void; projectId?: string }) {
+/** engine fixes the engine; onCreated receives the new instance instead of opening its page. */
+export function NewDatabase({ onDone, projectId, engine: fixedEngine, defaults, onCreated }: { onDone: () => void; projectId?: string; engine?: string; defaults?: { name?: string; database?: string }; onCreated?: (d: DatabaseAccepted) => void }) {
   const t = useT()
   const projects = useQuery(projectsQuery)
   const engines = useQuery(enginesQuery)
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [project, setProject] = useState('')
-  const [name, setName] = useState('main')
-  const [engine, setEngine] = useState('postgres')
+  const [name, setName] = useState(defaults?.name ?? 'main')
+  const [engine, setEngine] = useState(fixedEngine ?? 'postgres')
   const [version, setVersion] = useState('')
-  const [database, setDatabase] = useState('app')
-  const [user, setUser] = useState('app')
+  const [database, setDatabase] = useState(defaults?.database ?? 'app')
+  const [user, setUser] = useState(defaults?.database ?? 'app')
   const [cpu, setCPU] = useState('1')
   const [memory, setMemory] = useState('512')
   const versions = engines.data?.find((e) => e.id === engine)?.versions ?? []
@@ -143,6 +144,7 @@ export function NewDatabase({ onDone, projectId }: { onDone: () => void; project
     } }), t.databases.operationRunning.create(name)),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: databasesQuery.queryKey })
+      if (onCreated) { onCreated(d); return }
       onDone()
       navigate({ to: '/databases/$databaseId', params: { databaseId: d.id } })
     },
@@ -155,7 +157,7 @@ export function NewDatabase({ onDone, projectId }: { onDone: () => void; project
         : <DatabaseSelect label={t.databases.project} value={project || projects.data?.[0]?.id || ''} onChange={setProject}>{projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</DatabaseSelect>}
       <Field name="instance-name" label={t.common.name} hint={t.databases.nameHint} required autoFocus maxLength={48} pattern="[a-z][a-z0-9-]*" value={name} onChange={(e) => setName(e.target.value)} />
       <div className="grid grid-cols-2 gap-4">
-        <DatabaseSelect label={t.databases.engine} value={engine} onChange={(v) => { setEngine(v); setVersion('') }}>{engines.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</DatabaseSelect>
+        <DatabaseSelect label={t.databases.engine} value={engine} onChange={(v) => { setEngine(v); setVersion('') }}>{engines.data?.filter((e) => !fixedEngine || e.id === fixedEngine).map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</DatabaseSelect>
         <DatabaseSelect label={t.databases.version} value={version || versions[0] || ''} onChange={setVersion}>{versions.map((v) => <option key={v} value={v}>{v}</option>)}</DatabaseSelect>
       </div>
       <Field name="database-name" label={t.databases.database} hint={t.databases.sqlHint} required maxLength={48} pattern="[a-z][a-z0-9_]*" value={database} onChange={(e) => setDatabase(e.target.value)} />

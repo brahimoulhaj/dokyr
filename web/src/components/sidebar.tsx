@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation, useSearch } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 // Per-icon imports keep the bundle to the icons used.
 import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise'
@@ -15,7 +15,6 @@ import type { Icon } from '@phosphor-icons/react'
 import { allDomainsQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
 import { databasesQuery } from '../lib/databases'
 import { useT } from '../lib/i18n'
-import { NewApp } from '../routes/project'
 import { NewProject } from '../routes/projects'
 import { settingsTabs, useSettingsTabLabels } from '../routes/settings'
 import { Sheet } from './sheet'
@@ -38,7 +37,7 @@ export function Sidebar() {
   const domains = useQuery(allDomainsQuery)
   const builtin = useQuery({ ...registrySettingsQuery, retry: false })
   const settingsLabels = useSettingsTabLabels()
-  const [creatingIn, setCreatingIn] = useState<Project | null>(null)
+  const navigate = useNavigate()
   const [creatingProject, setCreatingProject] = useState(false)
 
   const recent = [...(projects.data ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, PROJECTS_SHOWN)
@@ -61,7 +60,7 @@ export function Sidebar() {
         </div>
         {recent.length > 0 && (
           <ul className="ms-5 hidden border-s border-line ps-1.5 md:block">
-            {recent.map((p) => <ProjectItem key={p.id} project={p} onNewApp={() => setCreatingIn(p)} />)}
+            {recent.map((p) => <ProjectItem key={p.id} project={p} onNewApp={() => navigate({ to: '/projects/$projectId/new', params: { projectId: p.id } })} />)}
             {(projects.data?.length ?? 0) > PROJECTS_SHOWN && (
               <li>
                 <Link to="/projects" className="block px-2 py-1 text-xs text-muted hover:text-fg">{ts.allProjects(projects.data!.length)}</Link>
@@ -108,9 +107,6 @@ export function Sidebar() {
     </nav>
     <Sheet open={creatingProject} onOpenChange={setCreatingProject} title={t.projects.newProject}>
       {creatingProject && <NewProject onDone={() => setCreatingProject(false)} />}
-    </Sheet>
-    <Sheet open={creatingIn !== null} onOpenChange={(open) => { if (!open) setCreatingIn(null) }} title={t.project.newApp} description={creatingIn?.name}>
-      {creatingIn && <NewApp projectId={creatingIn.id} onDone={() => setCreatingIn(null)} />}
     </Sheet>
     </>
   )

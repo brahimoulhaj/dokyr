@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -26,6 +27,10 @@ func Connection(d store.DBInstance, creds map[string]string) map[string]string {
 	return map[string]string{"HOST": host, "PORT": strconv.Itoa(port), "DATABASE": d.DatabaseName,
 		"USERNAME": d.Username, "PASSWORD": creds["password"], "URL": u.String()}
 }
+
+// ErrStarting marks a reference to a database that is still being created: waiting a
+// little makes it resolve, unlike a stopped or failed one.
+var ErrStarting = errors.New("it is still starting")
 
 var dbRef = regexp.MustCompile(`\$\{db\.([a-z][a-z0-9-]{0,47})\.([A-Z_]+)\}`)
 
@@ -64,6 +69,10 @@ func ResolveEnvironment(ctx context.Context, st *store.Store, projectID string, 
 			d, ok := byName[match[1]]
 			if !ok {
 				refErr = fmt.Errorf("database reference %s does not exist in this project", ref)
+				return ref
+			}
+			if d.Status == "provisioning" && d.DesiredState == store.StateRunning {
+				refErr = fmt.Errorf("database %s must be running before deploying the app: %w", d.Name, ErrStarting)
 				return ref
 			}
 			if d.Status != "running" || d.DesiredState != store.StateRunning {

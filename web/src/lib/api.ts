@@ -172,6 +172,10 @@ export type App = {
   registry_id: string
   /** The deploy webhook is on. */
   deploy_hook: boolean
+  /** Id of the template the app was created from; '' = none. */
+  template: string
+  /** Settings changed since the running deployment: a redeploy applies them. Only on the app's own request. */
+  needs_redeploy?: boolean
   /** Image apps only; empty for a Git app. */
   image: string
   /** Git connection used to fetch a private repository; empty = public. */
@@ -301,6 +305,32 @@ export const appsQuery = (projectId: string) => ({
   queryKey: ['projects', projectId, 'apps'] as const,
   queryFn: () => api<App[]>(`/projects/${projectId}/apps`),
 })
+
+/** A ready-made app of the catalog: an image with the database and volumes it needs. */
+export type Template = {
+  id: string
+  name: string
+  description: string
+  category: string
+  website: string
+  image: string
+  port: number
+  database?: { engine: string; version: string; name: string }
+  volumes: { name: string; target: string }[]
+  /** Names of the variables the template sets. */
+  variables: string[]
+  /** The ones left empty until a database is connected to the app. */
+  database_variables: string[]
+}
+
+export const templatesQuery = { queryKey: ['templates'] as const, queryFn: () => api<Template[]>('/templates'), staleTime: Infinity }
+
+/** What a Compose file becomes: one app for each service, and what the conversion changed or left out. */
+export type ComposeResult = {
+  apps: { id?: string; name: string; image: string; /** 0 = the service declares none. */ port: number; variables: string[]; volumes: string[]; start_command: string }[]
+  /** What differs from the file: a variable linked to another app, something to check, something not converted. app '' = the whole file. */
+  notes: { app: string; kind: 'linked' | 'check' | 'skipped'; text: string }[]
+}
 
 export const appQuery = (id: string) => ({
   queryKey: ['apps', id] as const,

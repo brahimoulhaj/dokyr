@@ -206,6 +206,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}/apps", s.requireAuth(s.handleListApps))
 	mux.HandleFunc("GET /api/projects/{id}/databases", s.requireAuth(s.handleProjectDatabases))
 	mux.HandleFunc("POST /api/projects/{id}/apps", s.requireAuth(s.handleCreateApp))
+	mux.HandleFunc("POST /api/projects/{id}/compose", s.requireAuth(s.handleImportCompose))
+	mux.HandleFunc("GET /api/templates", s.requireAuth(s.handleListTemplates))
+	mux.HandleFunc("POST /api/apps/{id}/database", s.requireAuth(sessionOnly(s.handleConnectDatabase)))
+	mux.HandleFunc("POST /api/projects/{id}/templates/{template}", s.requireAuth(s.handleCreateFromTemplate))
 
 	mux.HandleFunc("GET /api/apps/{id}", s.requireAuth(s.handleGetApp))
 	mux.HandleFunc("GET /api/apps/problems", s.requireAuth(s.handleAppProblems))
