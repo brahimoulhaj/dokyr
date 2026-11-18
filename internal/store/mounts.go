@@ -46,3 +46,24 @@ func ValidateAppMounts(mounts []AppMount) error {
 	}
 	return nil
 }
+
+var processName = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$`)
+
+// ValidateAppProcesses checks an app's extra processes. Names end up in container names,
+// which are DNS labels, so they are short slugs.
+func ValidateAppProcesses(processes []AppProcess) error {
+	if len(processes) > 10 {
+		return fmt.Errorf("at most 10 processes are allowed")
+	}
+	names := map[string]bool{}
+	for _, p := range processes {
+		if !processName.MatchString(p.Name) || names[p.Name] {
+			return fmt.Errorf("process names must be unique: 1 to 20 lowercase letters, digits or dashes, starting with a letter and not ending with a dash")
+		}
+		names[p.Name] = true
+		if strings.TrimSpace(p.Command) == "" || len(p.Command) > 4096 || strings.ContainsRune(p.Command, 0) {
+			return fmt.Errorf("process %s needs a command of at most 4096 characters, without NUL", p.Name)
+		}
+	}
+	return nil
+}

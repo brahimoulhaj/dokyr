@@ -176,6 +176,13 @@ func (s *Service) checkApp(ctx context.Context, t store.AppRuntimeTarget) {
 		}
 	}
 
+	// The main container is fine: a worker that stopped still makes the app unhealthy.
+	if status == HealthHealthy && reason == "" && t.Processes {
+		if problem := s.processProblem(ctx, t.AppID, t.ContainerName); problem != "" {
+			status, reason = HealthUnhealthy, problem
+		}
+	}
+
 	s.mon.mu.Lock()
 	prev := w.Status
 	w.CheckedAt, w.Probe = now, probe

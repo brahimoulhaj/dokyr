@@ -43,7 +43,10 @@ type Deployer interface {
 	LogPath(dep store.Deployment) string
 	// StreamLogs calls fn for each line of the app's current container until the stream
 	// ends or ctx is cancelled.
-	StreamLogs(ctx context.Context, appID string, opts executor.LogOptions, fn func(executor.LogLine)) error
+	// With process, the lines are those of that extra process instead.
+	StreamLogs(ctx context.Context, appID, process string, opts executor.LogOptions, fn func(executor.LogLine)) error
+	// ProcessStates reports what the container of each extra process is doing.
+	ProcessStates(ctx context.Context, app store.App) []deploy.ProcessState
 }
 
 // SetDeployer connects the deploy service; without one, runtime actions answer 503.
@@ -72,40 +75,45 @@ func toProjectJSON(p store.Project) projectJSON {
 }
 
 type appJSON struct {
-	Mounts              []store.AppMount  `json:"mounts"`
-	Environment         map[string]string `json:"environment"`
-	ID                  string            `json:"id"`
-	ProjectID           string            `json:"project_id"`
-	Name                string            `json:"name"`
-	SourceType          string            `json:"source_type"`
-	Image               string            `json:"image"`
-	RegistryID          string            `json:"registry_id"`
-	DeployHook          bool              `json:"deploy_hook"`
-	Port                int               `json:"port"`
-	CPULimit            float64           `json:"cpu_limit"`
-	MemoryLimitMB       int64             `json:"memory_limit_mb"`
-	DesiredState        string            `json:"desired_state"`
-	CurrentDeploymentID string            `json:"current_deployment_id"`
-	GitSourceID         string            `json:"git_source_id"`
-	GitRepository       string            `json:"git_repository"`
-	GitBranch           string            `json:"git_branch"`
-	Builder             string            `json:"builder"`
-	BuildContext        string            `json:"build_context"`
-	DockerfilePath      string            `json:"dockerfile_path"`
-	StartCommand        string            `json:"start_command"`
-	Strategy            string            `json:"strategy"`    // rolling or recreate, from the mounts
-	PushDeploy          bool              `json:"push_deploy"` // image apps on the built-in registry: deploy when the tag is pushed
-	RuntimeState        string            `json:"runtime_state,omitempty"`
-	Health              *deploy.AppHealth `json:"health,omitempty"` // only on GET /api/apps/{id}, for a running app
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	Mounts              []store.AppMount            `json:"mounts"`
+	Processes           []store.AppProcess          `json:"processes"`
+	ProcessStates       []deploy.ProcessState       `json:"process_states,omitempty"` // only on GET /api/apps/{id}
+	Environment         map[string]string           `json:"environment"`              // without the secret values: those are never returned
+	EnvironmentMeta     map[string]store.EnvVarMeta `json:"environment_meta"`         // scope and secrecy of the variables that are not runtime and plain
+	EnvironmentOrder    []string                    `json:"environment_order"`        // variable names in their owner's order, "# comments" and "" blank lines between
+	ID                  string                      `json:"id"`
+	ProjectID           string                      `json:"project_id"`
+	Name                string                      `json:"name"`
+	SourceType          string                      `json:"source_type"`
+	Image               string                      `json:"image"`
+	RegistryID          string                      `json:"registry_id"`
+	DeployHook          bool                        `json:"deploy_hook"`
+	Port                int                         `json:"port"`
+	CPULimit            float64                     `json:"cpu_limit"`
+	MemoryLimitMB       int64                       `json:"memory_limit_mb"`
+	DesiredState        string                      `json:"desired_state"`
+	CurrentDeploymentID string                      `json:"current_deployment_id"`
+	GitSourceID         string                      `json:"git_source_id"`
+	GitRepository       string                      `json:"git_repository"`
+	GitBranch           string                      `json:"git_branch"`
+	Builder             string                      `json:"builder"`
+	BuildContext        string                      `json:"build_context"`
+	DockerfilePath      string                      `json:"dockerfile_path"`
+	StartCommand        string                      `json:"start_command"`
+	Strategy            string                      `json:"strategy"`    // rolling or recreate, from the mounts
+	PushDeploy          bool                        `json:"push_deploy"` // image apps on the built-in registry: deploy when the tag is pushed
+	RuntimeState        string                      `json:"runtime_state,omitempty"`
+	Health              *deploy.AppHealth           `json:"health,omitempty"` // only on GET /api/apps/{id}, for a running app
+	CreatedAt           time.Time                   `json:"created_at"`
+	UpdatedAt           time.Time                   `json:"updated_at"`
 }
 
 func toAppJSON(a store.App) appJSON {
 	return appJSON{
 		Mounts:      a.Mounts,
-		Environment: a.Environment,
-		ID:          a.ID, ProjectID: a.ProjectID, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, DeployHook: a.DeployHook, Port: a.Port,
+		Processes:   a.Processes,
+		Environment: store.VisibleEnvironment(a.Environment, a.EnvMeta), EnvironmentMeta: a.EnvMeta, EnvironmentOrder: a.EnvOrder,
+		ID: a.ID, ProjectID: a.ProjectID, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, DeployHook: a.DeployHook, Port: a.Port,
 		CPULimit: a.CPULimit, MemoryLimitMB: a.MemoryMB, DesiredState: a.DesiredState,
 		CurrentDeploymentID: a.CurrentDeploymentID,
 		GitSourceID:         a.Git.ConnectionID,
@@ -277,7 +285,8 @@ func invalid(w http.ResponseWriter, msg string) {
 
 type projectEnvJSON struct {
 	Environment map[string]string `json:"environment"`
-	Inherit     bool              `json:"inherit"` // every app gets them all, its own values winning
+	Order       []string          `json:"environment_order"` // names in their owner's order, "# comments" and "" blank lines between
+	Inherit     bool              `json:"inherit"`           // every app gets them all, its own values winning
 }
 
 func (s *Server) handleGetProjectEnv(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +294,11 @@ func (s *Server) handleGetProjectEnv(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "project environment", err, "") {
 		return
 	}
-	writeJSON(w, http.StatusOK, projectEnvJSON{Environment: env, Inherit: inherit})
+	order, err := s.store.ProjectEnvOrder(r.Context(), r.PathValue("id"))
+	if s.storeError(w, "project environment", err, "") {
+		return
+	}
+	writeJSON(w, http.StatusOK, projectEnvJSON{Environment: env, Order: order, Inherit: inherit})
 }
 
 // handlePutProjectEnv replaces a project's shared variables. Running apps keep what they
@@ -301,11 +314,24 @@ func (s *Server) handlePutProjectEnv(w http.ResponseWriter, r *http.Request) {
 	if !validEnvironment(w, in.Environment) {
 		return
 	}
+	if err := store.ValidateEnvOrder(in.Order); err != nil {
+		invalid(w, err.Error())
+		return
+	}
 	p, err := s.store.GetProject(r.Context(), r.PathValue("id"))
 	if s.storeError(w, "get project", err, "") {
 		return
 	}
+	if in.Order == nil { // a client from before the order existed: keep the one there is
+		if in.Order, err = s.store.ProjectEnvOrder(r.Context(), p.ID); s.storeError(w, "project environment", err, "") {
+			return
+		}
+	}
+	in.Order = store.NormalizeEnvOrder(in.Order, in.Environment)
 	if err := s.store.SetProjectEnvironment(r.Context(), p.ID, in.Environment, in.Inherit); s.storeError(w, "project environment", err, "") {
+		return
+	}
+	if err := s.store.SetProjectEnvOrder(r.Context(), p.ID, in.Order, in.Environment); s.storeError(w, "project environment", err, "") {
 		return
 	}
 	s.audit(r, "project.environment", "project", p.ID, p.Name, "")
@@ -422,22 +448,28 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 // appFields is the JSON of the settable app fields. Every field is optional: a create
 // starts from defaults, an update from the app as it is.
 type appFields struct {
-	Mounts         *[]store.AppMount  `json:"mounts"`
-	Environment    *map[string]string `json:"environment"`
-	Name           *string            `json:"name"`
-	SourceType     *string            `json:"source_type"`
-	Image          *string            `json:"image"`
-	RegistryID     *string            `json:"registry_id"`
-	GitSourceID    *string            `json:"git_source_id"`
-	GitRepository  *string            `json:"git_repository"`
-	GitBranch      *string            `json:"git_branch"`
-	Builder        *string            `json:"builder"`
-	BuildContext   *string            `json:"build_context"`
-	DockerfilePath *string            `json:"dockerfile_path"`
-	StartCommand   *string            `json:"start_command"`
-	Port           *int               `json:"port"`
-	CPULimit       *float64           `json:"cpu_limit"`
-	MemoryLimitMB  *int64             `json:"memory_limit_mb"`
+	Mounts      *[]store.AppMount   `json:"mounts"`
+	Processes   *[]store.AppProcess `json:"processes"`
+	Environment *map[string]string  `json:"environment"`
+	// EnvironmentMeta marks variables as build-time or secret. A secret listed here
+	// without a value in Environment keeps its stored value.
+	EnvironmentMeta *map[string]store.EnvVarMeta `json:"environment_meta"`
+	// EnvironmentOrder is the variables' order with the comments between them; not sent, the order stays.
+	EnvironmentOrder *[]string `json:"environment_order"`
+	Name             *string   `json:"name"`
+	SourceType       *string   `json:"source_type"`
+	Image            *string   `json:"image"`
+	RegistryID       *string   `json:"registry_id"`
+	GitSourceID      *string   `json:"git_source_id"`
+	GitRepository    *string   `json:"git_repository"`
+	GitBranch        *string   `json:"git_branch"`
+	Builder          *string   `json:"builder"`
+	BuildContext     *string   `json:"build_context"`
+	DockerfilePath   *string   `json:"dockerfile_path"`
+	StartCommand     *string   `json:"start_command"`
+	Port             *int      `json:"port"`
+	CPULimit         *float64  `json:"cpu_limit"`
+	MemoryLimitMB    *int64    `json:"memory_limit_mb"`
 }
 
 // apply sets the fields present in f on in, trimmed, and fills Git defaults.
@@ -447,11 +479,18 @@ func (f appFields) apply(in store.AppInput) store.AppInput {
 			*dst = strings.TrimSpace(*v)
 		}
 	}
-	if f.Environment != nil {
-		in.Environment = *f.Environment
+	in.Environment, in.EnvMeta = store.MergeEnvironment(in.Environment, in.EnvMeta, f.Environment, f.EnvironmentMeta)
+	if f.EnvironmentOrder != nil {
+		in.EnvOrder = *f.EnvironmentOrder
 	}
 	if f.Mounts != nil {
 		in.Mounts = *f.Mounts
+	}
+	if f.Processes != nil {
+		in.Processes = make([]store.AppProcess, 0, len(*f.Processes))
+		for _, p := range *f.Processes {
+			in.Processes = append(in.Processes, store.AppProcess{Name: strings.TrimSpace(p.Name), Command: strings.TrimSpace(p.Command)})
+		}
 	}
 	str(&in.Name, f.Name)
 	str(&in.SourceType, f.SourceType)
@@ -548,7 +587,19 @@ func validApp(w http.ResponseWriter, in store.AppInput) bool {
 		invalid(w, err.Error())
 		return false
 	}
+	if err := store.ValidateAppProcesses(in.Processes); err != nil {
+		invalid(w, err.Error())
+		return false
+	}
 	if !validEnvironment(w, in.Environment) {
+		return false
+	}
+	if err := store.ValidateEnvMeta(in.Environment, in.EnvMeta); err != nil {
+		invalid(w, err.Error())
+		return false
+	}
+	if err := store.ValidateEnvOrder(in.EnvOrder); err != nil {
+		invalid(w, err.Error())
 		return false
 	}
 	g := in.Git
@@ -640,6 +691,7 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		if h, ok := s.deployer.AppHealth(a.ID); ok {
 			out.Health = &h
 		}
+		out.ProcessStates = s.deployer.ProcessStates(r.Context(), a)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -656,7 +708,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := in.apply(store.AppInput{
-		Mounts: a.Mounts, Environment: a.Environment, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, Git: a.Git,
+		Mounts: a.Mounts, Processes: a.Processes, Environment: a.Environment, EnvMeta: a.EnvMeta, EnvOrder: a.EnvOrder, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, Git: a.Git,
 		StartCommand: a.StartCommand, Port: a.Port, CPULimit: a.CPULimit, MemoryMB: a.MemoryMB,
 	})
 	if !validApp(w, input) || !s.validGitSource(w, r, input) || !s.validRegistry(w, r, input) {

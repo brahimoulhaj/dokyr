@@ -57,8 +57,8 @@ type Router interface {
 type Builder interface {
 	// Fetch clones the branch tip into dir and returns the commit.
 	Fetch(ctx context.Context, src store.GitSource, auth builder.Auth, dir string, line builder.LineFunc) (string, error)
-	// Build builds dir into the local image tag.
-	Build(ctx context.Context, src store.GitSource, dir, tag, appID string, line builder.LineFunc) error
+	// Build builds dir into the local image tag, with the app's build-time variables.
+	Build(ctx context.Context, src store.GitSource, dir, tag, appID string, vars builder.Vars, line builder.LineFunc) error
 }
 
 // commitMessager is a Builder that can also read the message of the commit it fetched.
@@ -292,7 +292,7 @@ func (s *Service) Recover(ctx context.Context) (Recovery, error) {
 			if err := st.EnterDeploymentPhase(ctx, dep.ID, store.PhaseDraining); err != nil {
 				s.opts.Log.Error("record deployment phase", "deployment", dep.ID, "error", err)
 			}
-			s.removeOthers(ctx, app, dep.ContainerID, logw)
+			s.removeOthers(ctx, app, dep.ID, logw)
 			logw.printf("Deployment succeeded")
 			logw.close()
 			if err := st.FinishDeployment(ctx, dep.ID, store.DeploySucceeded, ""); err != nil {
@@ -307,6 +307,9 @@ func (s *Service) Recover(ctx context.Context) (Recovery, error) {
 			if err := s.opts.Executor.RemoveContainer(ctx, containerName(app.ID, dep.ID), true); err != nil {
 				s.opts.Log.Error("remove interrupted deployment container", "deployment", dep.ID, "error", err)
 			}
+			s.eachProcess(ctx, app, dep.ID, "remove interrupted", func(c executor.Container) error {
+				return s.opts.Executor.RemoveContainer(ctx, c.ID, true)
+			})
 		}
 		if dep.Attempts >= s.opts.MaxAttempts {
 			msg := fmt.Sprintf("interrupted: the panel restarted during this deployment %d times", dep.Attempts)
@@ -494,9 +497,13 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	// stoppedOld is set once a recreate deploy has stopped the old container: from then on
 	// a failure starts it again.
 	stoppedOld := false
+	var processIDs []string // containers of the extra processes this deployment started
 	fail := func(containerID string, err error) {
-		if containerID != "" {
-			if rmErr := ex.RemoveContainer(final, containerID, true); rmErr != nil {
+		for _, id := range append([]string{containerID}, processIDs...) {
+			if id == "" {
+				continue
+			}
+			if rmErr := ex.RemoveContainer(final, id, true); rmErr != nil {
 				s.opts.Log.Error("remove failed deployment container", "error", rmErr)
 			}
 		}
@@ -570,6 +577,14 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	if dep.Attempts == 0 { // a resumed attempt after a restart is not a new start
 		s.event(final, "deployment.started", app, "")
 	}
+	// The app's variables with the project's, before anything is built or stops: a bad
+	// reference costs no build and no gap. From here on the log hides the secret values.
+	resolved, err := s.environment(final, app, logw)
+	if err != nil {
+		fail("", err)
+		return
+	}
+	logw.hide(secretValues(resolved, app.EnvMeta))
 	// 1. Pull the image, or build it from Git. A rollback reuses the earlier image: a Git
 	// app's is still on the server, an image app's is pulled again.
 	image := app.Image
@@ -592,7 +607,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		phase(store.PhaseBuilding)
 		logw.printf("Deploying %s from %s (branch %s)", app.Name, app.Git.Repository, app.Git.Branch)
 		var err error
-		image, err = s.build(ctx, final, app, dep, logw)
+		image, err = s.build(ctx, final, app, dep, buildVars(resolved, app.EnvMeta), logw)
 		buildDone()
 		if err != nil {
 			fail("", err)
@@ -621,12 +636,9 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail("", err)
 		return
 	}
-	// The project's shared variables, before anything stops: a bad reference costs no gap.
+	// The container gets the runtime variables; the build-only ones stay in the build.
 	withEnv := app
-	if withEnv.Environment, err = s.environment(final, app, logw); err != nil {
-		fail("", err)
-		return
-	}
+	withEnv.Environment = runtimeEnvironment(resolved, app.EnvMeta)
 	recreate := app.Strategy() == store.StrategyRecreate
 	if recreate {
 		phase(store.PhaseStopping)
@@ -649,7 +661,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		Image:      image,
 		Kind:       executor.KindApp,
 		ResourceID: app.ID,
-		Labels:     map[string]string{"deployment": dep.ID},
+		Labels:     map[string]string{labelDeployment: dep.ID},
 		CPUs:       app.CPULimit,
 		MemoryMB:   app.MemoryMB,
 		Env:        containerEnv(withEnv, dep.Port),
@@ -683,6 +695,12 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		fail(containerID, err)
 		return
 	}
+	// The extra processes (workers, schedulers) start once the main container is healthy,
+	// and must stay up too: a broken one fails the deployment before anything is switched.
+	if processIDs, err = s.startProcesses(ctx, withEnv, dep, image, mounts, logw); err != nil {
+		fail(containerID, err)
+		return
+	}
 
 	// 3. Switch: the database first (it is the source of truth), then the proxy. From here
 	// a cancel is refused.
@@ -710,9 +728,9 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	// succeeded. A recreate deploy stopped the old container already: nothing to drain.
 	if !recreate {
 		phase(store.PhaseDraining)
-		s.drain(ctx, app, containerID, check, logw)
+		s.drain(ctx, app, dep.ID, check, logw)
 	}
-	s.removeOthers(final, app, containerID, logw)
+	s.removeOthers(final, app, dep.ID, logw)
 
 	if app.SourceType == store.SourceGit && !rollback {
 		s.cacheBuild(ctx, image, logw)
@@ -791,6 +809,7 @@ func temporary(err error) bool {
 // the proxy sends new ones to the new container already. It returns at once when there is
 // no old container running, and early when the panel shuts down.
 func (s *Service) drain(ctx context.Context, app store.App, keep string, h store.HealthCheck, logw *logWriter) {
+	// keep is the new deployment's id: its containers are not old.
 	wait := time.Duration(h.Drain) * time.Second
 	if s.opts.MaxDrain > 0 {
 		wait = min(wait, s.opts.MaxDrain)
@@ -804,7 +823,7 @@ func (s *Service) drain(ctx context.Context, app store.App, keep string, h store
 	}
 	old := 0
 	for _, c := range list {
-		if c.Kind == executor.KindApp && c.ResourceID == app.ID && c.ID != keep && c.Running {
+		if c.Kind == executor.KindApp && c.ResourceID == app.ID && c.Labels[labelDeployment] != keep && c.Running {
 			old++
 		}
 	}
@@ -855,6 +874,9 @@ func (s *Service) restoreOld(ctx context.Context, app store.App, logw *logWriter
 	if err := s.opts.Executor.StartContainer(ctx, old.ContainerName); err != nil {
 		return false, err
 	}
+	s.eachProcess(ctx, app, old.ID, "start previous", func(c executor.Container) error {
+		return s.opts.Executor.StartContainer(ctx, c.ID)
+	})
 	if err := s.route(ctx, app.ID, []string{store.Upstream(old.ContainerName, old.Port)}); err != nil {
 		logw.printf("Warning: could not point the route back at the previous container: %v", err)
 	}
@@ -867,8 +889,9 @@ func hasOld(app store.App) bool {
 	return app.CurrentDeploymentID != "" && app.DesiredState == store.StateRunning
 }
 
-// removeOthers removes every container of the app but keep. A leftover container is
-// logged, not fatal: the next deploy removes it.
+// removeOthers removes every container of the app but those of the deployment keep (its
+// main container and its processes). A leftover container is logged, not fatal: the next
+// deploy removes it.
 func (s *Service) removeOthers(ctx context.Context, app store.App, keep string, logw *logWriter) {
 	ex := s.opts.Executor
 	list, err := ex.ListContainers(ctx)
@@ -877,7 +900,7 @@ func (s *Service) removeOthers(ctx context.Context, app store.App, keep string, 
 		return
 	}
 	for _, c := range list {
-		if c.Kind != executor.KindApp || c.ResourceID != app.ID || c.ID == keep {
+		if c.Kind != executor.KindApp || c.ResourceID != app.ID || c.Labels[labelDeployment] == keep {
 			continue
 		}
 		logw.printf("Removing old container %s", c.Name)
@@ -938,7 +961,7 @@ func (s *Service) pull(ctx context.Context, image string, auth *executor.Registr
 
 // build fetches a Git app at its branch tip and builds it into a local image, which it
 // returns. The workspace is removed afterwards, whatever happens.
-func (s *Service) build(ctx, final context.Context, app store.App, dep store.Deployment, logw *logWriter) (string, error) {
+func (s *Service) build(ctx, final context.Context, app store.App, dep store.Deployment, vars builder.Vars, logw *logWriter) (string, error) {
 	if s.opts.Builder == nil {
 		return "", errors.New("this panel cannot build from Git")
 	}
@@ -998,7 +1021,14 @@ func (s *Service) build(ctx, final context.Context, app store.App, dep store.Dep
 
 	tag := imageTag(app.ID, commit)
 	logw.printf("Building image %s (builder: %s)", tag, src.Builder)
-	if err := s.opts.Builder.Build(ctx, src, dir, tag, app.ID, out); err != nil {
+	if n, m := len(vars.Args), len(vars.Secrets); n+m > 0 {
+		logw.printf("Build variables: %d plain, %d secret", n, m)
+	}
+	if err := s.opts.Builder.Build(ctx, src, dir, tag, app.ID, vars, out); err != nil {
+		// The error ends with the build's last output line, and is stored and notified.
+		if msg := logw.redact(err.Error()); msg != err.Error() {
+			err = errors.New(msg)
+		}
 		return "", err
 	}
 	if err := st.SetDeploymentImage(final, dep.ID, tag); err != nil {
@@ -1351,6 +1381,9 @@ func (s *Service) Stop(ctx context.Context, appID string) error {
 	if err := s.route(ctx, app.ID, nil); err != nil {
 		s.opts.Log.Error("clear route", "app", app.Name, "error", err)
 	}
+	s.eachProcess(ctx, app, dep.ID, "stop", func(c executor.Container) error {
+		return s.opts.Executor.StopContainer(ctx, c.ID, s.opts.StopGrace)
+	})
 	err = s.opts.Executor.StopContainer(ctx, dep.ContainerName, s.opts.StopGrace)
 	if errors.Is(err, executor.ErrNotFound) {
 		return nil // already gone: stopped is what was asked for
@@ -1374,6 +1407,9 @@ func (s *Service) Start(ctx context.Context, appID string) error {
 		}
 		return err
 	}
+	s.eachProcess(ctx, app, dep.ID, "start", func(c executor.Container) error {
+		return s.opts.Executor.StartContainer(ctx, c.ID)
+	})
 	if err := s.opts.Store.SetAppDesiredState(ctx, app.ID, store.StateRunning); err != nil {
 		return err
 	}
@@ -1401,6 +1437,14 @@ func (s *Service) Restart(ctx context.Context, appID string) error {
 	if err := ex.StartContainer(ctx, dep.ContainerName); err != nil {
 		return err
 	}
+	s.eachProcess(ctx, app, dep.ID, "restart", func(c executor.Container) error {
+		if c.Running {
+			if err := ex.StopContainer(ctx, c.ID, s.opts.StopGrace); err != nil {
+				return err
+			}
+		}
+		return ex.StartContainer(ctx, c.ID)
+	})
 	if err := s.opts.Store.SetAppDesiredState(ctx, app.ID, store.StateRunning); err != nil {
 		return err
 	}
@@ -1458,14 +1502,19 @@ func (s *Service) RuntimeState(ctx context.Context, appID string) string {
 	return c.State
 }
 
-// StreamLogs calls fn for each log line of the app's current container. With
-// opts.Follow it returns when the container stops or ctx is cancelled.
-func (s *Service) StreamLogs(ctx context.Context, appID string, opts executor.LogOptions, fn func(executor.LogLine)) error {
+// StreamLogs calls fn for each log line of the app's current container, or of the
+// container of one of its extra processes when process names it. With opts.Follow it
+// returns when the container stops or ctx is cancelled.
+func (s *Service) StreamLogs(ctx context.Context, appID, process string, opts executor.LogOptions, fn func(executor.LogLine)) error {
 	_, dep, err := s.current(ctx, appID)
 	if err != nil {
 		return err
 	}
-	err = s.opts.Executor.Logs(ctx, dep.ContainerName, opts, fn)
+	container := dep.ContainerName
+	if process != "" {
+		container = processContainerName(appID, dep.ID, process)
+	}
+	err = s.opts.Executor.Logs(ctx, container, opts, fn)
 	if errors.Is(err, executor.ErrNotFound) {
 		return ErrNotDeployed
 	}
@@ -1501,7 +1550,29 @@ func containerName(appID, deploymentID string) string {
 
 // logWriter appends timestamped lines to a deployment's log file. A log that cannot be
 // written must never fail a deployment, so errors are dropped.
-type logWriter struct{ f *os.File }
+type logWriter struct {
+	f      *os.File
+	hidden *strings.Replacer // secret values, replaced in every line; nil = none
+}
+
+// hide makes the log replace each of values with *** from now on.
+func (w *logWriter) hide(values []string) {
+	if len(values) == 0 {
+		return
+	}
+	pairs := make([]string, 0, 2*len(values))
+	for _, v := range values {
+		pairs = append(pairs, v, "***")
+	}
+	w.hidden = strings.NewReplacer(pairs...)
+}
+
+func (w *logWriter) redact(s string) string {
+	if w.hidden == nil {
+		return s
+	}
+	return w.hidden.Replace(s)
+}
 
 func (s *Service) openLog(dep store.Deployment) *logWriter {
 	path := s.LogPath(dep)
@@ -1521,7 +1592,7 @@ func (w *logWriter) printf(format string, args ...any) {
 	if w.f == nil {
 		return
 	}
-	fmt.Fprintf(w.f, "%s %s\n", time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(w.f, "%s %s\n", time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), w.redact(fmt.Sprintf(format, args...)))
 }
 
 func (w *logWriter) close() {

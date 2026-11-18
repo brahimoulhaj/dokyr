@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"panel/internal/secret"
 )
@@ -122,4 +124,196 @@ func (s *Store) SetProjectEnvironment(ctx context.Context, projectID string, env
 	}
 	return affected(s.db.ExecContext(ctx, `UPDATE projects SET environment = ?, env_inherit = ?, updated_at = ? WHERE id = ?`,
 		sealed, inherit, now(), projectID))
+}
+
+// Where an app variable is available.
+const (
+	EnvScopeRuntime = "runtime" // in the container; the default
+	EnvScopeBuild   = "build"   // in the image build only
+	EnvScopeBoth    = "both"
+)
+
+// EnvVarMeta is what an app variable is beyond its value. The zero value means the
+// default: runtime only, not secret.
+type EnvVarMeta struct {
+	Scope  string `json:"scope"`  // EnvScopeRuntime, EnvScopeBuild or EnvScopeBoth
+	Secret bool   `json:"secret"` // never returned by the API; a build secret at build time
+}
+
+// AtBuild reports whether the variable is passed to the image build.
+func (m EnvVarMeta) AtBuild() bool { return m.Scope == EnvScopeBuild || m.Scope == EnvScopeBoth }
+
+// AtRuntime reports whether the variable is set in the container.
+func (m EnvVarMeta) AtRuntime() bool { return m.Scope != EnvScopeBuild }
+
+// MergeEnvironment applies a change to an app's variables: env and meta as a client sent
+// them (nil = not sent) on top of the stored ones. A client never sees a secret's value,
+// so it cannot send it back: a variable that is secret before and after, and has no value
+// in env, keeps its stored value. One that stops being secret needs a new value, so
+// unmarking never reveals the old one. A client that sends no meta (one from before meta
+// existed) leaves the flags, and the secrets it cannot see, as they are.
+//
+// The result may hold meta for a name without a value (a secret marked without one);
+// ValidateEnvMeta rejects that.
+func MergeEnvironment(curEnv map[string]string, curMeta map[string]EnvVarMeta, env *map[string]string, meta *map[string]EnvVarMeta) (map[string]string, map[string]EnvVarMeta) {
+	if env == nil && meta == nil {
+		return curEnv, curMeta
+	}
+	newMeta := curMeta
+	if meta != nil {
+		newMeta = *meta
+	}
+	out := map[string]string{}
+	if env != nil {
+		for k, v := range *env {
+			out[k] = v
+		}
+	} else {
+		for k, v := range curEnv {
+			if !curMeta[k].Secret {
+				out[k] = v
+			}
+		}
+	}
+	for k, m := range newMeta {
+		if _, sent := out[k]; sent || !m.Secret || !curMeta[k].Secret {
+			continue
+		}
+		if v, ok := curEnv[k]; ok {
+			out[k] = v
+		}
+	}
+	outMeta := map[string]EnvVarMeta{}
+	for k, m := range newMeta {
+		if m.Scope == "" {
+			m.Scope = EnvScopeRuntime
+		}
+		_, has := out[k]
+		if !has && (meta == nil || m == (EnvVarMeta{Scope: EnvScopeRuntime})) {
+			continue // a variable that is gone, or a default entry for nothing
+		}
+		if has && m == (EnvVarMeta{Scope: EnvScopeRuntime}) {
+			continue // the default is not stored
+		}
+		outMeta[k] = m
+	}
+	return out, outMeta
+}
+
+// ValidateEnvMeta checks the flags of an app's variables against its values.
+func ValidateEnvMeta(env map[string]string, meta map[string]EnvVarMeta) error {
+	for name, m := range meta {
+		if m.Scope != EnvScopeRuntime && m.Scope != EnvScopeBuild && m.Scope != EnvScopeBoth {
+			return fmt.Errorf("environment variable %s: scope must be runtime, build or both", name)
+		}
+		if _, ok := env[name]; !ok {
+			if m.Secret {
+				return fmt.Errorf("environment variable %s is secret and has no stored value: send one", name)
+			}
+			return fmt.Errorf("environment variable %s has flags but no value", name)
+		}
+	}
+	return nil
+}
+
+// VisibleEnvironment is the part of an app's variables the API returns: every value that
+// is not secret.
+func VisibleEnvironment(env map[string]string, meta map[string]EnvVarMeta) map[string]string {
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		if !meta[k].Secret {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func nonNilMeta(m map[string]EnvVarMeta) map[string]EnvVarMeta {
+	if m == nil {
+		return map[string]EnvVarMeta{}
+	}
+	return m
+}
+
+// An environment's order is a list of lines: a variable name, a comment ("# ...") or ""
+// (a blank line). It is how the owner wrote the variables, kept so the editor shows them
+// the same way again; it changes nothing about what a container or a build gets.
+
+const (
+	maxEnvOrderLines = 2000
+	maxEnvOrderLine  = 1024
+)
+
+func envOrderNote(line string) bool { return line == "" || strings.HasPrefix(line, "#") }
+
+// ValidateEnvOrder checks the comments of an order a client sent. Names are not checked:
+// NormalizeEnvOrder drops the ones that are not variables.
+func ValidateEnvOrder(order []string) error {
+	if len(order) > maxEnvOrderLines {
+		return fmt.Errorf("environment order: at most %d lines", maxEnvOrderLines)
+	}
+	for _, line := range order {
+		if len(line) > maxEnvOrderLine || strings.ContainsAny(line, "\x00\r\n") {
+			return fmt.Errorf("environment order: a line is at most %d bytes, on one line", maxEnvOrderLine)
+		}
+	}
+	return nil
+}
+
+// NormalizeEnvOrder fits an order to the variables that exist: names that are not in env
+// (or come twice) are dropped, variables the order does not name are added at the end,
+// sorted. Comments stay where they are. The result is never nil.
+func NormalizeEnvOrder(order []string, env map[string]string) []string {
+	out := make([]string, 0, len(order)+len(env))
+	seen := make(map[string]bool, len(env))
+	for _, line := range order {
+		if !envOrderNote(line) {
+			if _, ok := env[line]; !ok || seen[line] {
+				continue
+			}
+			seen[line] = true
+		}
+		out = append(out, line)
+	}
+	var rest []string
+	for name := range env {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
+}
+
+func (s *Store) openEnvOrder(stored string, env map[string]string) []string {
+	var order []string
+	_ = json.Unmarshal([]byte(stored), &order) // a damaged order is only a lost layout
+	return NormalizeEnvOrder(order, env)
+}
+
+func sealEnvOrder(order []string, env map[string]string) string {
+	raw, _ := json.Marshal(NormalizeEnvOrder(order, env))
+	return string(raw)
+}
+
+// ProjectEnvOrder returns the order of a project's shared variables.
+func (s *Store) ProjectEnvOrder(ctx context.Context, projectID string) ([]string, error) {
+	var env, order string
+	err := s.db.QueryRowContext(ctx, `SELECT environment, environment_order FROM projects WHERE id = ?`, projectID).Scan(&env, &order)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	vars, err := s.openEnvironment(env)
+	if err != nil {
+		return nil, fmt.Errorf("project %s environment: %w", projectID, err)
+	}
+	return s.openEnvOrder(order, vars), nil
+}
+
+// SetProjectEnvOrder stores the order of a project's shared variables, fitted to env.
+func (s *Store) SetProjectEnvOrder(ctx context.Context, projectID string, order []string, env map[string]string) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE projects SET environment_order = ? WHERE id = ?`, sealEnvOrder(order, env), projectID))
 }

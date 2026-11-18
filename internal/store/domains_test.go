@@ -84,8 +84,12 @@ func TestDomainsSurviveTopLevelMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := s.CreateProject(ctx, "Shop", "")
-	web, _ := s.CreateApp(ctx, p.ID, AppInput{Name: "web", Image: "nginx", Port: 80})
+	// Inserted by hand: CreateApp writes columns that later migrations add.
 	ts := now()
+	web := App{ID: "a1"}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO apps (id, project_id, name, image, port, created_at, updated_at) VALUES ('a1', ?, 'web', 'nginx', 80, ?, ?)`, p.ID, ts, ts); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO domains (id, project_id, hostname, tls_mode, created_at, updated_at) VALUES ('d1', ?, 'shop.example.com', 'http_only', ?, ?)`, p.ID, ts, ts); err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -390,27 +391,71 @@ func gitEnv(repository string, auth Auth) ([]string, error) {
 	), nil
 }
 
+// Vars are an app's build-time variables, references already resolved.
+type Vars struct {
+	// Args are plain values. A Dockerfile gets them as build arguments (ARG NAME); they
+	// end up in the image history, which is why secrets do not travel this way.
+	Args map[string]string
+	// Secrets are BuildKit secrets: mounted for the step that asks for one
+	// (RUN --mount=type=secret,id=NAME), never part of a layer or of the history.
+	Secrets map[string]string
+}
+
+// secretFlags writes each value to a file of its own in a private folder next to the
+// workspace and returns the --secret flags that point at them, with a cleanup that removes
+// the folder. Files, not the CLI's environment: a variable named PATH or DOCKER_HOST must
+// not change how the build itself runs, and values never appear on a command line.
+func secretFlags(dir string, values map[string]string) ([]string, func(), error) {
+	if len(values) == 0 {
+		return nil, func() {}, nil
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+"-secrets-")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	cleanup := func() { os.RemoveAll(tmp) }
+	var flags []string
+	for _, name := range sortedKeys(values) {
+		file := filepath.Join(tmp, name)
+		if err := os.WriteFile(file, []byte(values[name]), 0o600); err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+		flags = append(flags, "--secret", "id="+name+",src="+file)
+	}
+	return flags, cleanup, nil
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // Build builds the workspace in dir into the local image tag, with the builder the app
 // chose. appID is recorded as an image label so the app's images can be found later.
-func (l *Local) Build(ctx context.Context, src store.GitSource, dir, tag, appID string, line LineFunc) error {
+func (l *Local) Build(ctx context.Context, src store.GitSource, dir, tag, appID string, vars Vars, line LineFunc) error {
 	switch src.Builder {
 	case store.BuilderDockerfile:
-		return l.buildDockerfile(ctx, src, dir, tag, appID, line)
+		return l.buildDockerfile(ctx, src, dir, tag, appID, vars, line)
 	case store.BuilderRailpack:
-		return l.buildRailpack(ctx, src, dir, tag, appID, line)
+		return l.buildRailpack(ctx, src, dir, tag, appID, vars, line)
 	case store.BuilderAuto:
 		if hasDockerfile(dir, src) {
 			say(line, fmt.Sprintf("Found %s: building with the Dockerfile", displayPath(path.Join(src.BuildContext, src.Dockerfile))))
-			return l.buildDockerfile(ctx, src, dir, tag, appID, line)
+			return l.buildDockerfile(ctx, src, dir, tag, appID, vars, line)
 		}
 		say(line, fmt.Sprintf("No %s: building with Railpack %s", displayPath(path.Join(src.BuildContext, src.Dockerfile)), RailpackVersion))
-		return l.buildRailpack(ctx, src, dir, tag, appID, line)
+		return l.buildRailpack(ctx, src, dir, tag, appID, vars, line)
 	default:
 		return fmt.Errorf("unknown builder %q", src.Builder)
 	}
 }
 
-func (l *Local) buildDockerfile(ctx context.Context, src store.GitSource, dir, tag, appID string, line LineFunc) error {
+func (l *Local) buildDockerfile(ctx context.Context, src store.GitSource, dir, tag, appID string, vars Vars, line LineFunc) error {
 	contextDir, err := inside(dir, src.BuildContext, true)
 	if err != nil {
 		return fmt.Errorf("build context %q: %w", displayPath(src.BuildContext), err)
@@ -428,8 +473,16 @@ func (l *Local) buildDockerfile(ctx context.Context, src store.GitSource, dir, t
 	args = append(args, "--progress=plain", "--load",
 		"--tag", tag, "--file", dockerfile,
 		"--label", brand.Slug+".build="+appID,
-		contextDir,
 	)
+	for _, name := range sortedKeys(vars.Args) {
+		args = append(args, "--build-arg", name+"="+vars.Args[name])
+	}
+	secrets, cleanup, err := secretFlags(dir, vars.Secrets)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	args = append(append(args, secrets...), contextDir)
 	if err := run(ctx, line, os.Environ(), l.docker(), args...); err != nil {
 		return fmt.Errorf("docker build: %w", err)
 	}
@@ -456,7 +509,12 @@ func say(line LineFunc, s string) {
 // with Railpack's BuildKit frontend through buildx, on the same daemon as a Dockerfile.
 // The frontend ignores --label, so the result is re-tagged through a one-line Dockerfile
 // that adds the build label (metadata only, no new layer): pruning finds images by it.
-func (l *Local) buildRailpack(ctx context.Context, src store.GitSource, dir, tag, appID string, line LineFunc) error {
+//
+// Railpack has one channel for build-time variables, plain or secret: the plan names them
+// (prepare reads the values to configure itself, and writes only the names), and the build
+// gets each as a BuildKit secret, which the frontend sets as an environment variable of the
+// steps. Nothing is written to a layer. Railpack ignores a variable with an empty value.
+func (l *Local) buildRailpack(ctx context.Context, src store.GitSource, dir, tag, appID string, vars Vars, line LineFunc) error {
 	contextDir, err := inside(dir, src.BuildContext, true)
 	if err != nil {
 		return fmt.Errorf("build context %q: %w", displayPath(src.BuildContext), err)
@@ -468,10 +526,32 @@ func (l *Local) buildRailpack(ctx context.Context, src store.GitSource, dir, tag
 	}
 	defer os.RemoveAll(work)
 	plan := filepath.Join(work, "plan.json")
-	if err := run(ctx, line, os.Environ(), l.railpack(), "prepare", contextDir,
-		"--plan-out", plan, "--info-out", filepath.Join(work, "info.json")); err != nil {
+	// Plain values go on the command line; a secret goes by name alone, which prepare
+	// looks up in its environment, so the value is not visible to other processes.
+	prepare := []string{"prepare", contextDir, "--plan-out", plan, "--info-out", filepath.Join(work, "info.json")}
+	prepareEnv := os.Environ()
+	all := map[string]string{}
+	for _, name := range sortedKeys(vars.Args) {
+		if v := vars.Args[name]; v != "" {
+			prepare = append(prepare, "--env", name+"="+v)
+			all[name] = v
+		}
+	}
+	for _, name := range sortedKeys(vars.Secrets) {
+		if v := vars.Secrets[name]; v != "" {
+			prepare = append(prepare, "--env", name)
+			prepareEnv = append(prepareEnv, name+"="+v)
+			all[name] = v
+		}
+	}
+	if err := run(ctx, line, prepareEnv, l.railpack(), prepare...); err != nil {
 		return fmt.Errorf("railpack: %w", err)
 	}
+	secrets, cleanup, err := secretFlags(dir, all)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	builder, release, err := l.ensureBuilder(ctx, line)
 	if err != nil {
@@ -486,7 +566,17 @@ func (l *Local) buildRailpack(ctx context.Context, src store.GitSource, dir, tag
 	args := append([]string{"buildx", "build"}, builder...)
 	args = append(args, "--progress=plain", "--load",
 		"--build-arg", "BUILDKIT_SYNTAX="+l.railpackFrontend(),
-		"--file", plan, "--tag", raw, contextDir)
+		"--file", plan, "--tag", raw)
+	if len(all) > 0 {
+		// A secret's value is not part of BuildKit's cache key: the hash is, so a changed
+		// value rebuilds the steps that use it.
+		h := sha256.New()
+		for _, name := range sortedKeys(all) {
+			fmt.Fprintf(h, "%s=%d:%s\n", name, len(all[name]), all[name])
+		}
+		args = append(args, "--build-arg", "secrets-hash="+hex.EncodeToString(h.Sum(nil)))
+	}
+	args = append(append(args, secrets...), contextDir)
 	if err := run(ctx, line, os.Environ(), l.docker(), args...); err != nil {
 		return fmt.Errorf("docker build: %w", err)
 	}

@@ -114,7 +114,7 @@ func TestBuildDockerfile(t *testing.T) {
 	src := store.GitSource{Builder: store.BuilderDockerfile, BuildContext: "svc", Dockerfile: "build/Dockerfile"}
 	var lines []string
 	b := &Local{}
-	if err := b.Build(context.Background(), src, dir, tag, "app1", func(l string) { lines = append(lines, l) }); err != nil {
+	if err := b.Build(context.Background(), src, dir, tag, "app1", Vars{}, func(l string) { lines = append(lines, l) }); err != nil {
 		t.Fatalf("build: %v\n%s", err, strings.Join(lines, "\n"))
 	}
 	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "dokyr.build"}}`, tag).Output()
@@ -123,12 +123,12 @@ func TestBuildDockerfile(t *testing.T) {
 	}
 
 	src.Dockerfile = "nope/Dockerfile"
-	if err := b.Build(context.Background(), src, dir, tag, "app1", nil); err == nil || !strings.Contains(err.Error(), "not found") {
+	if err := b.Build(context.Background(), src, dir, tag, "app1", Vars{}, nil); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("missing Dockerfile: %v", err)
 	}
 	write(t, filepath.Join(dir, "svc", "bad", "Dockerfile"), "FROM busybox:1.36\nRUN exit 7\n")
 	src.Dockerfile = "bad/Dockerfile"
-	if err := b.Build(context.Background(), src, dir, tag, "app1", nil); err == nil || !strings.Contains(err.Error(), "docker build") {
+	if err := b.Build(context.Background(), src, dir, tag, "app1", Vars{}, nil); err == nil || !strings.Contains(err.Error(), "docker build") {
 		t.Errorf("failing build: %v", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestBuildAutoPicksBuilder(t *testing.T) {
 	line := func(l string) { lines = append(lines, l) }
 
 	// No Dockerfile: Railpack plans, builds through its frontend, then the label step re-tags.
-	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", line); err != nil {
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, line); err != nil {
 		t.Fatal(err)
 	}
 	got := calls()
@@ -228,7 +228,7 @@ func TestBuildAutoPicksBuilder(t *testing.T) {
 
 	// With a Dockerfile at the configured path: the Dockerfile wins.
 	write(t, filepath.Join(dir, "api", "Dockerfile"), "FROM scratch\n")
-	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", line); err != nil {
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, line); err != nil {
 		t.Fatal(err)
 	}
 	if got := calls(); len(got) != 1 || !strings.Contains(got[0], "--file "+filepath.Join(dir, "api", "Dockerfile")) {
@@ -237,7 +237,7 @@ func TestBuildAutoPicksBuilder(t *testing.T) {
 
 	// Railpack forced, Dockerfile ignored.
 	src.Builder = store.BuilderRailpack
-	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", nil); err != nil {
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := calls(); len(got) != 4 || !strings.HasPrefix(got[0], "railpack prepare") {
@@ -268,7 +268,7 @@ func TestBuildRailpack(t *testing.T) {
 	var lines []string
 	b := &Local{Railpack: rp}
 	src := store.GitSource{Builder: store.BuilderAuto, Dockerfile: "Dockerfile"}
-	if err := b.Build(context.Background(), src, dir, tag, "app1", func(l string) { lines = append(lines, l) }); err != nil {
+	if err := b.Build(context.Background(), src, dir, tag, "app1", Vars{}, func(l string) { lines = append(lines, l) }); err != nil {
 		t.Fatalf("build: %v\n%s", err, strings.Join(lines, "\n"))
 	}
 	out, err := exec.Command("docker", "image", "inspect", "-f", `{{index .Config.Labels "dokyr.build"}} {{json .Config.Cmd}}`, tag).Output()
@@ -282,7 +282,7 @@ func TestBuildRailpack(t *testing.T) {
 	// A folder Railpack cannot plan fails with its own message.
 	empty := filepath.Join(t.TempDir(), "empty")
 	write(t, filepath.Join(empty, "README"), "nothing to build\n")
-	if err := b.Build(context.Background(), src, empty, tag, "app1", nil); err == nil || !strings.Contains(err.Error(), "railpack") {
+	if err := b.Build(context.Background(), src, empty, tag, "app1", Vars{}, nil); err == nil || !strings.Contains(err.Error(), "railpack") {
 		t.Errorf("unbuildable folder: %v", err)
 	}
 }
@@ -321,7 +321,7 @@ func TestBuildLimits(t *testing.T) {
 	write(t, filepath.Join(dir, "Dockerfile"), "FROM scratch\n")
 	src := store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}
 	var lines []string
-	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", func(l string) { lines = append(lines, l) }); err != nil {
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, func(l string) { lines = append(lines, l) }); err != nil {
 		t.Fatal(err)
 	}
 	got := calls()
@@ -343,7 +343,7 @@ func TestBuildLimits(t *testing.T) {
 	// runs on the daemon's builder, which holds the image just loaded.
 	write(t, builders, "default\n"+name+"\n")
 	src.Builder = store.BuilderRailpack
-	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", nil); err != nil {
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got = calls()
@@ -355,7 +355,7 @@ func TestBuildLimits(t *testing.T) {
 	// New limits: a new builder, the old one removed.
 	b.Limits = Limits{MemoryMB: 1024}
 	write(t, builders, "default\n"+name+"\n")
-	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", nil); err != nil {
+	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got = calls()
@@ -388,7 +388,7 @@ func TestBuildLimits(t *testing.T) {
 	// No limits: stale capped builders go, then the daemon's own builder, nothing created.
 	b.LimitsFunc = func(context.Context) (Limits, error) { return Limits{}, nil }
 	write(t, builders, "default\n"+name+"\n"+b.builderName(Limits{CPUs: 2})+"\n")
-	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", nil); err != nil {
+	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got = calls()
@@ -396,7 +396,7 @@ func TestBuildLimits(t *testing.T) {
 		strings.Contains(got[3], "--builder") {
 		t.Errorf("uncapped calls:\n%s", strings.Join(got, "\n"))
 	}
-	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", nil); err != nil {
+	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := calls(); len(got) != 1 {
@@ -405,7 +405,7 @@ func TestBuildLimits(t *testing.T) {
 
 	// A failing limits source fails the build before anything runs.
 	b.LimitsFunc = func(context.Context) (Limits, error) { return Limits{}, errors.New("db closed") }
-	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", nil); err == nil || !strings.Contains(err.Error(), "read build limits") {
+	if err := b.Build(context.Background(), store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}, dir, "app-x:abc", "app1", Vars{}, nil); err == nil || !strings.Contains(err.Error(), "read build limits") {
 		t.Errorf("limits error: %v", err)
 	}
 }
@@ -428,7 +428,7 @@ func TestBuildMemoryCapEnforced(t *testing.T) {
 	t.Cleanup(func() { exec.Command("docker", "image", "rm", "-f", tag).Run() })
 	src := store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}
 	var lines []string
-	err := b.Build(context.Background(), src, dir, tag, "app1", func(l string) { lines = append(lines, l) })
+	err := b.Build(context.Background(), src, dir, tag, "app1", Vars{}, func(l string) { lines = append(lines, l) })
 	if err == nil {
 		t.Fatalf("a 400 MB step passed a 256 MB cap:\n%s", strings.Join(lines, "\n"))
 	}
@@ -568,5 +568,94 @@ func TestCommitMessage(t *testing.T) {
 	}
 	if !strings.HasPrefix(msg, "Add paging\n\nxxx") || !strings.HasSuffix(msg, "…") || len([]rune(msg)) != maxMessage {
 		t.Errorf("message = %q… (%d characters)", msg[:20], len([]rune(msg)))
+	}
+}
+
+// Build-time variables: a Dockerfile gets plain ones as build arguments and secret ones as
+// BuildKit secrets read from files; Railpack gets both as secrets named in its plan. A
+// secret's value is on no command line, and the files are gone after the build.
+func TestBuildVariables(t *testing.T) {
+	b, calls := stubTools(t)
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(parent, "dep1")
+	write(t, filepath.Join(dir, "Dockerfile"), "FROM scratch\n")
+	vars := Vars{Args: map[string]string{"NODE_VERSION": "22", "EMPTY": ""}, Secrets: map[string]string{"NPM_TOKEN": "npm_s3cret"}}
+	noSecret := func(got []string) {
+		t.Helper()
+		if strings.Contains(strings.Join(got, "\n"), "npm_s3cret") {
+			t.Errorf("the secret is on a command line:\n%s", strings.Join(got, "\n"))
+		}
+		if left, _ := filepath.Glob(filepath.Join(parent, "dep1-secrets-*")); len(left) != 0 {
+			t.Errorf("secret files left behind: %v", left)
+		}
+	}
+
+	src := store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", vars, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := calls()
+	if len(got) != 1 || !strings.Contains(got[0], "--build-arg EMPTY= --build-arg NODE_VERSION=22 --secret id=NPM_TOKEN,src="+filepath.Join(parent, "dep1-secrets-")) ||
+		!strings.HasSuffix(got[0], "/NPM_TOKEN "+dir) || strings.Contains(got[0], "--build-arg NPM_TOKEN") {
+		t.Errorf("dockerfile calls: %q", got)
+	}
+	noSecret(got)
+
+	src.Builder = store.BuilderRailpack
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", vars, nil); err != nil {
+		t.Fatal(err)
+	}
+	got = calls()
+	if len(got) != 4 || !strings.HasSuffix(got[0], "--env NODE_VERSION=22 --env NPM_TOKEN") ||
+		!strings.Contains(got[1], "--build-arg secrets-hash=") || !strings.Contains(got[1], "--secret id=NODE_VERSION,src=") ||
+		!strings.Contains(got[1], "--secret id=NPM_TOKEN,src=") || strings.Contains(got[1], "EMPTY") {
+		t.Errorf("railpack calls:\n%s", strings.Join(got, "\n"))
+	}
+	noSecret(got)
+
+	// Without variables nothing is added.
+	if err := b.Build(context.Background(), src, dir, "app-x:abc", "app1", Vars{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls(); strings.Contains(got[1], "secrets-hash") || strings.Contains(got[1], "--secret") {
+		t.Errorf("railpack calls without variables: %q", got)
+	}
+}
+
+// TestBuildSecretNotInImage builds with the real docker CLI: the Dockerfile reads the
+// secret and the build argument, and the secret is in neither the history nor a layer.
+func TestBuildSecretNotInImage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("needs a Docker daemon")
+	}
+	if err := exec.Command("docker", "buildx", "version").Run(); err != nil {
+		t.Skip("docker buildx not available")
+	}
+	dir := filepath.Join(t.TempDir(), "dep1")
+	write(t, filepath.Join(dir, "Dockerfile"), `FROM busybox:1.36
+ARG NODE_VERSION
+RUN --mount=type=secret,id=NPM_TOKEN test "$(wc -c < /run/secrets/NPM_TOKEN)" -eq 16 && echo "node $NODE_VERSION" > /built
+`)
+	tag := "panel-builder-test:" + strings.ToLower(t.Name())
+	t.Cleanup(func() { exec.Command("docker", "image", "rm", "-f", tag).Run() })
+	src := store.GitSource{Builder: store.BuilderDockerfile, Dockerfile: "Dockerfile"}
+	vars := Vars{Args: map[string]string{"NODE_VERSION": "22"}, Secrets: map[string]string{"NPM_TOKEN": "npm_s3cret-value"}}
+	var lines []string
+	if err := (&Local{}).Build(context.Background(), src, dir, tag, "app1", vars, func(l string) { lines = append(lines, l) }); err != nil {
+		t.Fatalf("build: %v\n%s", err, strings.Join(lines, "\n"))
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "npm_s3cret-value") {
+		t.Errorf("the secret is in the build output:\n%s", strings.Join(lines, "\n"))
+	}
+	history, err := exec.Command("docker", "history", "--no-trunc", tag).CombinedOutput()
+	if err != nil || strings.Contains(string(history), "npm_s3cret-value") || !strings.Contains(string(history), "NODE_VERSION=22") {
+		t.Errorf("history (%v):\n%s", err, history)
+	}
+	out, err := exec.Command("docker", "run", "--rm", tag, "sh", "-c", "cat /built; ls /run/secrets 2>/dev/null; env").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "node 22") || strings.Contains(string(out), "NPM_TOKEN") || strings.Contains(string(out), "npm_s3cret-value") {
+		t.Errorf("image (%v):\n%s", err, out)
 	}
 }

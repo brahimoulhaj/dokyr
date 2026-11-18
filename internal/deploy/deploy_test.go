@@ -391,7 +391,7 @@ func (e *env) leftOpen(app store.App, starts int, withContainer bool) store.Depl
 	}
 	if withContainer {
 		name := containerName(app.ID, dep.ID)
-		id, err := e.ex.CreateContainer(ctx, executor.ContainerSpec{Name: name, Image: app.Image, Kind: executor.KindApp, ResourceID: app.ID})
+		id, err := e.ex.CreateContainer(ctx, executor.ContainerSpec{Name: name, Image: app.Image, Kind: executor.KindApp, ResourceID: app.ID, Labels: map[string]string{labelDeployment: dep.ID}})
 		if err != nil {
 			e.t.Fatal(err)
 		}
@@ -588,6 +588,8 @@ type fakeBuilder struct {
 	images     *executortest.Fake // when set, built images are recorded there
 	gate       chan struct{}      // when set, a build waits for a value (or its context)
 	started    chan string        // when set, receives each tag as its build starts
+	vars       builder.Vars       // build-time variables of the last build
+	output     []string           // extra build output lines
 }
 
 func (b *fakeBuilder) Fetch(_ context.Context, src store.GitSource, auth builder.Auth, dir string, line builder.LineFunc) (string, error) {
@@ -612,7 +614,7 @@ func (b *fakeBuilder) CommitMessage(context.Context, string) (string, error) {
 	return b.message, nil
 }
 
-func (b *fakeBuilder) Build(ctx context.Context, src store.GitSource, dir, tag, appID string, line builder.LineFunc) error {
+func (b *fakeBuilder) Build(ctx context.Context, src store.GitSource, dir, tag, appID string, vars builder.Vars, line builder.LineFunc) error {
 	if b.started != nil {
 		b.started <- tag
 	}
@@ -626,6 +628,10 @@ func (b *fakeBuilder) Build(ctx context.Context, src store.GitSource, dir, tag, 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	line("#1 [internal] load build definition from " + src.Dockerfile)
+	b.vars = vars
+	for _, l := range b.output {
+		line(l)
+	}
 	if b.buildErr != nil {
 		return b.buildErr
 	}
@@ -1705,4 +1711,71 @@ func (e *env) addRoute(ctx context.Context, host string) (store.Route, error) {
 		return store.Route{}, err
 	}
 	return e.st.CreateRoute(ctx, d.ID, "/", e.app.ID, false)
+}
+
+// Extra processes run in their own containers, follow the app through deploys, stop and
+// start, and a broken one fails the deployment.
+func TestProcesses(t *testing.T) {
+	e, ctx := newEnv(t), context.Background()
+	procs := []store.AppProcess{{Name: "queue", Command: "php artisan queue:work"}, {Name: "scheduler", Command: "php artisan schedule:work"}}
+	app, err := e.st.UpdateApp(ctx, e.app.ID, store.AppInput{Name: e.app.Name, Image: e.app.Image, Port: e.app.Port, Processes: procs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.app = app
+
+	first := e.deploy()
+	if first.Status != store.DeploySucceeded {
+		t.Fatalf("first deploy: %s %s", first.Status, first.Error)
+	}
+	names := func() map[string]bool {
+		out := map[string]bool{}
+		for _, c := range e.containers() {
+			out[c.Name] = c.Running
+		}
+		return out
+	}
+	want := []string{first.ContainerName, first.ContainerName + "-queue", first.ContainerName + "-scheduler"}
+	got := names()
+	for _, n := range want {
+		if !got[n] {
+			t.Fatalf("containers = %v, want %s running", got, n)
+		}
+	}
+	app, _ = e.st.GetApp(ctx, e.app.ID)
+	states := e.svc.ProcessStates(ctx, app)
+	if len(states) != 2 || states[0] != (ProcessState{"queue", "running"}) || states[1].State != "running" {
+		t.Fatalf("process states = %+v", states)
+	}
+
+	if err := e.svc.Stop(ctx, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	for n, running := range names() {
+		if running {
+			t.Errorf("%s still runs after stop", n)
+		}
+	}
+	if err := e.svc.Start(ctx, app.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); len(got) != 3 || !got[want[1]] || !got[want[2]] {
+		t.Fatalf("after start: %v", got)
+	}
+
+	// The next deployment replaces all three.
+	second := e.deploy()
+	got = names()
+	if second.Status != store.DeploySucceeded || len(got) != 3 || !got[second.ContainerName+"-queue"] || got[want[1]] {
+		t.Fatalf("second deploy: %s, containers %v", second.Status, got)
+	}
+
+	// A failed deployment leaves the old containers, processes included.
+	e.ex.CrashOnStart["broken:1"] = true
+	e.setImage("broken:1")
+	third := e.deploy()
+	got = names()
+	if third.Status == store.DeploySucceeded || len(got) != 3 || !got[second.ContainerName] || !got[second.ContainerName+"-scheduler"] {
+		t.Fatalf("third deploy: %s, containers %v", third.Status, got)
+	}
 }

@@ -1,6 +1,7 @@
 import { ResourceMetrics } from '../components/resource-metrics'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { MountSettings } from '../components/mounts'
+import { ProcessSettings } from '../components/processes'
 import { EnvironmentSettings } from '../components/environment'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
@@ -315,6 +316,11 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
               <code dir="ltr" className="[overflow-wrap:anywhere]">{app.start_command}</code>
             </Fact>
           )}
+          {(app.process_states ?? []).map((p) => (
+            <Fact key={p.name} label={p.name}>
+              {p.state === 'none' ? '—' : p.state}
+            </Fact>
+          ))}
           <Fact label={t.app.containerPort}>{app.port}</Fact>
           <Fact label={t.app.strategy}>
             <span title={app.strategy === 'recreate' ? t.app.recreateNote : undefined}>
@@ -566,6 +572,7 @@ function DeploymentDetails(props: { deployment: Deployment; busy: boolean; git: 
 
 function RuntimeLogs({ app }: { app: App }) {
   const t = useT()
+  const [picked, setPicked] = useState('') // '' = the main container
   if (!app.current_deployment_id) {
     return (
       <Panel>
@@ -574,12 +581,27 @@ function RuntimeLogs({ app }: { app: App }) {
     )
   }
   // A new deployment, or a stopped container starting again, is a new stream.
-  const run = `${app.current_deployment_id}:${app.runtime_state === 'running'}`
+  const names = (app.processes ?? []).map((p) => p.name)
+  const process = names.includes(picked) ? picked : ''
+  const run = `${app.current_deployment_id}:${app.runtime_state === 'running'}:${process}`
   return (
-    <Panel title={t.app.containerOutput}>
+    <Panel
+      title={t.app.containerOutput}
+      actions={names.length > 0 && (
+        <select
+          aria-label={t.app.processLogSource}
+          value={process}
+          onChange={(e) => setPicked(e.target.value)}
+          className="h-8 border border-line bg-bg px-2 text-xs text-fg"
+        >
+          <option value="">{t.app.processMain}</option>
+          {names.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      )}
+    >
       <LogViewer
         key={run}
-        url={`/api/apps/${app.id}/logs/stream`}
+        url={`/api/apps/${app.id}/logs/stream${process ? `?process=${encodeURIComponent(process)}` : ''}`}
         refused={t.app.containerGone}
       />
     </Panel>
@@ -588,7 +610,7 @@ function RuntimeLogs({ app }: { app: App }) {
 
 // ---- settings ----
 
-export const settingsSections = ['general', 'source', 'resources', 'environment', 'volumes', 'health', 'webhook', 'danger'] as const
+export const settingsSections = ['general', 'source', 'resources', 'environment', 'volumes', 'processes', 'health', 'webhook', 'danger'] as const
 export type SettingsSection = (typeof settingsSections)[number]
 
 /** App settings, grouped by family: a vertical menu (a strip on phones) and one section. */
@@ -625,6 +647,7 @@ function Settings({ app }: { app: App }) {
         {section === 'resources' && <ResourceSettings key={app.id} app={app} />}
         {section === 'environment' && <EnvironmentSettings key={app.id} app={app} />}
         {section === 'volumes' && <MountSettings key={`mounts-${app.id}`} app={app} />}
+        {section === 'processes' && <ProcessSettings key={`processes-${app.id}`} app={app} />}
         {section === 'health' && <HealthCheckPanel app={app} />}
         {section === 'webhook' && <DeployHookPanel app={app} />}
         {section === 'danger' && <DangerZone app={app} />}

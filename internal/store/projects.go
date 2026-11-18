@@ -130,9 +130,19 @@ type AppMount struct {
 	Content  string `json:"content"`
 }
 
+// AppProcess is an extra container of the app: the same image, environment, mounts and
+// limits, with its own command, for a queue worker or a scheduler. It gets no traffic.
+type AppProcess struct {
+	Name    string `json:"name"`    // slug, unique inside the app; part of the container name
+	Command string `json:"command"` // run by /bin/sh -c
+}
+
 type App struct {
 	Mounts              []AppMount
+	Processes           []AppProcess // started with every deployment, next to the main container
 	Environment         map[string]string
+	EnvMeta             map[string]EnvVarMeta // scope and secrecy of the variables that are not the default
+	EnvOrder            []string              // the variables as their owner ordered them, comments between: see NormalizeEnvOrder
 	ID                  string
 	ProjectID           string
 	Name                string
@@ -154,15 +164,15 @@ type App struct {
 
 const appCols = `id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb,
 	desired_state, COALESCE(current_deployment_id, ''),
-	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy`
+	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order`
 
 func (s *Store) scanApp(row scanner) (App, error) {
 	var a App
-	var environment, mounts string
+	var environment, mounts, processes, envMeta, envOrder string
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.Name, &a.SourceType, &a.Image, &a.Port, &a.CPULimit, &a.MemoryMB,
 		&a.DesiredState, &a.CurrentDeploymentID,
-		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy)
+		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -178,6 +188,17 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	if a.Mounts == nil {
 		a.Mounts = []AppMount{}
 	}
+	if err := json.Unmarshal([]byte(processes), &a.Processes); err != nil {
+		return a, err
+	}
+	if a.Processes == nil {
+		a.Processes = []AppProcess{}
+	}
+	if err := json.Unmarshal([]byte(envMeta), &a.EnvMeta); err != nil {
+		return a, fmt.Errorf("app %s environment flags: %w", a.ID, err)
+	}
+	a.EnvMeta = nonNilMeta(a.EnvMeta)
+	a.EnvOrder = s.openEnvOrder(envOrder, a.Environment)
 	a.CreatedAt, a.UpdatedAt = parseTime(created), parseTime(updated)
 	return a, err
 }
@@ -231,7 +252,10 @@ type GitSource struct {
 // Git by Git apps; the other one is stored empty.
 type AppInput struct {
 	Mounts       []AppMount
+	Processes    []AppProcess
 	Environment  map[string]string
+	EnvMeta      map[string]EnvVarMeta
+	EnvOrder     []string
 	Name         string
 	SourceType   string
 	Image        string
@@ -259,17 +283,25 @@ func (s *Store) CreateApp(ctx context.Context, projectID string, in AppInput) (A
 	if err != nil {
 		return App{}, err
 	}
+	processes, err := json.Marshal(append([]AppProcess{}, in.Processes...))
+	if err != nil {
+		return App{}, err
+	}
 	environment, err := s.sealEnvironment(in.Environment)
+	if err != nil {
+		return App{}, err
+	}
+	envMeta, err := json.Marshal(nonNilMeta(in.EnvMeta))
 	if err != nil {
 		return App{}, err
 	}
 	aid, ts := id.New(), now()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO apps (id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb, desired_state,
-			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id)
-		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, '') FROM projects WHERE id = ?`,
+			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order)
+		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ? FROM projects WHERE id = ?`,
 		aid, in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB, StateStopped,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, projectID)
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), projectID)
 	if err != nil {
 		return App{}, conflict(err)
 	}
@@ -309,7 +341,15 @@ func (s *Store) UpdateApp(ctx context.Context, appID string, in AppInput) (App, 
 	if err != nil {
 		return App{}, err
 	}
+	processes, err := json.Marshal(append([]AppProcess{}, in.Processes...))
+	if err != nil {
+		return App{}, err
+	}
 	environment, err := s.sealEnvironment(in.Environment)
+	if err != nil {
+		return App{}, err
+	}
+	envMeta, err := json.Marshal(nonNilMeta(in.EnvMeta))
 	if err != nil {
 		return App{}, err
 	}
@@ -317,10 +357,10 @@ func (s *Store) UpdateApp(ctx context.Context, appID string, in AppInput) (App, 
 		UPDATE apps SET name = ?, source_type = ?, image = ?, port = ?, cpu_limit = ?, memory_limit_mb = ?,
 			git_repository = ?, git_branch = ?, builder = ?, build_context = ?, dockerfile_path = ?,
 			git_source_id = NULLIF(?, ''), environment = ?, updated_at = ?, mounts = ?, start_command = ?,
-			registry_id = NULLIF(?, '')
+			registry_id = NULLIF(?, ''), processes = ?, environment_meta = ?, environment_order = ?
 		WHERE id = ?`,
 		in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), now(), string(mounts), in.StartCommand, in.RegistryID, appID))
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), now(), string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), appID))
 	if err != nil {
 		return App{}, err
 	}

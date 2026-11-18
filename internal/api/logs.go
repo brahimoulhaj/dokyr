@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,12 @@ func (s *Server) handleAppLogStream(w http.ResponseWriter, r *http.Request) {
 	if last, err := time.Parse(time.RFC3339Nano, r.Header.Get("Last-Event-ID")); err == nil {
 		opts.Since, opts.Tail = last.Add(time.Nanosecond), 0
 	}
+	// ?process=NAME reads one of the app's extra processes instead of the main container.
+	process := r.URL.Query().Get("process")
+	if process != "" && !slices.ContainsFunc(a.Processes, func(p store.AppProcess) bool { return p.Name == process }) {
+		invalid(w, "the app has no process with this name")
+		return
+	}
 	// Refuse with a normal error response while that is still possible.
 	if state := s.deployer.RuntimeState(r.Context(), a.ID); state == "none" || state == "missing" {
 		writeError(w, http.StatusConflict, "not_deployed", "the app has no container; deploy it first")
@@ -65,7 +72,7 @@ func (s *Server) handleAppLogStream(w http.ResponseWriter, r *http.Request) {
 	lines := make(chan executor.LogLine, 256)
 	done := make(chan error, 1)
 	go func() {
-		done <- s.deployer.StreamLogs(ctx, a.ID, opts, func(l executor.LogLine) {
+		done <- s.deployer.StreamLogs(ctx, a.ID, process, opts, func(l executor.LogLine) {
 			select {
 			case lines <- l: // a slow browser slows the reader down; nothing is dropped
 			case <-ctx.Done():

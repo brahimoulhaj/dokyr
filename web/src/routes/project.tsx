@@ -9,7 +9,7 @@ import { appSource, appStatus } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet, SheetActions } from '../components/sheet'
 import { EnvironmentEditor } from '../components/environment'
-import { DnsHintText } from '../components/dns'
+import { DnsBadge, DnsRecords, dnsRail, dnsState } from '../components/dns'
 import { projectDatabasesQuery } from '../lib/databases'
 import { DatabaseStatus, NewDatabase } from './databases'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
@@ -297,7 +297,7 @@ function ProjectSettings({ project }: { project: Project }) {
   )
 }
 
-type ProjectEnv = { environment: Record<string, string>; inherit: boolean }
+type ProjectEnv = { environment: Record<string, string>; environment_order: string[]; inherit: boolean }
 
 /** The project's shared variables, and whether every app inherits them. */
 function ProjectEnvironment({ projectId }: { projectId: string }) {
@@ -314,7 +314,8 @@ function ProjectEnvironment({ projectId }: { projectId: string }) {
       title={t.project.envTitle}
       hint={t.project.envHint}
       initial={env.data.environment}
-      save={(environment) => api<ProjectEnv>(`/projects/${projectId}/environment`, { method: 'PUT', body: { environment, inherit: on } })}
+      order={env.data.environment_order}
+      save={(environment, _meta, environment_order) => api<ProjectEnv>(`/projects/${projectId}/environment`, { method: 'PUT', body: { environment, environment_order, inherit: on } })}
       onSaved={() => {
         setInherit(null)
         queryClient.invalidateQueries({ queryKey: key })
@@ -390,6 +391,7 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
   const t = useT()
   const queryClient = useQueryClient()
   const dns = useQuery(dnsQuery(domain.id))
+  const state = dnsState(dns)
   const [confirming, setConfirming] = useState(false)
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
@@ -411,15 +413,18 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
   return (
     <Panel>
       {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2">
-            <a href={hostHref(host, httpOnly)} target="_blank" rel="noreferrer" className="text-sm text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
+      <div className="relative flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 ps-5 pe-4">
+        {/* Same DNS badge and rail as the Domains page. */}
+        <span aria-hidden className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-300', dnsRail[state])} />
+        <div className="min-w-0 space-y-2">
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <a href={hostHref(host, httpOnly)} target="_blank" rel="noreferrer" className="text-base leading-tight text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
               {host}
             </a>
+            <DnsBadge state={state} />
             {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
           </p>
-          <p className="mt-1 text-xs text-muted"><DnsHintText dns={dns} /></p>
+          <DnsRecords dns={dns} />
         </div>
         <ActionsMenu
           label={t.domains.actions}

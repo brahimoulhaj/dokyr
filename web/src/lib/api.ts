@@ -146,9 +146,24 @@ export const appProblemsQuery = {
 
 export type AppMount = { type: 'bind' | 'volume' | 'file'; source: string; target: string; read_only: boolean; content: string }
 
+/** An extra container of the app with its own command: a queue worker, a scheduler. */
+export type AppProcess = { name: string; command: string }
+
+/** Where an app variable is available: in the container, in the image build, or both. */
+export type EnvScope = 'runtime' | 'build' | 'both'
+export type EnvMeta = { scope: EnvScope; secret: boolean }
+
 export type App = {
   mounts: AppMount[]
+  processes: AppProcess[]
+  /** What each extra process is doing right now; only on a single app. */
+  process_states?: { name: string; state: string }[]
+  /** Without the secret values: the API never returns those. */
   environment: Record<string, string>
+  /** Scope and secrecy of the variables that are not runtime and plain; a secret is listed here by name only. */
+  environment_meta: Record<string, EnvMeta>
+  /** Variable names in their owner's order, with "# comment" and "" (blank) lines between. */
+  environment_order: string[]
   id: string
   project_id: string
   name: string
@@ -271,7 +286,7 @@ export type SourceInput =
       dockerfile_path: string
     }
 
-export type AppInput = SourceInput & { environment?: Record<string, string>; name: string; start_command?: string; port: number; cpu_limit: number; memory_limit_mb: number }
+export type AppInput = SourceInput & { environment?: Record<string, string>; environment_meta?: Record<string, EnvMeta>; environment_order?: string[]; name: string; start_command?: string; port: number; cpu_limit: number; memory_limit_mb: number }
 
 export const isActive = (d: Deployment) => d.status === 'queued' || d.status === 'running'
 
@@ -318,18 +333,18 @@ export const activeDeploymentsQuery = {
   queryFn: () => api<ActiveDeployment[]>('/deployments/active'),
 }
 
-/** Every domain of the panel, used by a project or not. */
-export const allDomainsQuery = {
-  queryKey: ['domains', 'all'] as const,
-  queryFn: () => api<Domain[]>('/domains'),
-}
-
 /** A wildcard hostname ("*.example.com") names many sites: there is no single page to open. */
 export const isWildcard = (hostnameOrUrl: string) => hostnameOrUrl.includes('*')
 
 /** The address of a hostname, or undefined for a wildcard (rendered as plain text). */
 export const hostHref = (hostname: string, httpOnly: boolean) =>
   isWildcard(hostname) ? undefined : (httpOnly ? 'http://' : 'https://') + hostname
+
+/** Every domain of the panel, used by a project or not. */
+export const allDomainsQuery = {
+  queryKey: ['domains', 'all'] as const,
+  queryFn: () => api<Domain[]>('/domains'),
+}
 
 /** The domains a project uses. */
 export const domainsQuery = (projectId: string) => ({
