@@ -435,7 +435,7 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
         <p className="px-4 py-3 text-sm text-muted">{t.project.noRoutes}</p>
       ) : (
         <ul className="divide-y divide-line">
-          {domain.routes.map((r) => <RouteRow key={r.id} route={r} onEdit={() => onRoute(r)} onChanged={refresh} />)}
+          {domain.routes.map((r) => <RouteRow key={r.id} route={r} projectId={projectId} onEdit={() => onRoute(r)} onChanged={refresh} />)}
         </ul>
       )}
       <div className="border-t border-line px-4 py-3">
@@ -453,7 +453,7 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
   )
 }
 
-function RouteRow({ route, onEdit, onChanged }: { route: Route; onEdit: () => void; onChanged: () => void }) {
+function RouteRow({ route, projectId, onEdit, onChanged }: { route: Route; projectId: string; onEdit: () => void; onChanged: () => void }) {
   const t = useT()
   const remove = useMutation({ mutationFn: () => api<void>(`/routes/${route.id}`, { method: 'DELETE' }), onSettled: onChanged })
   return (
@@ -461,7 +461,7 @@ function RouteRow({ route, onEdit, onChanged }: { route: Route; onEdit: () => vo
       <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
         <code dir="ltr" className="min-w-16 text-fg [overflow-wrap:anywhere]">{route.subdomain ? route.hostname : ''}{route.subdomain && route.path === '/' ? '' : route.path}</code>
         <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
-        <span>{route.app_name}</span>
+        <Link to="/projects/$projectId/apps/$appId" params={{ projectId, appId: route.app_id }} className="hover:text-accent hover:underline">{route.app_name}</Link>
         {route.strip_prefix && <Badge tone="muted">{t.project.stripped}</Badge>}
       </div>
       <span className="flex items-center gap-2">
