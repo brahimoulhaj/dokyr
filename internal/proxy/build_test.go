@@ -330,3 +330,61 @@ func TestBuildSites(t *testing.T) {
 		t.Error("duplicate hostname accepted")
 	}
 }
+
+func TestBuildWildcardSite(t *testing.T) {
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", ACMEEmail: "ops@example.com", Sites: []Site{
+		{Host: "*.example.com", Paths: []Path{{ID: "r1", AppID: "a", Prefix: "/", Upstreams: []string{"a:80"}}}},
+		{Host: "shop.example.com", Paths: []Path{{ID: "r2", AppID: "b", Prefix: "/", Upstreams: []string{"b:80"}}}},
+		{Host: "*.apps.test"},
+		{Host: "*.plain.example.org", HTTPOnly: true},
+	}})
+	// The exact hostname is matched ahead of the wildcard covering it.
+	routes := dig(t, cfg, "apps", "http", "servers", "https", "routes")
+	if got := dig(t, routes, 0, "match", 0, "host", 0); got != "shop.example.com" {
+		t.Errorf("first https route = %v, want the exact hostname", got)
+	}
+	if got := dig(t, routes, 1, "match", 0, "host", 0); got != "*.example.com" {
+		t.Errorf("second https route = %v", got)
+	}
+	automation := dig(t, cfg, "apps", "tls", "automation")
+	if got := dig(t, automation, "on_demand", "permission", "endpoint"); got != "http://dokyr:8080/api/proxy/ask" {
+		t.Errorf("ask endpoint = %v", got)
+	}
+	// Policies: the exact name first (managed up front), the wildcards on demand, the
+	// catch-all last; the HTTP-only wildcard gets none.
+	policies := automation.(map[string]any)["policies"].([]any)
+	raw, _ := json.Marshal(policies)
+	if len(policies) != 4 {
+		t.Fatalf("policies = %s", raw)
+	}
+	if got := dig(t, policies, 0, "subjects", 0); got != "shop.example.com" || dig(t, policies, 0, "on_demand") != nil {
+		t.Errorf("policy 0 = %s", raw)
+	}
+	if dig(t, policies, 1, "subjects", 0) != "*.apps.test" || dig(t, policies, 1, "on_demand") != true || dig(t, policies, 1, "issuers", 0, "module") != "internal" {
+		t.Errorf("policy 1 = %s", raw)
+	}
+	if dig(t, policies, 2, "subjects", 0) != "*.example.com" || dig(t, policies, 2, "on_demand") != true || dig(t, policies, 2, "issuers", 0, "email") != "ops@example.com" {
+		t.Errorf("policy 2 = %s", raw)
+	}
+	if dig(t, policies, 3, "subjects") != nil {
+		t.Errorf("policy 3 = %s", raw)
+	}
+	if strings.Contains(string(raw), "plain.example.org") {
+		t.Errorf("http-only wildcard has a policy: %s", raw)
+	}
+
+	// No wildcard: no on-demand block.
+	cfg = build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", ACMEEmail: "ops@example.com", Sites: []Site{{Host: "shop.example.com"}}})
+	if _, has := dig(t, cfg, "apps", "tls", "automation").(map[string]any)["on_demand"]; has {
+		t.Error("on_demand set without a wildcard site")
+	}
+	// Wildcards stay refused outside project domains, and deeper than one label.
+	if _, err := Build(Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", PanelDomain: "*.example.com"}); err == nil {
+		t.Error("wildcard panel domain accepted")
+	}
+	for _, bad := range []string{"*.com", "*.*.example.com", "a.*.example.com", "*"} {
+		if ValidSiteHost(bad) == nil {
+			t.Errorf("ValidSiteHost(%q) accepted", bad)
+		}
+	}
+}

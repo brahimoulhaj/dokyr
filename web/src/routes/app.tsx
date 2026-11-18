@@ -26,6 +26,7 @@ import {
   type AppInput,
   type Deployment,
   type Page,
+  isWildcard,
 } from '../lib/api'
 import { SourceFields, sourceChanged, sourceForm, sourceInput } from '../components/source'
 import { rich, useT } from '../lib/i18n'
@@ -48,7 +49,7 @@ export function AppPage() {
 
   const project = useQuery(projectQuery(projectId))
   const routes = useQuery(appRoutesQuery(appId))
-  const mainUrl = routes.data?.[0]?.url
+  const mainUrl = routes.data?.find((r) => !isWildcard(r.url))?.url
   const deployments = useQuery({
     ...deploymentsQuery(appId),
     refetchInterval: (q) => (q.state.data?.items.some(isActive) ? poll(1500)() : false),
@@ -338,7 +339,7 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
             {routes.data?.length ? (
               <span className="flex flex-col items-start">
                 {routes.data.map((r) => (
-                  <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline [overflow-wrap:anywhere]" dir="ltr">
+                  <a key={r.id} href={isWildcard(r.url) ? undefined : r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline [overflow-wrap:anywhere]" dir="ltr">
                     {r.url.replace(/^https?:\/\//, '')}
                   </a>
                 ))}

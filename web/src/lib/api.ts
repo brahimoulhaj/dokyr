@@ -324,6 +324,13 @@ export const allDomainsQuery = {
   queryFn: () => api<Domain[]>('/domains'),
 }
 
+/** A wildcard hostname ("*.example.com") names many sites: there is no single page to open. */
+export const isWildcard = (hostnameOrUrl: string) => hostnameOrUrl.includes('*')
+
+/** The address of a hostname, or undefined for a wildcard (rendered as plain text). */
+export const hostHref = (hostname: string, httpOnly: boolean) =>
+  isWildcard(hostname) ? undefined : (httpOnly ? 'http://' : 'https://') + hostname
+
 /** The domains a project uses. */
 export const domainsQuery = (projectId: string) => ({
   queryKey: ['projects', projectId, 'domains'] as const,

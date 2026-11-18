@@ -30,6 +30,11 @@ type Config struct {
 
 // Site is a project domain: one hostname whose paths go to apps. Paths are matched longest
 // first; a request no path matches answers 404.
+//
+// Host may be a wildcard ("*.example.com"): every name one label under example.com that
+// no other site or route claims. No authority signs a wildcard without a DNS challenge, so
+// each name gets its own certificate, issued on its first TLS handshake (on-demand TLS)
+// once the panel has confirmed the name (AskPath).
 type Site struct {
 	Host     string
 	HTTPOnly bool // plain HTTP only, no certificate or redirect (a CDN terminates TLS)
@@ -114,6 +119,10 @@ const (
 )
 
 type object = map[string]any
+
+// AskPath is the panel endpoint Caddy asks, with ?domain=<name>, before it issues a
+// certificate on demand for a name under a wildcard site. 200 allows it.
+const AskPath = "/api/proxy/ask"
 
 func routeKey(id string) string     { return "route-" + id }
 func httpRouteKey(id string) string { return "route-" + id + "-http" }
@@ -216,8 +225,11 @@ func Build(c Config) ([]byte, error) {
 		}
 	}
 
-	for _, site := range c.Sites {
-		if err := ValidHost(site.Host); err != nil {
+	// Routes are matched in order: exact hostnames go ahead of the wildcards covering them.
+	sites := append([]Site(nil), c.Sites...)
+	sort.SliceStable(sites, func(i, j int) bool { return !IsWildcard(sites[i].Host) && IsWildcard(sites[j].Host) })
+	for _, site := range sites {
+		if err := ValidSiteHost(site.Host); err != nil {
 			return nil, fmt.Errorf("proxy config: site: %w", err)
 		}
 		if other, dup := seenHost[site.Host]; dup {
@@ -300,8 +312,16 @@ func Build(c Config) ([]byte, error) {
 	}
 
 	apps := object{"http": object{"servers": servers}}
-	if policies := tlsPolicies(allHosts, c.ACMEEmail); len(policies) > 0 {
-		apps["tls"] = object{"automation": object{"policies": policies}}
+	if policies, onDemand := tlsPolicies(allHosts, c.ACMEEmail); len(policies) > 0 {
+		automation := object{"policies": policies}
+		if onDemand {
+			// Without this check anyone pointing a name at the server could make it request
+			// certificates without end.
+			automation["on_demand"] = object{"permission": object{
+				"module": "http", "endpoint": "http://" + c.PanelUpstream + AskPath,
+			}}
+		}
+		apps["tls"] = object{"automation": automation}
 	}
 
 	return json.MarshalIndent(object{
@@ -313,21 +333,73 @@ func Build(c Config) ([]byte, error) {
 
 // tlsPolicies gives names no public authority will sign (localhost, .test, …) a certificate
 // from Caddy's internal authority, and sets the account email for everything else.
-func tlsPolicies(hosts []string, email string) []object {
-	var internal []string
+// Wildcard hosts get on-demand policies: a certificate per name, at its first handshake.
+// The first policy matching a name wins, so exact names come before the wildcards that
+// would otherwise cover them, and the catch-all comes last. onDemand reports whether any
+// policy issues on demand.
+func tlsPolicies(hosts []string, email string) (policies []object, onDemand bool) {
+	var internal, wildInternal, wildPublic, covered []string
 	for _, h := range hosts {
-		if isInternalName(h) {
+		switch {
+		case IsWildcard(h) && isInternalName(h):
+			wildInternal = append(wildInternal, h)
+		case IsWildcard(h):
+			wildPublic = append(wildPublic, h)
+		case isInternalName(h):
 			internal = append(internal, h)
 		}
 	}
-	var policies []object
+	// Exact public names under a wildcard keep their certificate managed up front.
+	for _, h := range hosts {
+		if !IsWildcard(h) && !isInternalName(h) && contains(wildPublic, WildcardOf(h)) {
+			covered = append(covered, h)
+		}
+	}
+	acme := object{"module": "acme"}
+	if email != "" {
+		acme["email"] = email
+	}
 	if len(internal) > 0 {
 		policies = append(policies, object{"subjects": internal, "issuers": []object{{"module": "internal"}}})
 	}
-	if email != "" {
-		policies = append(policies, object{"issuers": []object{{"module": "acme", "email": email}}})
+	if len(covered) > 0 {
+		policies = append(policies, object{"subjects": covered, "issuers": []object{acme}})
 	}
-	return policies
+	if len(wildInternal) > 0 {
+		policies = append(policies, object{"subjects": wildInternal, "issuers": []object{{"module": "internal"}}, "on_demand": true})
+	}
+	if len(wildPublic) > 0 {
+		policies = append(policies, object{"subjects": wildPublic, "issuers": []object{acme}, "on_demand": true})
+	}
+	if email != "" {
+		policies = append(policies, object{"issuers": []object{acme}})
+	}
+	return policies, len(wildInternal)+len(wildPublic) > 0
+}
+
+// IsWildcard reports whether h is a wildcard hostname ("*.example.com").
+func IsWildcard(h string) bool { return strings.HasPrefix(h, "*.") }
+
+// WildcardOf returns the wildcard hostname covering h ("*.example.com" for
+// "shop.example.com"), or "" when h has a single label.
+func WildcardOf(h string) string {
+	_, parent, ok := strings.Cut(h, ".")
+	if !ok {
+		return ""
+	}
+	return "*." + parent
+}
+
+// ValidSiteHost is ValidHost for project domains, which may also be a wildcard one label
+// deep ("*.example.com").
+func ValidSiteHost(h string) error {
+	if IsWildcard(h) {
+		if err := ValidHost(h[2:]); err != nil {
+			return fmt.Errorf("invalid hostname %q", h)
+		}
+		return nil
+	}
+	return ValidHost(h)
 }
 
 func isInternalName(h string) bool {

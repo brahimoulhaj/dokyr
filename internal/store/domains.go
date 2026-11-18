@@ -76,6 +76,14 @@ func (s *Store) DomainExists(ctx context.Context, hostname string) (bool, error)
 	return n > 0, err
 }
 
+// DomainServesTLS reports whether hostname is a domain served with certificates (not
+// HTTP-only).
+func (s *Store) DomainServesTLS(ctx context.Context, hostname string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domains WHERE hostname = ? AND tls_mode <> ?`, hostname, TLSHTTPOnly).Scan(&n)
+	return n > 0, err
+}
+
 func (s *Store) listDomains(ctx context.Context, where string, args ...any) ([]Domain, error) {
 	rows, err := s.db.QueryContext(ctx, domainSelect+where+` ORDER BY d.hostname`, args...)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"panel/internal/brand"
 	"panel/internal/database"
 	"panel/internal/gitsource"
+	"panel/internal/proxy"
 	"panel/internal/storage"
 	"panel/internal/store"
 )
@@ -256,6 +257,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/domains/{id}", s.requireAuth(s.handleUpdateDomain))
 	mux.HandleFunc("DELETE /api/domains/{id}", s.requireAuth(s.handleDeleteDomain))
 	mux.HandleFunc("GET /api/domains/{id}/dns", s.requireAuth(s.handleDomainDNS))
+	mux.HandleFunc("GET "+proxy.AskPath, s.handleProxyAsk) // Caddy's on-demand TLS check
 
 	mux.HandleFunc("GET /api/events", s.requireAuth(s.handleListEvents))
 	mux.HandleFunc("GET /api/events/search", s.requireAuth(s.handleSearchEvents))

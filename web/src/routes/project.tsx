@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { SourceFields, sourceForm, sourceInput } from '../components/source'
 import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, HelpTip, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
 import { environmentMap, parseEnvironment } from '../lib/environment'
-import { allDomainsQuery, api, appQuery, appsQuery, dnsQuery, domainsQuery, projectQuery, projectsQuery, type App, type Domain, type Project, type Route } from '../lib/api'
+import { allDomainsQuery, api, appQuery, appsQuery, dnsQuery, domainsQuery, hostHref, isWildcard, projectQuery, projectsQuery, type App, type Domain, type Project, type Route } from '../lib/api'
 import { appSource, appStatus } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { Sheet, SheetActions } from '../components/sheet'
@@ -408,14 +408,13 @@ function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId:
     onSettled: refresh,
   })
   const busy = detach.isPending || setMode.isPending
-  const scheme = httpOnly ? 'http://' : 'https://'
   return (
     <Panel>
       {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2">
-            <a href={scheme + host} target="_blank" rel="noreferrer" className="text-sm text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
+            <a href={hostHref(host, httpOnly)} target="_blank" rel="noreferrer" className="text-sm text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
               {host}
             </a>
             {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
@@ -518,15 +517,16 @@ function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: stri
 /** The domain that stands for the project: the one serving "/" (its front door), else the
  * first one. */
 function mainDomain(list: Domain[] | undefined): Domain | undefined {
-  return list?.find((d) => d.routes.some((r) => r.path === '/')) ?? list?.[0]
+  const exact = list?.filter((d) => !isWildcard(d.hostname))
+  return exact?.find((d) => d.routes.some((r) => r.path === '/')) ?? exact?.[0] ?? list?.[0]
 }
 
 function DomainLink({ domain }: { domain: Domain }) {
-  const url = (domain.tls_mode === 'http_only' ? 'http://' : 'https://') + domain.hostname
+  const url = hostHref(domain.hostname, domain.tls_mode === 'http_only')
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-accent hover:underline" dir="ltr">
       <span className="[overflow-wrap:anywhere]">{domain.hostname}</span>
-      <span aria-hidden="true">↗</span>
+      {url && <span aria-hidden="true">↗</span>}
     </a>
   )
 }

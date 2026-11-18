@@ -978,8 +978,8 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request, in domainI
 		return store.Domain{}, false
 	}
 	host := strings.ToLower(strings.TrimSpace(in.Hostname))
-	if err := proxy.ValidHost(host); err != nil {
-		invalid(w, "hostname must be a domain name like shop.example.com (no scheme, port, path or wildcard)")
+	if err := proxy.ValidSiteHost(host); err != nil {
+		invalid(w, "hostname must be a domain name like shop.example.com or a wildcard like *.example.com (no scheme, port or path)")
 		return store.Domain{}, false
 	}
 	panelDomain, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
@@ -1244,8 +1244,39 @@ func (s *Server) handleDomainDNS(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get domain", err, "") {
 		return
 	}
-	out := s.dnsHint(r.Context(), d.Hostname)
+	// A wildcard record cannot be looked up itself: look up a name under it.
+	name := d.Hostname
+	if proxy.IsWildcard(name) {
+		name = dnsProbeLabel + name[1:]
+	}
+	out := s.dnsHint(r.Context(), name)
+	out["hostname"] = d.Hostname
 	writeJSON(w, http.StatusOK, out)
+}
+
+// dnsProbeLabel stands in for the "*" of a wildcard domain when its DNS record is checked.
+const dnsProbeLabel = "dns-check"
+
+// handleProxyAsk answers Caddy's on-demand TLS question: may a certificate be issued for
+// ?domain=<name>? Only for names under a wildcard domain served over HTTPS. Caddy calls it
+// without credentials; it gives away nothing a TLS handshake would not.
+func (s *Server) handleProxyAsk(w http.ResponseWriter, r *http.Request) {
+	name := strings.ToLower(strings.TrimSuffix(r.URL.Query().Get("domain"), "."))
+	wildcard := proxy.WildcardOf(name)
+	if proxy.ValidHost(name) != nil || wildcard == "" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	ok, err := s.store.DomainServesTLS(r.Context(), wildcard)
+	if err != nil {
+		s.internal(w, "proxy ask", err)
+		return
+	}
+	if !ok {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 // dnsHint looks a hostname up and compares the answer with this server's public addresses.

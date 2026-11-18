@@ -6,7 +6,7 @@ import { ConfirmModal } from '../components/confirm-dialog'
 import { DnsBadge, DnsRecords, dnsRail, dnsState } from '../components/dns'
 import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, cx, Empty, ErrorNote, Field, HttpOnlyChoice, PageHeader, Panel, QueryState } from '../components/ui'
-import { allDomainsQuery, api, dnsQuery, type Domain } from '../lib/api'
+import { allDomainsQuery, api, dnsQuery, hostHref, type Domain } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
 
@@ -74,7 +74,7 @@ function DomainRow({ domain }: { domain: Domain }) {
       <span aria-hidden className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-300', dnsRail[state])} />
       <div className="min-w-0 space-y-2">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <a href={(httpOnly ? 'http://' : 'https://') + host} target="_blank" rel="noreferrer" dir="ltr"
+          <a href={hostHref(host, httpOnly)} target="_blank" rel="noreferrer" dir="ltr"
             className="text-base leading-tight text-fg [overflow-wrap:anywhere] hover:text-accent">{host}</a>
           <DnsBadge state={state} />
           {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
@@ -140,7 +140,7 @@ export function AddDomain({ projectId, onDone }: { projectId?: string; onDone: (
   })
   return (
     <form onSubmit={(e: FormEvent) => { e.preventDefault(); add.mutate() }} className="space-y-5 p-5">
-      <Field label={t.app.hostname} name="hostname" required autoFocus placeholder="shop.example.com" dir="ltr"
+      <Field label={t.app.hostname} name="hostname" required autoFocus placeholder="shop.example.com, *.example.com" dir="ltr"
         hint={httpOnly ? t.app.hostnameHintHttp : t.app.hostnameHintHttps}
         value={hostname} onChange={(e) => setHostname(e.target.value.trim().toLowerCase())} />
       <HttpOnlyChoice checked={httpOnly} onChange={setHttpOnly} />
