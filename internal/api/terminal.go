@@ -37,7 +37,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
 	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
 	shell := r.URL.Query().Get("shell")
-	if !terminalSize(cols, rows) || (shell != "/bin/sh" && shell != "/bin/bash" && shell != "/bin/ash") {
+	if !terminalSize(cols, rows) || !executor.ValidShell(shell) {
 		invalid(w, "choose a supported shell and valid terminal dimensions")
 		return
 	}

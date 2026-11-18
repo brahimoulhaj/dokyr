@@ -21,7 +21,7 @@ export default function ContainerTerminal({ app, visible }: { app: App; visible:
   isVisible.current = visible
   const hiddenDeadline = useRef<number | null>(null)
   const [state, setState] = useState<State>('ready')
-  const [shell, setShell] = useState('/bin/sh')
+  const [shell, setShell] = useState('auto')
   const [expanded, setExpanded] = useState(false)
   const [size, setSize] = useState({ cols: 80, rows: 24 })
   const [message, setMessage] = useState('')
@@ -192,7 +192,7 @@ export default function ContainerTerminal({ app, visible }: { app: App; visible:
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label={t.shell} value={shell} disabled={active} onChange={(e) => setShell(e.target.value)} className="h-8 border border-line bg-bg px-2 font-mono text-xs text-fg disabled:opacity-60">
-          <option>/bin/sh</option><option>/bin/bash</option><option>/bin/ash</option>
+          <option>auto</option><option>/bin/sh</option><option>/bin/bash</option><option>/bin/ash</option>
         </select>
         <Button variant="ghost" className="h-8 px-2 text-xs" onClick={() => { term.current?.clear(); term.current?.focus() }}>{t.clear}</Button>
         <Button variant="ghost" className="h-8 px-2 text-xs" aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? t.collapse : t.expand}</Button>

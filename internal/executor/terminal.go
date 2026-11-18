@@ -21,12 +21,28 @@ type TerminalExecutor interface {
 	OpenTerminal(context.Context, string, string, uint, uint) (Terminal, error)
 }
 
+// ShellAuto picks the most comfortable shell the container has. Plain sh is often dash
+// (Debian, Ubuntu), which has no completion and no history; bash and BusyBox ash have both.
+const ShellAuto = "auto"
+
+// ValidShell reports whether shell is one OpenTerminal runs.
+func ValidShell(shell string) bool {
+	return shell == ShellAuto || shell == "/bin/sh" || shell == "/bin/bash" || shell == "/bin/ash"
+}
+
+func shellCommand(shell string) []string {
+	if shell == ShellAuto {
+		return []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -i; command -v ash >/dev/null 2>&1 && exec ash -i; exec sh -i"}
+	}
+	return []string{shell, "-i"}
+}
+
 func (d *Docker) OpenTerminal(ctx context.Context, containerID, shell string, cols, rows uint) (Terminal, error) {
-	if shell != "/bin/sh" && shell != "/bin/bash" && shell != "/bin/ash" {
+	if !ValidShell(shell) {
 		return nil, errors.New("unsupported shell")
 	}
 	created, err := d.cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{
-		Cmd: []string{shell, "-i"}, TTY: true, AttachStdin: true, AttachStdout: true, AttachStderr: true,
+		Cmd: shellCommand(shell), TTY: true, AttachStdin: true, AttachStdout: true, AttachStderr: true,
 		Env: []string{"TERM=xterm-256color"}, ConsoleSize: client.ConsoleSize{Width: cols, Height: rows},
 	})
 	if err != nil {
