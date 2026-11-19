@@ -15,6 +15,36 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.29.0',
+    date: '2026-11-19',
+    changes: {
+      en: [
+        'Three more builders for Git apps: Nixpacks, Buildpacks (Heroku by default) and Static sites served by Caddy.',
+        'Static sites: an optional build command, an output folder and a single-page app option.',
+        'PHP apps built by Railpack get the MySQL and PostgreSQL drivers: a build-time variable is added on the first build, yours to edit.',
+        'Pages have a little less padding.',
+      ],
+      fr: [
+        'Trois builders de plus pour les apps Git : Nixpacks, Buildpacks (Heroku par défaut) et les sites statiques servis par Caddy.',
+        'Sites statiques : une commande de build facultative, un dossier de sortie et une option application monopage.',
+        'Les apps PHP construites par Railpack ont les pilotes MySQL et PostgreSQL : une variable de build est ajoutée au premier build, modifiable ensuite.',
+        'Les pages ont un peu moins de marge.',
+      ],
+      ar: [
+        'ثلاث أدوات بناء إضافية لتطبيقات Git: Nixpacks وBuildpacks (Heroku افتراضياً) والمواقع الثابتة التي يقدّمها Caddy.',
+        'المواقع الثابتة: أمر بناء اختياري، مجلد مخرجات، وخيار تطبيق من صفحة واحدة.',
+        'تطبيقات PHP التي يبنيها Railpack تحصل على مشغّلات MySQL وPostgreSQL: يُضاف متغير وقت البناء عند أول بناء، ويمكنك تعديله.',
+        'هوامش الصفحات أصغر قليلاً.',
+      ],
+      es: [
+        'Tres compiladores más para apps Git: Nixpacks, Buildpacks (Heroku por defecto) y sitios estáticos servidos por Caddy.',
+        'Sitios estáticos: un comando de compilación opcional, una carpeta de salida y una opción de aplicación de una sola página.',
+        'Las apps PHP compiladas por Railpack tienen los controladores de MySQL y PostgreSQL: se añade una variable de compilación en la primera compilación, que puedes editar.',
+        'Las páginas tienen un poco menos de margen.',
+      ],
+    },
+  },
+  {
     version: '0.28.0',
     date: '2026-11-18',
     changes: {
