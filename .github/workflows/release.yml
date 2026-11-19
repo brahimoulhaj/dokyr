@@ -3,9 +3,22 @@ name: Release
 # Push a tag like v0.1.0 to publish ghcr.io/<owner>/<repo>:0.1.0 (and :latest) for
 # amd64 and arm64, and a GitHub release with the matching install.sh. Installed panels
 # see the new version tag and offer to update.
+#
+# The same image is also published as ghcr.io/<owner>/paas, the name before the repository
+# was renamed: panels installed from it look for updates in that repository, so they would
+# never see a version published under the new name only.
+#
+# "Run workflow" with a version (for example 0.30.0) copies an already published version to
+# the old name, without a rebuild: for a release made before it was published there.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version already published as ghcr.io/<owner>/<repo>, to copy to the old image name (e.g. 0.30.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write # the GitHub release
@@ -13,9 +26,11 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       IMAGE: ghcr.io/${{ github.repository }}
+      LEGACY_IMAGE: ghcr.io/${{ github.repository_owner }}/paas
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -34,7 +49,9 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.IMAGE }}
+            ${{ env.LEGACY_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ !contains(steps.v.outputs.version, '-') }}
@@ -60,3 +77,33 @@ jobs:
           pre=""
           case "${{ steps.v.outputs.version }}" in *-*) pre="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" bin/install.sh $pre --generate-notes --title "$GITHUB_REF_NAME"
+
+  legacy-name:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      LEGACY_IMAGE: ghcr.io/${{ github.repository_owner }}/paas
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check the version
+        run: |
+          case "$VERSION" in
+            *[!0-9A-Za-z.-]* | "" | -*) echo "not a version: $VERSION" >&2; exit 1 ;;
+          esac
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "not a version: $VERSION" >&2; exit 1; }
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A manifest copy: the same digest under the old name, no rebuild.
+      - name: Copy to the old image name
+        run: |
+          tags="--tag $LEGACY_IMAGE:$VERSION"
+          case "$VERSION" in *-*) ;; *) tags="$tags --tag $LEGACY_IMAGE:latest" ;; esac
+          docker buildx imagetools create $tags "$IMAGE:$VERSION"
+          docker buildx imagetools inspect "$LEGACY_IMAGE:$VERSION"
