@@ -300,7 +300,10 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
           { value: 'static', label: 'Static', note: t.source.builderStaticNote },
         ]}
         value={form.builder}
-        onChange={(b) => onChange({ ...form, builder: b as SourceForm['builder'] })}
+        // The builder image of Buildpacks is for owners and admins to set. A value carried over
+        // from another builder (Static uses the field for its build image) would be sent as a
+        // Buildpacks image and refused, so a maintainer starts it empty: the default builder.
+        onChange={(b) => onChange({ ...form, builder: b as SourceForm['builder'], build_image: b === 'buildpacks' && !can.admin ? '' : form.build_image })}
         hint={t.source.builderHint}
       />
 
