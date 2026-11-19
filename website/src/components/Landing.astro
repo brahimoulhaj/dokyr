@@ -1,0 +1,431 @@
+---
+import Base from '../layouts/Base.astro';
+import Wordmark from './Wordmark.astro';
+import { strings, locales, localeNames, pathFor, dir, type Locale } from '../i18n/strings';
+import { themes } from '../data/themes';
+import { repo, releases, installCmd, sourceLogs, builders, sitePath } from '../data/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = strings[lang];
+const sources = ['git', 'image', 'compose', 'template'] as const;
+const screens = ['overview', 'deployments', 'metrics', 'newApp'] as const;
+const shotFile = { overview: 'overview', deployments: 'deployments', metrics: 'metrics', newApp: 'new-app' } as const;
+---
+
+<Base lang={lang} title={t.meta.title} description={t.meta.description}>
+  <a class="skip" href="#main">{t.nav.skip}</a>
+
+  <header class="nav">
+    <div class="container nav-in">
+      <a class="nav-mark" href={pathFor(lang)} aria-label={t.nav.home}>
+        <Wordmark size={3} label="Dokyr" />
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="#panel">{t.nav.panel}</a>
+        <a href="#deploy">{t.nav.deploy}</a>
+        <a href="#install">{t.nav.install}</a>
+      </nav>
+      <div class="nav-tools">
+        <button type="button" class="icon-btn" data-open-picker aria-haspopup="dialog" aria-label={t.picker.choose} title={t.nav.theme}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.3 17 3 12 3Z" /><circle cx="7.5" cy="11" r="1.2" /><circle cx="10" cy="7" r="1.2" /><circle cx="15" cy="7" r="1.2" /></svg>
+        </button>
+        <details class="menu">
+          <summary class="icon-btn" aria-label={t.nav.language} title={t.nav.language}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9S14.5 18.3 12 21c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z" /></svg>
+          </summary>
+          <div class="menu-pop" role="group" aria-label={t.nav.language}>
+            {
+              locales.map((l) => (
+                <a class="menu-item" href={pathFor(l)} hreflang={l} lang={l} aria-current={l === lang ? 'page' : undefined}>
+                  {localeNames[l]}
+                </a>
+              ))
+            }
+          </div>
+        </details>
+        <a class="icon-btn" href={repo} aria-label="GitHub" title="GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="fill"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.2-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.6 9.6 0 0 1 5 0c2-1.3 2.8-1 2.8-1 .6 1.4.2 2.4.1 2.7.7.7 1 1.6 1 2.7 0 3.9-2.4 4.8-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2Z" /></svg>
+        </a>
+        <a class="btn btn--small" href="#install">{t.nav.install}</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" data-hero>
+      <canvas class="hero-field" aria-hidden="true"></canvas>
+      <div class="container hero-in">
+        <div class="hero-mark" data-clear><Wordmark size={20} animate label="Dokyr" /></div>
+        <h1 data-clear>{t.hero.h1}</h1>
+        <p class="lead" data-clear>{t.hero.lede}</p>
+        <div class="actions" data-clear>
+          <a class="btn" href="#install">{t.hero.primary}</a>
+          <a class="btn btn--quiet" href="#panel">{t.hero.secondary}</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot" id="panel">
+      <figure class="container shot-fig" data-tour data-tabs>
+        <div class="tour-tabs" role="tablist" aria-label={t.tour.label}>
+          {
+            screens.map((sc, i) => (
+              <button type="button" role="tab" id={`tour-${sc}`} aria-controls={`shot-${sc}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}>
+                {t.tour.tabs[sc]}
+              </button>
+            ))
+          }
+        </div>
+        {
+          screens.map((sc, i) => (
+            <div class="shot-frame" role="tabpanel" id={`shot-${sc}`} aria-labelledby={`tour-${sc}`} hidden={i !== 0}>
+              <img
+                data-shot={shotFile[sc]}
+                src={sitePath(`/panel/${shotFile[sc]}-midnight.webp`)}
+                width="2160"
+                height="1350"
+                alt={t.tour.notes[sc]}
+                loading="eager"
+                decoding="async"
+              />
+              <p class="shot-note">{t.tour.notes[sc]}</p>
+            </div>
+          ))
+        }
+        <figcaption class="caption">
+          {t.tour.theme.split('{theme}')[0]}<span data-theme-name>Midnight</span>{t.tour.theme.split('{theme}')[1]}
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="deploy" id="deploy">
+      <div class="container deploy-in">
+        <div class="deploy-copy">
+          <h2>{t.deploy.h2}</h2>
+          <p>{t.deploy.line}</p>
+          <dl class="builders">
+            <dt>{t.deploy.builders}</dt>
+            {builders.map((b) => <dd dir="ltr">{b}</dd>)}
+          </dl>
+        </div>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist" aria-label={t.deploy.tabsLabel}>
+            {
+              sources.map((s, i) => (
+                <button type="button" role="tab" id={`tab-${s}`} aria-selected={i === 0 ? 'true' : 'false'} aria-controls={`pane-${s}`} tabindex={i === 0 ? 0 : -1}>
+                  {t.deploy.tabs[s]}
+                </button>
+              ))
+            }
+          </div>
+          {
+            sources.map((s, i) => (
+              <div class="pane" role="tabpanel" id={`pane-${s}`} aria-labelledby={`tab-${s}`} hidden={i !== 0} tabindex="0">
+                <pre class="log" dir="ltr">{sourceLogs[s].map(([k, v]) => (
+                  <span class:list={['row', { 'row--ok': k === 'ok' }]}><span class="k">{k}</span>{v}</span>
+                ))}</pre>
+                <p class="pane-note">{t.deploy.notes[s]}</p>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="included">
+      <div class="container">
+        <h2>{t.included.h2}</h2>
+        <dl class="feature-list">
+          {
+            t.included.items.map((it) => (
+              <div>
+                <dt>{it.t}</dt>
+                <dd>{it.d}</dd>
+              </div>
+            ))
+          }
+        </dl>
+      </div>
+    </section>
+
+    <section class="compare">
+      <div class="container">
+        <h2>{t.compare.h2}</h2>
+        <table class="table">
+          <thead>
+            <tr>
+              <td></td>
+              <th scope="col">{t.compare.them}</th>
+              <th scope="col">{t.compare.us}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              t.compare.rows.map(([k, a, b]) => (
+                <tr>
+                  <th scope="row">{k}</th>
+                  <td class="them">{a}</td>
+                  <td class="us">{b}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="faq">
+      <div class="container faq-in">
+        <h2>{t.faq.h2}</h2>
+        <div class="faq-list">
+          {
+            t.faq.items.map((q) => (
+              <details>
+                <summary>{q.t}</summary>
+                <p>{q.d}</p>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="install" id="install">
+      <div class="container">
+        <h2>{t.install.h2}</h2>
+        <div class="cmd" dir="ltr">
+          <code>{installCmd}</code>
+          <button type="button" class="cmd-copy" data-copy={installCmd} data-copied={t.install.copied}>{t.install.copy}</button>
+        </div>
+        <ol class="steps">
+          {t.install.steps.map((s) => <li>{s}</li>)}
+        </ol>
+        <p class="update">{t.install.update} <code dir="ltr">dokyr update</code>.</p>
+        <div class="install-links">
+          <a href={repo}>{t.install.source}</a>
+          <a href={releases}>{t.install.releases}</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="picker" aria-label={t.picker.choose} dir="ltr" data-picker>
+    <div class="picker-stage">
+      {
+        themes.map((th) => (
+          <button
+            type="button"
+            class="picker-card"
+            data-card={th.id}
+            data-use={t.picker.use.replace('{name}', th.name)}
+            data-show={t.picker.show.replace('{name}', th.name)}
+          >
+            <img src={sitePath(`/themes/${th.id}.webp`)} width="960" height="600" alt={t.picker.alt.replace('{name}', th.name)} loading="lazy" decoding="async" />
+          </button>
+        ))
+      }
+    </div>
+    <div class="picker-info" dir={dir(lang)}>
+      <p class="picker-name" data-picker-name></p>
+      <p class="picker-meta" data-picker-meta data-light={t.picker.light} data-dark={t.picker.dark} data-current={t.picker.current}></p>
+      <ul class="picker-keys">
+        {t.picker.keys.map((k) => <li>{k}</li>)}
+      </ul>
+    </div>
+    <button type="button" class="picker-arrow picker-arrow--prev" data-step="-1" aria-label={t.picker.previous}>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" /></svg>
+    </button>
+    <button type="button" class="picker-arrow picker-arrow--next" data-step="1" aria-label={t.picker.next}>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg>
+    </button>
+  </dialog>
+
+  <footer class="foot">
+    <div class="container foot-in">
+      <Wordmark size={3} label="Dokyr" />
+      <p>{t.footer.license}</p>
+      <nav class="foot-langs" aria-label={t.footer.languages}>
+        {
+          locales.map((l) => (
+            <a href={pathFor(l)} hreflang={l} lang={l} aria-current={l === lang ? 'page' : undefined}>
+              {localeNames[l]}
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    import { sitePath } from '../data/site';
+    import { themes } from '../data/themes';
+    import { startPixels } from '../scripts/pixels';
+
+    const field = document.querySelector<HTMLCanvasElement>('.hero-field');
+    if (field) startPixels(field, [...document.querySelectorAll<HTMLElement>('[data-clear]')]);
+
+    const root = document.documentElement;
+    const ids = themes.map((t) => t.id);
+    const nameOf = (id: string) => themes.find((t) => t.id === id)?.name ?? id;
+
+    // The panel screenshots exist in every theme: show the ones that match the page.
+    const showShots = (id: string) =>
+      document.querySelectorAll<HTMLImageElement>('img[data-shot]').forEach((img) => {
+        img.src = sitePath(`/panel/${img.dataset.shot}-${id}.webp`);
+      });
+    showShots(root.dataset.theme ?? 'midnight');
+
+    const setTheme = (id: string) => {
+      root.dataset.theme = id;
+      try {
+        localStorage.setItem('dokyr-theme', id);
+      } catch {
+        /* storage blocked: the choice lasts for this page only */
+      }
+      document.querySelectorAll<HTMLElement>('[data-theme-name]').forEach((el) => (el.textContent = nameOf(id)));
+      showShots(id);
+    };
+    document.querySelectorAll<HTMLElement>('[data-theme-name]').forEach((el) => (el.textContent = nameOf(root.dataset.theme ?? 'midnight')));
+
+    // The theme carousel, as in the panel: browsing moves the cards; Enter or a click on the
+    // middle card applies the theme; Escape or a click on the backdrop leaves it unchanged.
+    const picker = document.querySelector<HTMLDialogElement>('[data-picker]');
+    if (picker) {
+      const cards = [...picker.querySelectorAll<HTMLButtonElement>('[data-card]')];
+      const nameEl = picker.querySelector<HTMLElement>('[data-picker-name]')!;
+      const metaEl = picker.querySelector<HTMLElement>('[data-picker-meta]')!;
+      const n = cards.length;
+      let index = 0;
+      const render = () => {
+        cards.forEach((card, i) => {
+          let o = i - index;
+          if (o > n / 2) o -= n;
+          if (o < -n / 2) o += n;
+          const d = Math.abs(o);
+          // Side cards turn away from the middle one, their inner edge receding behind it.
+          card.style.transform = `translate(-50%, -50%) translateX(${o * 34}%) rotateY(${-Math.sign(o) * 38}deg) scale(${o === 0 ? 1 : 0.82 - (d - 1) * 0.06})`;
+          card.style.zIndex = String(10 - d);
+          card.style.opacity = String(d > 2 ? 0 : o === 0 ? 1 : 0.5 - (d - 1) * 0.15);
+          card.dataset.pos = o === 0 ? 'mid' : d > 2 ? 'far' : 'side';
+          card.tabIndex = o === 0 ? 0 : -1;
+          card.setAttribute('aria-hidden', String(d > 2));
+          card.setAttribute('aria-label', o === 0 ? card.dataset.use! : card.dataset.show!);
+        });
+        const th = themes[index];
+        const current = (root.dataset.theme ?? 'midnight') === th.id;
+        nameEl.textContent = th.name;
+        metaEl.textContent = `${metaEl.dataset[th.mode]}, ${index + 1}/${n}${current ? `, ${metaEl.dataset.current}` : ''}`;
+      };
+      const go = (step: number) => {
+        index = (index + step + n) % n;
+        render();
+      };
+      const choose = () => {
+        setTheme(themes[index].id);
+        picker.close();
+      };
+      document.querySelector('[data-open-picker]')?.addEventListener('click', () => {
+        index = Math.max(0, ids.indexOf((root.dataset.theme ?? 'midnight') as (typeof ids)[number]));
+        render();
+        picker.showModal();
+        cards[index].focus();
+      });
+      cards.forEach((card, i) =>
+        card.addEventListener('click', () => {
+          if (i === index) choose();
+          else {
+            index = i;
+            render();
+            cards[index].focus();
+          }
+        }),
+      );
+      picker.querySelectorAll<HTMLButtonElement>('[data-step]').forEach((b) =>
+        b.addEventListener('click', () => go(Number(b.dataset.step))),
+      );
+      picker.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') go(-1);
+        else if (e.key === 'ArrowRight') go(1);
+        else return;
+        e.preventDefault();
+        cards[index].focus();
+      });
+      // A click on the backdrop lands on the dialog itself.
+      picker.addEventListener('click', (e) => {
+        if (e.target === picker) picker.close();
+      });
+    }
+
+    // T flips through the themes, as in the panel's own picker.
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() !== 't' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, [contenteditable]')) return;
+      const i = ids.indexOf((root.dataset.theme ?? 'midnight') as (typeof ids)[number]);
+      setTheme(ids[(i + (e.shiftKey ? -1 : 1) + ids.length) % ids.length]);
+    });
+
+    // Menus close on an outside click and on Escape.
+    const menus = [...document.querySelectorAll<HTMLDetailsElement>('details.menu')];
+    document.addEventListener('click', (e) => {
+      menus.forEach((m) => {
+        if (m.open && !m.contains(e.target as Node)) m.open = false;
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      menus.forEach((m) => {
+        if (m.open) {
+          m.open = false;
+          m.querySelector('summary')?.focus();
+        }
+      });
+    });
+    menus.forEach((m) =>
+      m.addEventListener('toggle', () => {
+        if (m.open) menus.forEach((o) => o !== m && (o.open = false));
+      }),
+    );
+
+    // Copy the install command.
+    document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(b.dataset.copy ?? '');
+          const label = b.textContent;
+          b.textContent = b.dataset.copied ?? label;
+          setTimeout(() => (b.textContent = label), 1600);
+        } catch {
+          /* clipboard blocked: the command stays selectable */
+        }
+      }),
+    );
+
+    // Deploy source tabs, with arrow keys (mirrored in right-to-left).
+    document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((wrap) => {
+      const tabs = [...wrap.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      const select = (tab: HTMLButtonElement) =>
+        tabs.forEach((x) => {
+          const on = x === tab;
+          x.setAttribute('aria-selected', String(on));
+          x.tabIndex = on ? 0 : -1;
+          const pane = document.getElementById(x.getAttribute('aria-controls') ?? '');
+          if (pane) pane.hidden = !on;
+        });
+      tabs.forEach((x, i) => {
+        x.addEventListener('click', () => select(x));
+        x.addEventListener('keydown', (e) => {
+          const rtl = root.dir === 'rtl';
+          const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+          if (!step) return;
+          const next = tabs[(i + (rtl ? -step : step) + tabs.length) % tabs.length];
+          select(next);
+          next.focus();
+        });
+      });
+    });
+  </script>
+</Base>

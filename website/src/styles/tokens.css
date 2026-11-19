@@ -1,0 +1,136 @@
+:root {
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 96px; --space-4xl: 144px;
+  --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.25rem; --text-xl: 1.5625rem; --text-2xl: 1.953rem; --text-3xl: 2.441rem;
+  --text-display-s: clamp(2.25rem, 4vw + 0.5rem, 3.75rem); --text-display: clamp(2.75rem, 5vw + 1rem, 5.25rem);
+  --text-section: clamp(2rem, 2.5vw + 1rem, 3.5rem); --text-title: clamp(1.25rem, 0.75vw + 0.875rem, 1.625rem); --text-lead: clamp(1.125rem, 0.35vw + 1rem, 1.375rem);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --color-error: oklch(52% 0.19 27); --color-success: oklch(50% 0.12 150);
+  --container: 1280px; --gutter: 64px; --gap-columns: 32px; --section-gap-s: 120px; --section-gap: 144px; --section-gap-l: 176px;
+  --z-base: 1; --z-raised: 10; --z-dropdown: 100; --z-sticky: 200; --z-sticky-nav: 300; --z-modal: 400; --z-toast: 500; --z-tooltip: 600;
+  --font-display: "JetBrains Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace; --font-body: "JetBrains Mono", "IBM Plex Sans Arabic", ui-monospace, SFMono-Regular, Menlo, monospace; --font-outlier: var(--font-body);
+  --radius-card: 0; --radius-pill: 999px; --rule-hair: 1px; --shadow-card: none;
+  --tracking-display: -0.02em;
+}
+
+/* The panel's twelve themes (panel/web/src/lib/theme.ts), one block each. Midnight is the default. */
+
+:root,
+[data-theme='midnight'] {
+  --color-paper: #0c0e12; --color-paper-2: #12151b; --color-paper-3: #181c24;
+  --color-ink: #d5d9e2; --color-ink-2: color-mix(in oklab, #d5d9e2 82%, #0c0e12); --color-muted: #7f8798;
+  --color-rule: #262b36; --color-rule-strong: #3a4150;
+  --color-accent: #9ece6a; --color-accent-ink: #0c0e12; --color-focus: #9ece6a;
+  --color-danger: #f7768e; --color-warn: #e0af68;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-paper: #f3f4f6; --color-paper-2: #ffffff; --color-paper-3: #eaecf0;
+    --color-ink: #1b1f27; --color-ink-2: color-mix(in oklab, #1b1f27 82%, #f3f4f6); --color-muted: #5d6474;
+    --color-rule: #d8dbe2; --color-rule-strong: #b5bac6;
+    --color-accent: #497a15; --color-accent-ink: #ffffff; --color-focus: #497a15;
+    --color-danger: #c42b48; --color-warn: #9a6200;
+    color-scheme: light;
+  }
+}
+
+[data-theme='paper'] {
+  --color-paper: #f3f4f6; --color-paper-2: #ffffff; --color-paper-3: #eaecf0;
+  --color-ink: #1b1f27; --color-ink-2: color-mix(in oklab, #1b1f27 82%, #f3f4f6); --color-muted: #5d6474;
+  --color-rule: #d8dbe2; --color-rule-strong: #b5bac6;
+  --color-accent: #497a15; --color-accent-ink: #ffffff; --color-focus: #497a15;
+  --color-danger: #c42b48; --color-warn: #9a6200;
+  color-scheme: light;
+}
+
+[data-theme='white'] {
+  --color-paper: #f4f4f4; --color-paper-2: #ffffff; --color-paper-3: #ebebeb;
+  --color-ink: #111111; --color-ink-2: color-mix(in oklab, #111111 82%, #f4f4f4); --color-muted: #5c5c5c;
+  --color-rule: #dcdcdc; --color-rule-strong: #a8a8a8;
+  --color-accent: #111111; --color-accent-ink: #ffffff; --color-focus: #111111;
+  --color-danger: #c4182b; --color-warn: #8a5a00;
+  color-scheme: light;
+}
+
+[data-theme='tokyo-night'] {
+  --color-paper: #16161e; --color-paper-2: #1a1b26; --color-paper-3: #24283b;
+  --color-ink: #c0caf5; --color-ink-2: color-mix(in oklab, #c0caf5 82%, #16161e); --color-muted: #878fb8;
+  --color-rule: #292e42; --color-rule-strong: #414868;
+  --color-accent: #7aa2f7; --color-accent-ink: #16161e; --color-focus: #7aa2f7;
+  --color-danger: #f7768e; --color-warn: #e0af68;
+  color-scheme: dark;
+}
+
+[data-theme='catppuccin'] {
+  --color-paper: #181825; --color-paper-2: #1e1e2e; --color-paper-3: #282839;
+  --color-ink: #cdd6f4; --color-ink-2: color-mix(in oklab, #cdd6f4 82%, #181825); --color-muted: #9399b2;
+  --color-rule: #313244; --color-rule-strong: #45475a;
+  --color-accent: #cba6f7; --color-accent-ink: #1e1e2e; --color-focus: #cba6f7;
+  --color-danger: #f38ba8; --color-warn: #f9e2af;
+  color-scheme: dark;
+}
+
+[data-theme='catppuccin-latte'] {
+  --color-paper: #e6e9ef; --color-paper-2: #eff1f5; --color-paper-3: #dce0e8;
+  --color-ink: #4c4f69; --color-ink-2: color-mix(in oklab, #4c4f69 82%, #e6e9ef); --color-muted: #5d6078;
+  --color-rule: #ccd0da; --color-rule-strong: #acb0be;
+  --color-accent: #843ae7; --color-accent-ink: #eff1f5; --color-focus: #843ae7;
+  --color-danger: #d20f39; --color-warn: #b86e00;
+  color-scheme: light;
+}
+
+[data-theme='everforest'] {
+  --color-paper: #232a2e; --color-paper-2: #2d353b; --color-paper-3: #343f44;
+  --color-ink: #d3c6aa; --color-ink-2: color-mix(in oklab, #d3c6aa 82%, #232a2e); --color-muted: #aaab99;
+  --color-rule: #3d484d; --color-rule-strong: #475258;
+  --color-accent: #a7c080; --color-accent-ink: #2d353b; --color-focus: #a7c080;
+  --color-danger: #e67e80; --color-warn: #dbbc7f;
+  color-scheme: dark;
+}
+
+[data-theme='gruvbox'] {
+  --color-paper: #1d2021; --color-paper-2: #282828; --color-paper-3: #32302f;
+  --color-ink: #ebdbb2; --color-ink-2: color-mix(in oklab, #ebdbb2 82%, #1d2021); --color-muted: #a89984;
+  --color-rule: #3c3836; --color-rule-strong: #504945;
+  --color-accent: #b8bb26; --color-accent-ink: #1d2021; --color-focus: #b8bb26;
+  --color-danger: #fb4934; --color-warn: #fabd2f;
+  color-scheme: dark;
+}
+
+[data-theme='nord'] {
+  --color-paper: #242933; --color-paper-2: #2e3440; --color-paper-3: #353c4a;
+  --color-ink: #eceff4; --color-ink-2: color-mix(in oklab, #eceff4 82%, #242933); --color-muted: #9ea8bd;
+  --color-rule: #3b4252; --color-rule-strong: #4c566a;
+  --color-accent: #88c0d0; --color-accent-ink: #2e3440; --color-focus: #88c0d0;
+  --color-danger: #bf616a; --color-warn: #ebcb8b;
+  color-scheme: dark;
+}
+
+[data-theme='rose-pine'] {
+  --color-paper: #191724; --color-paper-2: #1f1d2e; --color-paper-3: #26233a;
+  --color-ink: #e0def4; --color-ink-2: color-mix(in oklab, #e0def4 82%, #191724); --color-muted: #908caa;
+  --color-rule: #403d52; --color-rule-strong: #524f67;
+  --color-accent: #ebbcba; --color-accent-ink: #191724; --color-focus: #ebbcba;
+  --color-danger: #eb6f92; --color-warn: #f6c177;
+  color-scheme: dark;
+}
+
+[data-theme='kanagawa'] {
+  --color-paper: #16161d; --color-paper-2: #1f1f28; --color-paper-3: #2a2a37;
+  --color-ink: #dcd7ba; --color-ink-2: color-mix(in oklab, #dcd7ba 82%, #16161d); --color-muted: #969485;
+  --color-rule: #363646; --color-rule-strong: #54546d;
+  --color-accent: #7e9cd8; --color-accent-ink: #1f1f28; --color-focus: #7e9cd8;
+  --color-danger: #e46876; --color-warn: #ff9e3b;
+  color-scheme: dark;
+}
+
+[data-theme='flexoki-light'] {
+  --color-paper: #f2f0e5; --color-paper-2: #fffcf0; --color-paper-3: #e6e4d9;
+  --color-ink: #100f0f; --color-ink-2: color-mix(in oklab, #100f0f 82%, #f2f0e5); --color-muted: #666460;
+  --color-rule: #dad8ce; --color-rule-strong: #b7b5ac;
+  --color-accent: #227770; --color-accent-ink: #fffcf0; --color-focus: #227770;
+  --color-danger: #af3029; --color-warn: #ad8301;
+  color-scheme: light;
+}

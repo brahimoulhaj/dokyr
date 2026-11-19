@@ -1,0 +1,50 @@
+---
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/700.css';
+import '@fontsource/ibm-plex-sans-arabic/400.css';
+import '@fontsource/ibm-plex-sans-arabic/700.css';
+import '../styles/page.css';
+import { dir, locales, pathFor, type Locale } from '../i18n/strings';
+import { sitePath } from '../data/site';
+
+interface Props {
+  lang: Locale;
+  title: string;
+  description: string;
+}
+const { lang, title, description } = Astro.props;
+const canonical = new URL(pathFor(lang), Astro.site);
+---
+
+<!doctype html>
+<html lang={lang} dir={dir(lang)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {locales.map((l) => <link rel="alternate" hreflang={l} href={new URL(pathFor(l), Astro.site)} />)}
+    <link rel="alternate" hreflang="x-default" href={new URL(pathFor('en'), Astro.site)} />
+    <link rel="icon" type="image/svg+xml" href={sitePath('/favicon.svg')} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang} />
+    <script is:inline>
+      // Apply the saved theme before the first paint; without one, follow the system like the panel.
+      (function () {
+        var d = document.documentElement;
+        d.classList.add('js');
+        var t = null;
+        try { t = localStorage.getItem('dokyr-theme'); } catch (e) {}
+        if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'paper' : 'midnight';
+        d.dataset.theme = t;
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

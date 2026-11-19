@@ -1,0 +1,65 @@
+---
+// The Dokyr wordmark drawn on a pixel grid, the panel's pixel voice. In the hero the
+// pixels fall into place once; elsewhere it is still.
+interface Props {
+  size?: number;
+  animate?: boolean;
+  label: string;
+}
+const { size = 12, animate = false, label } = Astro.props;
+
+// A bold cut: every stem two pixels wide on a 6 by 7 grid.
+const glyphs: Record<string, string[]> = {
+  D: ['111110', '110011', '110011', '110011', '110011', '110011', '111110'],
+  O: ['011110', '110011', '110011', '110011', '110011', '110011', '011110'],
+  K: ['110011', '110110', '111100', '111000', '111100', '110110', '110011'],
+  Y: ['110011', '110011', '011110', '001100', '001100', '001100', '001100'],
+  R: ['111110', '110011', '110011', '111110', '111100', '110110', '110011'],
+};
+const word = 'DOKYR';
+
+// A fixed seed, so every build draws the same scatter.
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+const cells: { x: number; y: number; dx: number; dy: number; d: number; tone: number }[] = [];
+word.split('').forEach((ch, li) => {
+  glyphs[ch].forEach((row, y) => {
+    row.split('').forEach((on, x) => {
+      if (on !== '1') return;
+      cells.push({
+        x: li * 7 + x,
+        y,
+        dx: +((rand() - 0.5) * 8).toFixed(2),
+        dy: +(-1.5 - rand() * 5).toFixed(2),
+        d: Math.round(rand() * 380),
+        tone: rand() < 0.12 ? 1 : 0,
+      });
+    });
+  });
+});
+const cols = word.length * 7 - 1;
+---
+
+<svg
+  class:list={['wordmark', { 'wordmark--fall': animate }]}
+  viewBox={`0 0 ${cols} 7`}
+  width={cols * size}
+  height={7 * size}
+  role="img"
+  aria-label={label}
+  shape-rendering="crispEdges"
+>
+  {
+    cells.map((c) => (
+      <rect
+        x={c.x + 0.04}
+        y={c.y + 0.04}
+        width="0.92"
+        height="0.92"
+        class={`px px--r${c.y}${c.tone ? ' px--dim' : ''}`}
+        style={animate ? `--dx:${c.dx}px;--dy:${c.dy}px;--d:${c.d}ms` : undefined}
+      />
+    ))
+  }
+</svg>
