@@ -4,6 +4,7 @@ import { BuiltinForm, PushHelp, Repositories, StateBadge, Tokens, TurnOff } from
 import { cx, PageHeader, Panel, QueryState } from '../components/ui'
 import { registrySettingsQuery } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 
 export const builtinTabs = ['images', 'settings'] as const
 export type BuiltinTab = (typeof builtinTabs)[number]
@@ -11,6 +12,7 @@ export type BuiltinTab = (typeof builtinTabs)[number]
 /** The built-in registry on its own page: its images (with how to push and pull), and settings (with tokens). */
 export function BuiltinRegistryPage() {
   const t = useT()
+  const can = useCan()
   const tb = t.builtinRegistry
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { tab?: string }
@@ -58,8 +60,10 @@ export function BuiltinRegistryPage() {
       {tab === 'settings' && (
         <>
           <Panel title={tb.tabs.settings}>
-            <BuiltinForm saved={rs} mode="edit" />
-            <TurnOff saved={rs} onDone={() => navigate({ to: '/registry' })} />
+            {can.admin ? <>
+              <BuiltinForm saved={rs} mode="edit" />
+              <TurnOff saved={rs} onDone={() => navigate({ to: '/registry' })} />
+            </> : <p className="p-4 text-sm text-muted">{t.common.adminOnly}</p>}
           </Panel>
           <Tokens />
         </>

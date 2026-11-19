@@ -89,12 +89,13 @@ export function SettingsPage() {
 export function PanelDomain({ bare = false }: { bare?: boolean }) {
   const settings = useQuery(panelSettingsQuery)
   const t = useT()
+  const can = useCan()
   const [open, setOpen] = useState(false)
   const current = settings.data
   return (
     <Panel
       title={bare ? undefined : t.settings.panelDomain}
-      actions={current && (
+      actions={current && can.admin && (
         <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setOpen(true)}>
           {current.domain ? t.common.edit : t.settings.setDomain}
         </Button>

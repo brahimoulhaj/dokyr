@@ -4,6 +4,7 @@ import { Badge, Button, CheckOption, HelpTip, ErrorNote, Panel, QueryState } fro
 import { api, updatesQuery, type Updates } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 import { rememberUpdated } from '../lib/toasts'
 import { toast } from '@yusufceng1z/ding-react'
 
@@ -29,6 +30,7 @@ export function PanelUpdates() {
 function UpdatesBody({ u }: { u: Updates }) {
   const queryClient = useQueryClient()
   const t = useT()
+  const can = useCan()
   const set = (next: Updates) => queryClient.setQueryData(updatesQuery.queryKey, next)
   const [restarting, setRestarting] = useState<string | null>(null) // finished_at of the result before the update
 
@@ -126,13 +128,13 @@ function UpdatesBody({ u }: { u: Updates }) {
               {t.settingsUpdates.pullsNote(u.latest_image ?? '')}
             </p>
           </div>
-          <Button type="button" disabled={busy || apply.isPending} onClick={() => apply.mutate()}>
+          {can.admin && <Button type="button" disabled={busy || apply.isPending} onClick={() => apply.mutate()}>
             {apply.isPending ? t.settingsUpdates.pulling : t.settingsUpdates.updateNow}
-          </Button>
+          </Button>}
         </div>
       )}
 
-      <div className="p-4"><CheckOption checked={u.auto} disabled={auto.isPending} onChange={(on) => auto.mutate(on)} label={t.settingsUpdates.auto} hint={t.settingsUpdates.autoHint} /></div>
+      <div className="p-4"><CheckOption checked={u.auto} disabled={auto.isPending || !can.admin} onChange={(on) => auto.mutate(on)} label={t.settingsUpdates.auto} hint={t.settingsUpdates.autoHint} /></div>
       {auto.error && (
         <div className="px-4 pb-4">
           <ErrorNote>{auto.error.message}</ErrorNote>
