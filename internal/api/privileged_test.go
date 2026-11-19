@@ -243,7 +243,8 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Fatalf("no HSTS over https: %v", h)
 	}
 	page := get("/projects").Get("Content-Security-Policy")
-	if !strings.Contains(page, "script-src 'self';") || !strings.Contains(page, "frame-ancestors 'none'") {
+	// The GitHub App manifest is posted to github.com from the settings pages.
+	if !strings.Contains(page, "script-src 'self';") || !strings.Contains(page, "frame-ancestors 'none'") || !strings.Contains(page, "form-action 'self' https://github.com;") {
 		t.Fatalf("page policy = %q", page)
 	}
 	// An inline script of index.html is allowed by its hash, and only that one.

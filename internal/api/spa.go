@@ -17,6 +17,8 @@ var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
 // pageCSP is the policy of the web app's page: its own files only, plus the inline
 // scripts index.html itself carries (the theme applied before first paint), by hash.
 // Styles may be inline: the terminal and the charts set them from code.
+// Forms go to the panel itself, and to GitHub: creating a GitHub App (for a Git
+// connection or for GitHub sign-in) posts its manifest there.
 func pageCSP(index []byte) string {
 	scripts := "script-src 'self'"
 	for _, m := range inlineScriptRe.FindAllSubmatch(index, -1) {
@@ -25,7 +27,7 @@ func pageCSP(index []byte) string {
 	}
 	return "default-src 'self'; " + scripts + "; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; " +
 		"font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self'; " +
-		"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		"object-src 'none'; base-uri 'self'; form-action 'self' https://github.com; frame-ancestors 'none'"
 }
 
 // spa serves the embedded web app. Unknown paths fall back to index.html so that
