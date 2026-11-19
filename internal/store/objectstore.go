@@ -2,8 +2,12 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
+
+	"panel/internal/id"
 )
 
 const settingObjectStore = "object_store"
@@ -67,4 +71,71 @@ func (s *Store) SetObjectStoreSettings(ctx context.Context, in ObjectStoreSettin
 		return err
 	}
 	return s.SetSetting(ctx, settingObjectStore, string(raw))
+}
+
+// Permissions of an access key of the built-in storage.
+const (
+	S3KeyRead  = "read"
+	S3KeyWrite = "write" // read, write and delete objects
+)
+
+// S3AccessKey is an access key of the built-in storage limited to one bucket, without its
+// secret, which is never stored.
+type S3AccessKey struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Bucket     string    `json:"bucket"`
+	AccessKey  string    `json:"access_key"`
+	Permission string    `json:"permission"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+const s3KeyCols = `id, name, bucket, access_key, permission, created_at`
+
+func scanS3Key(row scanner) (S3AccessKey, error) {
+	var k S3AccessKey
+	var created string
+	err := row.Scan(&k.ID, &k.Name, &k.Bucket, &k.AccessKey, &k.Permission, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return S3AccessKey{}, ErrNotFound
+	}
+	k.CreatedAt = parseTime(created)
+	return k, err
+}
+
+func (s *Store) CreateS3AccessKey(ctx context.Context, k S3AccessKey) (S3AccessKey, error) {
+	kid, ts := id.New(), now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO s3_access_keys (id, name, bucket, access_key, permission, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		kid, k.Name, k.Bucket, k.AccessKey, k.Permission, ts, ts)
+	if err != nil {
+		return S3AccessKey{}, conflict(err)
+	}
+	return s.GetS3AccessKey(ctx, kid)
+}
+
+func (s *Store) GetS3AccessKey(ctx context.Context, keyID string) (S3AccessKey, error) {
+	return scanS3Key(s.db.QueryRowContext(ctx, `SELECT `+s3KeyCols+` FROM s3_access_keys WHERE id = ?`, keyID))
+}
+
+// ListS3AccessKeys lists the keys, by bucket then name; bucket "" lists all of them.
+func (s *Store) ListS3AccessKeys(ctx context.Context, bucket string) ([]S3AccessKey, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+s3KeyCols+` FROM s3_access_keys WHERE ? = '' OR bucket = ? ORDER BY bucket, name, id`, bucket, bucket)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []S3AccessKey{}
+	for rows.Next() {
+		k, err := scanS3Key(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteS3AccessKey(ctx context.Context, keyID string) error {
+	return affected(s.db.ExecContext(ctx, `DELETE FROM s3_access_keys WHERE id = ?`, keyID))
 }

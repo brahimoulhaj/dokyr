@@ -1,17 +1,20 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { Button, cx, ErrorNote } from '../components/ui'
-import { api, metaQuery, onboardingQuery } from '../lib/api'
+import { api, metaQuery, objectStoreQuery, onboardingQuery } from '../lib/api'
 import { rich, useT } from '../lib/i18n'
+import { RegistryPage } from './registries'
 import { PanelDomain } from './settings'
+import { NotificationSettings } from './settings-notifications'
+import { StorageSettings } from './settings-storage'
 
 const route = getRouteApi('/onboarding')
 
 /**
  * Optional first-run steps after the owner is created. Every step can be skipped, and the
- * whole guide stays reachable from Settings. Later milestones add their steps here
- * (S3 connection, registry, notifications).
+ * whole guide stays reachable from Settings. Each step reuses the screen it stands for, so
+ * what is set here is what Settings, Registry and Storage show later.
  */
 const allSteps = (t: ReturnType<typeof useT>): { id: string; title: string; intro: string; body: () => ReactNode }[] => [
   {
@@ -19,6 +22,24 @@ const allSteps = (t: ReturnType<typeof useT>): { id: string; title: string; intr
     title: t.onboarding.domainTitle,
     intro: t.onboarding.domainIntro,
     body: () => <PanelDomain bare />,
+  },
+  {
+    id: 'storage',
+    title: t.onboarding.storageTitle,
+    intro: t.onboarding.storageIntro,
+    body: () => <StorageStep />,
+  },
+  {
+    id: 'registry',
+    title: t.onboarding.registryTitle,
+    intro: t.onboarding.registryIntro,
+    body: () => <RegistryPage bare />,
+  },
+  {
+    id: 'notifications',
+    title: t.onboarding.notificationsTitle,
+    intro: t.onboarding.notificationsIntro,
+    body: () => <NotificationSettings />,
   },
   {
     id: 'deploy',
@@ -113,5 +134,22 @@ export function OnboardingPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+/** S3 connections, and the built-in storage offered while it is off. */
+function StorageStep() {
+  const t = useT()
+  // 503 when this panel has no built-in storage: then it is not offered.
+  const builtin = useQuery({ ...objectStoreQuery, retry: false })
+  return (
+    <div className="space-y-3">
+      <StorageSettings bare />
+      {builtin.data && !builtin.data.enabled && (
+        <p className="text-xs text-muted">
+          {rich(t.onboarding.storageBuiltin, { a: (c) => <Link to="/storage" className="text-accent hover:underline">{c}</Link> })}
+        </p>
+      )}
+    </div>
   )
 }

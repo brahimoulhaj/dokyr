@@ -23,6 +23,9 @@ type ObjectStore interface {
 	Buckets(ctx context.Context) ([]objectstore.Bucket, error)
 	CreateBucket(ctx context.Context, name string) error
 	DeleteBucket(ctx context.Context, name string) error
+	AccessKeys(ctx context.Context, bucket string) ([]store.S3AccessKey, error)
+	CreateAccessKey(ctx context.Context, name, bucket, permission string) (store.S3AccessKey, string, error)
+	DeleteAccessKey(ctx context.Context, keyID string) (store.S3AccessKey, error)
 }
 
 func (s *Server) SetObjectStore(o ObjectStore) { s.objectStore = o }
@@ -34,7 +37,6 @@ type objectStoreJSON struct {
 	State        string `json:"state"`
 	Endpoint     string `json:"endpoint"`
 	ConnectionID string `json:"connection_id"`
-	AccessKey    string `json:"access_key"`
 	Image        string `json:"image,omitempty"`
 }
 
@@ -52,7 +54,7 @@ func (s *Server) objectStoreJSON(ctx context.Context) (objectStoreJSON, error) {
 		return objectStoreJSON{}, err
 	}
 	out := objectStoreJSON{Enabled: cfg.Enabled, Domain: cfg.Domain, TLSMode: cfg.TLSMode, ConnectionID: cfg.ConnectionID,
-		AccessKey: cfg.AccessKey, State: s.objectStore.State(ctx), Endpoint: s.objectStore.Endpoint()}
+		State: s.objectStore.State(ctx), Endpoint: s.objectStore.Endpoint()}
 	if out.TLSMode == "" {
 		out.TLSMode = store.TLSAuto
 	}
@@ -161,24 +163,6 @@ func (s *Server) handlePutObjectStore(w http.ResponseWriter, r *http.Request) {
 	s.handleGetObjectStore(w, r)
 }
 
-// handleObjectStoreCredentials reveals the root secret key, for clients outside the panel.
-func (s *Server) handleObjectStoreCredentials(w http.ResponseWriter, r *http.Request) {
-	if !s.requireObjectStore(w) {
-		return
-	}
-	cfg, err := s.objectStore.Settings(r.Context())
-	if err != nil {
-		s.internal(w, "object storage credentials", err)
-		return
-	}
-	if cfg.SecretKey == "" {
-		writeError(w, http.StatusNotFound, "not_found", "the storage has not been turned on yet")
-		return
-	}
-	s.audit(r, "object_store.reveal", "settings", "object-store", "", "root credentials shown")
-	writeJSON(w, http.StatusOK, map[string]string{"access_key": cfg.AccessKey, "secret_key": cfg.SecretKey})
-}
-
 func (s *Server) objectStoreError(w http.ResponseWriter, what string, err error) bool {
 	switch {
 	case err == nil:
@@ -189,11 +173,15 @@ func (s *Server) objectStoreError(w http.ResponseWriter, what string, err error)
 		invalid(w, err.Error())
 	case errors.Is(err, objectstore.ErrNotEmpty):
 		writeError(w, http.StatusConflict, "not_empty", "the bucket still holds objects; empty it first")
+	case errors.Is(err, objectstore.ErrInvalidKey):
+		invalid(w, err.Error())
+	case errors.Is(err, objectstore.ErrNoBucket):
+		invalid(w, "no such bucket")
 	case errors.Is(err, store.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "no such bucket")
+		writeError(w, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):
 		msg := "a bucket with this name exists"
-		if m := err.Error(); strings.Contains(m, "connection") {
+		if m := err.Error(); m != store.ErrConflict.Error() {
 			msg = strings.TrimPrefix(m, store.ErrConflict.Error()+": ")
 		}
 		writeError(w, http.StatusConflict, "conflict", msg)
@@ -242,5 +230,54 @@ func (s *Server) handleDeleteBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "object_store.bucket_delete", "bucket", name, name, "")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListAccessKeys(w http.ResponseWriter, r *http.Request) {
+	if !s.requireObjectStore(w) {
+		return
+	}
+	keys, err := s.objectStore.AccessKeys(r.Context(), r.URL.Query().Get("bucket"))
+	if err != nil {
+		s.internal(w, "list access keys", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, keys)
+}
+
+// handleCreateAccessKey makes a key for one bucket; its secret is in this answer only.
+func (s *Server) handleCreateAccessKey(w http.ResponseWriter, r *http.Request) {
+	if !s.requireObjectStore(w) {
+		return
+	}
+	var in struct {
+		Name       string `json:"name"`
+		Bucket     string `json:"bucket"`
+		Permission string `json:"permission"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	key, secret, err := s.objectStore.CreateAccessKey(r.Context(), in.Name, strings.TrimSpace(in.Bucket), in.Permission)
+	if s.objectStoreError(w, "create access key", err) {
+		return
+	}
+	s.audit(r, "object_store.key_create", "bucket", key.Bucket, key.Name, key.Permission+" on "+key.Bucket+", "+key.AccessKey)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, struct {
+		store.S3AccessKey
+		SecretKey string `json:"secret_key"`
+	}{key, secret})
+}
+
+func (s *Server) handleDeleteAccessKey(w http.ResponseWriter, r *http.Request) {
+	if !s.requireObjectStore(w) {
+		return
+	}
+	key, err := s.objectStore.DeleteAccessKey(r.Context(), r.PathValue("id"))
+	if s.objectStoreError(w, "delete access key", err) {
+		return
+	}
+	s.audit(r, "object_store.key_delete", "bucket", key.Bucket, key.Name, key.AccessKey)
 	w.WriteHeader(http.StatusNoContent)
 }

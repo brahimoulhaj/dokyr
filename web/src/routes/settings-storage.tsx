@@ -9,13 +9,13 @@ import { useCan } from '../lib/roles'
 
 /** Settings → Storage: S3-compatible connections — add (checked by writing a small file),
  * test again, remove. */
-export function StorageSettings() {
+export function StorageSettings({ bare = false }: { bare?: boolean }) {
   const conns = useQuery(s3ConnectionsQuery)
   const [adding, setAdding] = useState(false)
   const t = useT().settingsStorage
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted">{t.intro}</p>
+      {!bare && <p className="text-sm text-muted">{t.intro}</p>}
       <QueryState loading={conns.isPending} error={conns.error} what={t.what} />
       {conns.data && (
         <Panel

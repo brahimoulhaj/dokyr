@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -382,6 +383,13 @@ func (s *Service) DeleteBucket(ctx context.Context, name string) error {
 			return fmt.Errorf("%w: the storage connection %q uses it", store.ErrConflict, c.Name)
 		}
 	}
+	keys, err := s.opts.Store.ListS3AccessKeys(ctx, name)
+	if err != nil {
+		return err
+	}
+	if len(keys) > 0 {
+		return fmt.Errorf("%w: the access key %q uses it; delete its keys first", store.ErrConflict, keys[0].Name)
+	}
 	for o := range cl.ListObjects(ctx, name, minio.ListObjectsOptions{Recursive: true, MaxKeys: 1}) {
 		if o.Err != nil {
 			return o.Err
@@ -389,4 +397,115 @@ func (s *Service) DeleteBucket(ctx context.Context, name string) error {
 		return ErrNotEmpty
 	}
 	return cl.RemoveBucket(ctx, name)
+}
+
+// ErrNoBucket: an access key was asked for a bucket that does not exist.
+var ErrNoBucket = errors.New("no such bucket")
+
+// ErrInvalidKey: an access key's name or permission is not valid.
+var ErrInvalidKey = errors.New("an access key needs a name of at most 64 characters and a permission, read or write")
+
+// admin signs in to the storage's admin API with the root credentials.
+func (s *Service) admin(ctx context.Context) (*adminClient, error) {
+	cfg, err := s.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !cfg.Enabled || cfg.SecretKey == "" {
+		return nil, ErrOff
+	}
+	return &adminClient{endpoint: s.Endpoint(), accessKey: cfg.AccessKey, secretKey: cfg.SecretKey}, nil
+}
+
+// AccessKeys lists the access keys limited to one bucket; bucket "" lists all.
+func (s *Service) AccessKeys(ctx context.Context, bucket string) ([]store.S3AccessKey, error) {
+	return s.opts.Store.ListS3AccessKeys(ctx, bucket)
+}
+
+// CreateAccessKey makes a key that can only reach one bucket: read (list and download) or
+// write (read, upload and delete objects). It is a service account of the root user in the
+// storage, narrowed by an inline policy. The secret is returned once and not kept.
+func (s *Service) CreateAccessKey(ctx context.Context, name, bucket, permission string) (store.S3AccessKey, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 64 || (permission != store.S3KeyRead && permission != store.S3KeyWrite) {
+		return store.S3AccessKey{}, "", ErrInvalidKey
+	}
+	cl, err := s.client(ctx)
+	if err != nil {
+		return store.S3AccessKey{}, "", err
+	}
+	if ok, err := cl.BucketExists(ctx, bucket); err != nil {
+		return store.S3AccessKey{}, "", err
+	} else if !ok {
+		return store.S3AccessKey{}, "", ErrNoBucket
+	}
+	adm, err := s.admin(ctx)
+	if err != nil {
+		return store.S3AccessKey{}, "", err
+	}
+	access, err := randomKey(10)
+	if err != nil {
+		return store.S3AccessKey{}, "", err
+	}
+	secret, err := randomKey(20)
+	if err != nil {
+		return store.S3AccessKey{}, "", err
+	}
+	policy, err := bucketPolicy(bucket, permission)
+	if err != nil {
+		return store.S3AccessKey{}, "", err
+	}
+	if err := adm.addServiceAccount(ctx, serviceAccount{Policy: policy, AccessKey: access, SecretKey: secret, Name: name,
+		Description: "Made by the panel for bucket " + bucket}); err != nil {
+		return store.S3AccessKey{}, "", fmt.Errorf("create access key: %w", err)
+	}
+	key, err := s.opts.Store.CreateS3AccessKey(ctx, store.S3AccessKey{Name: name, Bucket: bucket, AccessKey: access, Permission: permission})
+	if err != nil {
+		// Do not leave a key in the storage that the panel does not list.
+		_ = adm.deleteServiceAccount(context.WithoutCancel(ctx), access)
+		return store.S3AccessKey{}, "", err
+	}
+	return key, secret, nil
+}
+
+// DeleteAccessKey revokes a key in the storage, then forgets it. A key the storage no
+// longer knows is forgotten all the same.
+func (s *Service) DeleteAccessKey(ctx context.Context, keyID string) (store.S3AccessKey, error) {
+	key, err := s.opts.Store.GetS3AccessKey(ctx, keyID)
+	if err != nil {
+		return key, err
+	}
+	adm, err := s.admin(ctx)
+	if err != nil {
+		return key, err
+	}
+	if err := adm.deleteServiceAccount(ctx, key.AccessKey); err != nil {
+		var ae *adminError
+		if !errors.As(err, &ae) || !strings.Contains(strings.ToLower(ae.Error()), "not exist") {
+			return key, fmt.Errorf("revoke access key: %w", err)
+		}
+	}
+	return key, s.opts.Store.DeleteS3AccessKey(ctx, keyID)
+}
+
+// bucketPolicy is the inline policy of a key limited to bucket.
+func bucketPolicy(bucket, permission string) (json.RawMessage, error) {
+	bucketActions := []string{"s3:GetBucketLocation", "s3:ListBucket"}
+	objectActions := []string{"s3:GetObject"}
+	if permission == store.S3KeyWrite {
+		bucketActions = append(bucketActions, "s3:ListBucketMultipartUploads")
+		objectActions = append(objectActions, "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts")
+	}
+	type statement struct {
+		Effect   string
+		Action   []string
+		Resource []string
+	}
+	return json.Marshal(struct {
+		Version   string
+		Statement []statement
+	}{"2012-10-17", []statement{
+		{"Allow", bucketActions, []string{"arn:aws:s3:::" + bucket}},
+		{"Allow", objectActions, []string{"arn:aws:s3:::" + bucket + "/*"}},
+	}})
 }

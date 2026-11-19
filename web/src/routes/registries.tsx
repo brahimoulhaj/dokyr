@@ -13,7 +13,7 @@ type SheetKind = 'external' | 'builtin' | null
 
 /** The Registries page: one list of every registry apps pull from — the built-in one on
  * this server first (when on), then the external ones. Adding either opens a sheet. */
-export function RegistryPage() {
+export function RegistryPage({ bare = false }: { bare?: boolean }) {
   const t = useT()
   const tr = t.registries
   const externals = useQuery(registriesQuery)
@@ -26,20 +26,29 @@ export function RegistryPage() {
   const empty = !loading && !builtinOn && (externals.data?.length ?? 0) === 0
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={tr.title}
-        subtitle={tr.listIntro}
-        actions={
-          !empty &&
-          !loading && (
-            <>
-              <Button variant="ghost" onClick={() => setSheet('external')}>{tr.addExternal}</Button>
-              {canEnable && <Button onClick={() => setSheet('builtin')}>{tr.enableBuiltin}</Button>}
-            </>
-          )
-        }
-      />
+    <div className={bare ? 'space-y-3' : 'space-y-6'}>
+      {bare ? (
+        !empty && !loading && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => setSheet('external')}>{tr.addExternal}</Button>
+            {canEnable && <Button onClick={() => setSheet('builtin')}>{tr.enableBuiltin}</Button>}
+          </div>
+        )
+      ) : (
+        <PageHeader
+          title={tr.title}
+          subtitle={tr.listIntro}
+          actions={
+            !empty &&
+            !loading && (
+              <>
+                <Button variant="ghost" onClick={() => setSheet('external')}>{tr.addExternal}</Button>
+                {canEnable && <Button onClick={() => setSheet('builtin')}>{tr.enableBuiltin}</Button>}
+              </>
+            )
+          }
+        />
+      )}
       <QueryState loading={loading} error={externals.error} what={tr.what} />
       {empty && <EmptyRegistries canEnable={canEnable} onPick={setSheet} />}
       {!empty && !loading && (

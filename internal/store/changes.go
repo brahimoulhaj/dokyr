@@ -23,7 +23,7 @@ var watchedTables = map[string]bool{
 	"domains": true, "domain_routes": true, "events": true,
 	"db_instances": true, "db_operations": true, "db_backups": true, "backup_policies": true,
 	"db_databases": true, "db_users": true, "db_user_grants": true,
-	"registries": true, "registry_tokens": true, "git_sources": true, "s3_connections": true,
+	"registries": true, "registry_tokens": true, "git_sources": true, "s3_connections": true, "s3_access_keys": true,
 	"notification_channels": true, "alert_rules": true, "settings": true, "api_tokens": true,
 	"sessions": true, "cron_jobs": true, "cron_job_runs": true,
 }

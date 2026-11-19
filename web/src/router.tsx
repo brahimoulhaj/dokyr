@@ -18,7 +18,7 @@ import { SetupPage } from './routes/setup'
 import { InvitePage } from './routes/invite'
 import { DatabasesPage } from './routes/databases'
 import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
-import { StoragePage } from './routes/storage'
+import { StoragePage, storageTabs, type StorageTab } from './routes/storage'
 import { BackupsPage, GitPage, TokensPage } from './routes/system-pages'
 import { CronJobsPage } from './routes/cron-jobs'
 
@@ -131,7 +131,12 @@ const databaseRoute = createRoute({
 })
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
 const domainsRoute = createRoute({ getParentRoute: () => appRoute, path: '/domains', component: DomainsPage })
-const storageRoute = createRoute({ getParentRoute: () => appRoute, path: '/storage', component: StoragePage })
+const storageRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storage',
+  validateSearch: (s: Record<string, unknown>): { tab?: StorageTab } => (storageTabs.includes(s.tab as StorageTab) ? { tab: s.tab as StorageTab } : {}),
+  component: StoragePage,
+})
 const builtinRegistryRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/registry/builtin',

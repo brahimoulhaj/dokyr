@@ -21,6 +21,7 @@ export const en = {
   needsDomain: 'Needs a domain first.',
   onIpWarning: 'You are on the IP address now. After saving, open the domain instead; check it works first.',
   lockedOut: 'Locked out? On the server: <cmd/>, then open http://localhost:8080. Removing the domain turns IP access back on.',
+  setDomain: 'Set domain',
   removeDomain: 'Remove domain',
   servedOn: 'Served on <url/>',
   httpOnlyNote: '(HTTP only, HTTPS from your CDN)',
@@ -49,6 +50,7 @@ export const fr: typeof en = {
     "Vous êtes actuellement sur l'adresse IP. Après l'enregistrement, ouvrez plutôt le domaine ; vérifiez d'abord qu'il fonctionne.",
   lockedOut:
     "Accès perdu ? Sur le serveur : <cmd/>, puis ouvrez http://localhost:8080. Retirer le domaine réactive l'accès par IP.",
+  setDomain: 'Définir un domaine',
   removeDomain: 'Retirer le domaine',
   servedOn: 'Servi sur <url/>',
   httpOnlyNote: '(HTTP uniquement, HTTPS assuré par votre CDN)',
@@ -75,6 +77,7 @@ export const ar: typeof en = {
   needsDomain: 'يتطلب نطاقاً أولاً.',
   onIpWarning: 'أنت الآن على عنوان IP. بعد الحفظ افتح النطاق بدلاً منه؛ تأكد أولاً من أنه يعمل.',
   lockedOut: 'تعذّر الدخول؟ على الخادم: <cmd/>، ثم افتح http://localhost:8080. إزالة النطاق تعيد تفعيل الوصول عبر IP.',
+  setDomain: 'تعيين نطاق',
   removeDomain: 'إزالة النطاق',
   servedOn: 'متاحة على <url/>',
   httpOnlyNote: '(HTTP فقط، و HTTPS من CDN الخاص بك)',
@@ -102,6 +105,7 @@ export const es: typeof en = {
   onIpWarning: 'Ahora estás en la dirección IP. Tras guardar, abre el dominio; comprueba antes que funciona.',
   lockedOut:
     '¿Te has quedado fuera? En el servidor: <cmd/>, luego abre http://localhost:8080. Quitar el dominio reactiva el acceso por IP.',
+  setDomain: 'Definir dominio',
   removeDomain: 'Quitar dominio',
   servedOn: 'Servido en <url/>',
   httpOnlyNote: '(solo HTTP, HTTPS desde tu CDN)',

@@ -1,53 +1,65 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import { toast } from '@yusufceng1z/ding-react'
+import { useState, type FormEvent } from 'react'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Button, ErrorNote, Field, Panel, QueryState } from '../components/ui'
 import { api, buildSettingsQuery, type BuildLimits, type BuildSettings } from '../lib/api'
 import { useT } from '../lib/i18n'
 
-/** CPU and memory caps shared by Git builds. */
+function useDescribe() {
+  const tb = useT().settingsBuilds
+  return (l: BuildLimits) =>
+    [l.cpus > 0 ? tb.cpuValue(l.cpus) : tb.cpuNoCap, l.memory_mb > 0 ? tb.memoryValue(l.memory_mb) : tb.memoryNoCap] as const
+}
+
+/** CPU and memory caps shared by Git builds: the caps in force, edited in a sheet. */
 export function BuildSettingsSection() {
   const settings = useQuery(buildSettingsQuery)
   const t = useT()
+  const tb = t.settingsBuilds
+  const describe = useDescribe()
+  const [open, setOpen] = useState(false)
   return (
-    <Panel title={t.settingsBuilds.title}>
+    <Panel
+      title={tb.title}
+      actions={settings.data && <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setOpen(true)}>{t.common.edit}</Button>}
+    >
       {!settings.data ? (
         <div className="p-4">
-          <QueryState loading={settings.isPending} error={settings.error} what={t.settingsBuilds.what} />
+          <QueryState loading={settings.isPending} error={settings.error} what={tb.what} />
         </div>
       ) : (
-        <BuildSettingsForm current={settings.data} />
+        <div className="space-y-1 p-4 text-sm">
+          <p>{tb.current(...describe(settings.data))}</p>
+          <p className="text-xs text-muted">{tb.defaults(...describe(settings.data.defaults))}</p>
+        </div>
       )}
+      <Sheet open={open} onOpenChange={setOpen} title={tb.title} description={tb.intro}>
+        {open && settings.data && <BuildSettingsForm current={settings.data} onDone={() => setOpen(false)} />}
+      </Sheet>
     </Panel>
   )
 }
 
-function BuildSettingsForm({ current }: { current: BuildSettings }) {
+function BuildSettingsForm({ current, onDone }: { current: BuildSettings; onDone: () => void }) {
   const queryClient = useQueryClient()
   const t = useT()
   const tb = t.settingsBuilds
   const [cpus, setCpus] = useState(String(current.cpus))
   const [memory, setMemory] = useState(String(current.memory_mb))
-  const [notice, setNotice] = useState('')
-  useEffect(() => {
-    setCpus(String(current.cpus))
-    setMemory(String(current.memory_mb))
-  }, [current.cpus, current.memory_mb])
-
-  const describe = (l: BuildLimits) =>
-    [l.cpus > 0 ? tb.cpuValue(l.cpus) : tb.cpuNoCap, l.memory_mb > 0 ? tb.memoryValue(l.memory_mb) : tb.memoryNoCap] as const
+  const describe = useDescribe()
 
   const onSuccess = (s: BuildSettings) => {
     queryClient.setQueryData(buildSettingsQuery.queryKey, s)
-    setNotice(tb.saved)
+    toast.success(tb.saved)
+    onDone()
   }
   const save = useMutation({
     mutationFn: (body: BuildLimits) => api<BuildSettings>('/settings/builds', { method: 'PUT', body }),
-    onMutate: () => setNotice(''),
     onSuccess,
   })
   const reset = useMutation({
     mutationFn: () => api<BuildSettings>('/settings/builds', { method: 'DELETE' }),
-    onMutate: () => setNotice(''),
     onSuccess,
   })
 
@@ -62,9 +74,8 @@ function BuildSettingsForm({ current }: { current: BuildSettings }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 p-4">
-      <p className="text-sm text-muted">{tb.intro}</p>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <div className="space-y-5">
         <Field
           label={tb.cpus}
           name="build-cpus"
@@ -92,13 +103,11 @@ function BuildSettingsForm({ current }: { current: BuildSettings }) {
         />
       </div>
       <div className="space-y-1 text-xs text-muted">
-        <p>{tb.current(...describe(current))}</p>
         <p>{tb.defaults(...describe(current.defaults))}</p>
         <p>{tb.applies}</p>
       </div>
       {error && <ErrorNote>{error.message}</ErrorNote>}
-      {notice && <p className="text-xs text-accent">{notice}</p>}
-      <div className="flex flex-wrap items-center gap-2">
+      <SheetActions>
         <Button type="submit" disabled={!dirty || save.isPending}>
           {save.isPending ? t.common.saving : t.common.save}
         </Button>
@@ -107,7 +116,10 @@ function BuildSettingsForm({ current }: { current: BuildSettings }) {
             {tb.reset}
           </Button>
         )}
-      </div>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          {t.common.cancel}
+        </Button>
+      </SheetActions>
     </form>
   )
 }

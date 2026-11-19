@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type FormEvent } from 'react'
+import { toast } from '@yusufceng1z/ding-react'
+import { useState, type FormEvent } from 'react'
+import { Sheet, SheetActions } from '../components/sheet'
 import { DnsHintText } from '../components/dns'
 import { Link, useSearch } from '@tanstack/react-router'
 import { SecuritySettings } from './settings-security'
@@ -87,41 +89,51 @@ export function SettingsPage() {
 export function PanelDomain({ bare = false }: { bare?: boolean }) {
   const settings = useQuery(panelSettingsQuery)
   const t = useT()
+  const [open, setOpen] = useState(false)
+  const current = settings.data
   return (
-    <Panel title={bare ? undefined : t.settings.panelDomain}>
-      {!settings.data && (
+    <Panel
+      title={bare ? undefined : t.settings.panelDomain}
+      actions={current && (
+        <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setOpen(true)}>
+          {current.domain ? t.common.edit : t.settings.setDomain}
+        </Button>
+      )}
+    >
+      {!current && (
         <div className="p-4">
           <QueryState loading={settings.isPending} error={settings.error} what={t.settings.what} />
         </div>
       )}
-      {settings.data && <PanelDomainForm current={settings.data} />}
+      {current && (
+        <div className="space-y-1 p-4 text-sm">
+          {current.domain ? <CurrentDomain domain={current.domain} httpOnly={current.tls_mode === 'http_only'} /> : <p className="text-muted">{t.settings.noDomain}</p>}
+          {current.domain && <p className="text-xs text-muted">{current.ip_access === false ? t.settings.ipOff : t.settings.ipOn}</p>}
+        </div>
+      )}
+      <Sheet open={open} onOpenChange={setOpen} title={t.settings.panelDomain} description={t.settings.domainHint}>
+        {open && current && <PanelDomainForm current={current} onDone={() => setOpen(false)} />}
+      </Sheet>
     </Panel>
   )
 }
 
-function PanelDomainForm({ current }: { current: PanelSettings }) {
+function PanelDomainForm({ current, onDone }: { current: PanelSettings; onDone: () => void }) {
   const queryClient = useQueryClient()
   const t = useT()
   const [domain, setDomain] = useState(current.domain)
   const [email, setEmail] = useState(current.acme_email)
   const [httpOnly, setHttpOnly] = useState(current.tls_mode === 'http_only')
   const [ipAccess, setIpAccess] = useState(current.ip_access !== false)
-  const [notice, setNotice] = useState('')
-  useEffect(() => {
-    setDomain(current.domain)
-    setEmail(current.acme_email)
-    setHttpOnly(current.tls_mode === 'http_only')
-    setIpAccess(current.ip_access !== false)
-  }, [current.domain, current.acme_email, current.tls_mode, current.ip_access])
   const hasDomain = domain.trim() !== ''
   const onIP = /^[\d.]+$|^\[?[0-9a-f:]+\]?$/i.test(location.hostname)
 
   const save = useMutation({
     mutationFn: (body: PanelSettings) => api<PanelSettings>('/settings/panel', { method: 'PUT', body }),
-    onMutate: () => setNotice(''),
     onSuccess: (s) => {
       queryClient.setQueryData(panelSettingsQuery.queryKey, s)
-      setNotice(
+      onDone()
+      toast.success(
         !s.domain
           ? t.settings.removedNotice
           : s.tls_mode === 'http_only'
@@ -148,11 +160,8 @@ function PanelDomainForm({ current }: { current: PanelSettings }) {
 
   return (
     <>
-      <div className="space-y-1 border-b border-line p-4 text-sm">
-        {current.domain ? <CurrentDomain domain={current.domain} httpOnly={current.tls_mode === 'http_only'} /> : <p className="text-muted">{t.settings.noDomain}</p>}
-      </div>
-      <form onSubmit={submit} className="space-y-4 p-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+      <form onSubmit={submit} className="space-y-5 p-5">
+        <div className="space-y-5">
           <Field
             label={t.settings.domain}
             name="panel-domain"
@@ -160,7 +169,7 @@ function PanelDomainForm({ current }: { current: PanelSettings }) {
             dir="ltr"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
-            hintTooltip hint={t.settings.domainHint}
+
             autoComplete="off"
             spellCheck={false}
           />
@@ -203,8 +212,7 @@ function PanelDomainForm({ current }: { current: PanelSettings }) {
           {hasDomain && !ipAccess && onIP && <p className="text-xs text-warn">{t.settings.onIpWarning}</p>}
         </div>
         {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-        {notice && <p className="text-xs text-accent">{notice}</p>}
-        <div className="flex flex-wrap items-center gap-2">
+        <SheetActions>
           <Button type="submit" disabled={!dirty || save.isPending}>
             {save.isPending ? t.common.saving : t.common.save}
           </Button>
@@ -216,7 +224,10 @@ function PanelDomainForm({ current }: { current: PanelSettings }) {
               onConfirm={() => save.mutate({ domain: '', acme_email: current.acme_email, tls_mode: 'auto', ip_access: true })}
             />
           )}
-        </div>
+          <Button type="button" variant="ghost" onClick={onDone}>
+            {t.common.cancel}
+          </Button>
+        </SheetActions>
       </form>
     </>
   )

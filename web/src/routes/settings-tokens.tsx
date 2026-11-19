@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Button, ConfirmButton, Empty, ErrorNote, Field, HelpTip, Panel, QueryState } from '../components/ui'
 import { api, tokensQuery, type ApiToken } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
@@ -11,27 +12,38 @@ export function ApiTokens({ bare = false }: { bare?: boolean }) {
   const queryClient = useQueryClient()
   const t = useT()
   const tokens = useQuery(tokensQuery)
+  const [open, setOpen] = useState(false)
   const [created, setCreated] = useState<ApiToken | null>(null)
-  const closeSecret = () => {
-    setCreated(null)
+  const close = () => {
+    setOpen(false)
     queryClient.invalidateQueries({ queryKey: tokensQuery.queryKey }) // picks up "last used" if it was tried meanwhile
   }
 
   return (
-    <Panel title={bare ? undefined : t.settingsTokens.title} actions={bare ? undefined : <TokensHelp />}>
-      {created ? <NewSecret token={created} onDone={closeSecret} /> : <CreateToken onCreated={setCreated} />}
+    <Panel
+      title={bare ? undefined : t.settingsTokens.title}
+      actions={
+        <span className="flex items-center gap-2">
+          {!bare && <TokensHelp />}
+          <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setCreated(null); setOpen(true) }}>
+            {t.settingsTokens.createToken}
+          </Button>
+        </span>
+      }
+    >
+      <Sheet open={open} onOpenChange={(o) => !o && close()} title={t.settingsTokens.createToken}>
+        {created ? <NewSecret token={created} onDone={close} /> : <CreateToken onCreated={setCreated} onCancel={close} />}
+      </Sheet>
       {!tokens.data && (
-        <div className="border-t border-line p-4">
+        <div className="p-4">
           <QueryState loading={tokens.isPending} error={tokens.error} what={t.settingsTokens.what} />
         </div>
       )}
       {tokens.data &&
         (tokens.data.length === 0 ? (
-          <div className="border-t border-line">
-            <Empty title={t.settingsTokens.empty} />
-          </div>
+          <Empty title={t.settingsTokens.empty} />
         ) : (
-          <ul className="divide-y divide-line border-t border-line">
+          <ul className="divide-y divide-line">
             {tokens.data.map((token) => (
               <TokenRow key={token.id} token={token} />
             ))}
@@ -51,7 +63,7 @@ export function TokensHelp() {
   )
 }
 
-function CreateToken({ onCreated }: { onCreated: (t: ApiToken) => void }) {
+function CreateToken({ onCreated, onCancel }: { onCreated: (t: ApiToken) => void; onCancel: () => void }) {
   const queryClient = useQueryClient()
   const t = useT()
   const [name, setName] = useState('')
@@ -70,24 +82,25 @@ function CreateToken({ onCreated }: { onCreated: (t: ApiToken) => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1">
-          <Field
-            label={t.common.name}
-            name="token-name"
-            placeholder="github-actions"
-            maxLength={64}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <Field
+        label={t.common.name}
+        name="token-name"
+        placeholder="github-actions"
+        maxLength={64}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoComplete="off"
+      />
+      {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
+      <SheetActions>
         <Button type="submit" disabled={!name.trim() || create.isPending}>
           {create.isPending ? t.common.creating : t.settingsTokens.createToken}
         </Button>
-      </div>
-      {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          {t.common.cancel}
+        </Button>
+      </SheetActions>
     </form>
   )
 }
@@ -108,7 +121,7 @@ function NewSecret({ token, onDone }: { token: ApiToken; onDone: () => void }) {
   }
 
   return (
-    <div className="space-y-3 border-b border-line bg-raised p-4">
+    <div className="space-y-5 p-5">
       <p className="text-sm">
         {rich(t.settingsTokens.created, { name: () => <span className="text-accent">{token.name}</span> })}
       </p>
@@ -128,9 +141,11 @@ function NewSecret({ token, onDone }: { token: ApiToken; onDone: () => void }) {
       <pre dir="ltr" className="overflow-x-auto border border-line bg-bg p-3 text-xs text-muted">
         curl -H "Authorization: Bearer {secret}" {location.origin}/api/projects
       </pre>
-      <Button type="button" onClick={onDone}>
-        {t.common.done}
-      </Button>
+      <SheetActions>
+        <Button type="button" onClick={onDone}>
+          {t.common.done}
+        </Button>
+      </SheetActions>
     </div>
   )
 }

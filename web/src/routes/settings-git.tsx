@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { Sheet, SheetActions } from '../components/sheet'
 import { Badge, Button, ConfirmButton, Empty, ErrorNote, Field, HelpTip, Panel, QueryState } from '../components/ui'
 import { api, gitSourcesQuery, type GitHubManifest, type GitSource } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
@@ -10,7 +11,11 @@ import { useCan } from '../lib/roles'
  * the section title where the page already names it. */
 export function GitConnections({ bare = false }: { bare?: boolean }) {
   const sources = useQuery(gitSourcesQuery)
-  const [adding, setAdding] = useState<'github' | 'gitlab' | 'deploy_key' | null>(null)
+  const [adding, setAdding] = useState<Kind | null>(null)
+  // Kept while the sheet closes, so its title does not change during the animation.
+  const [kind, setKind] = useState<Kind>('github')
+  const open = (k: Kind) => { setKind(k); setAdding(k) }
+  const close = () => setAdding(null)
   // GitHub sends the browser back here; a failed connection arrives with its reason.
   const [callbackError] = useState(() => new URLSearchParams(location.search).get('git_error'))
   const t = useT()
@@ -19,19 +24,17 @@ export function GitConnections({ bare = false }: { bare?: boolean }) {
     <Panel
       title={bare ? undefined : <span className="inline-flex items-center gap-2">{t.settingsGit.title}<HelpTip label={t.settingsGit.title}>{t.settingsGit.intro}</HelpTip></span>}
       actions={
-        !adding && (
-          <span className="flex gap-2">
-            <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdding('github')}>
-              {t.settingsGit.connectGitHub}
-            </Button>
-            <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdding('gitlab')}>
-              {t.settingsGit.connectGitLab}
-            </Button>
-            <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdding('deploy_key')}>
-              {t.settingsGit.addDeployKey}
-            </Button>
-          </span>
-        )
+        <span className="flex gap-2">
+          <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => open('github')}>
+            {t.settingsGit.connectGitHub}
+          </Button>
+          <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => open('gitlab')}>
+            {t.settingsGit.connectGitLab}
+          </Button>
+          <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => open('deploy_key')}>
+            {t.settingsGit.addDeployKey}
+          </Button>
+        </span>
       }
     >
       {callbackError && (
@@ -39,9 +42,16 @@ export function GitConnections({ bare = false }: { bare?: boolean }) {
           <ErrorNote>{t.settingsGit.notConnected(callbackError)}</ErrorNote>
         </div>
       )}
-      {adding === 'github' && <ConnectGitHub onCancel={() => setAdding(null)} />}
-      {adding === 'gitlab' && <ConnectGitLab onDone={() => setAdding(null)} />}
-      {adding === 'deploy_key' && <AddDeployKey onDone={() => setAdding(null)} />}
+      <Sheet
+        open={adding !== null}
+        onOpenChange={(o) => !o && close()}
+        title={kind === 'github' ? t.settingsGit.connectGitHub : kind === 'gitlab' ? t.settingsGit.connectGitLab : t.settingsGit.addDeployKey}
+        description={kind === 'deploy_key' ? t.settingsGit.deployKeyIntro : kind === 'github' ? t.settingsGit.intro : undefined}
+      >
+        {adding === 'github' && <ConnectGitHub onCancel={close} />}
+        {adding === 'gitlab' && <ConnectGitLab onDone={close} />}
+        {adding === 'deploy_key' && <AddDeployKey onDone={close} />}
+      </Sheet>
       {!sources.data && (
         <div className="p-4">
           <QueryState loading={sources.isPending} error={sources.error} what={t.settingsGit.what} />
@@ -60,6 +70,8 @@ export function GitConnections({ bare = false }: { bare?: boolean }) {
     </Panel>
   )
 }
+
+type Kind = 'github' | 'gitlab' | 'deploy_key'
 
 /**
  * Creating the app happens on GitHub: the panel prepares a manifest, the browser posts
@@ -92,14 +104,13 @@ function ConnectGitHub({ onCancel }: { onCancel: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 border-b border-line bg-raised p-4">
-      <p className="text-sm">{t.settingsGit.connectGitHub}</p>
+    <form onSubmit={submit} className="space-y-5 p-5">
       <ol className="list-decimal space-y-1 ps-5 text-xs text-muted">
         <li>{t.settingsGit.step1}</li>
         <li>{t.settingsGit.step2}</li>
         <li>{t.settingsGit.step3}</li>
       </ol>
-      <div className="max-w-sm">
+      <div>
         <Field
           label={t.settingsGit.organization}
           name="github-organization"
@@ -112,14 +123,14 @@ function ConnectGitHub({ onCancel }: { onCancel: () => void }) {
         />
       </div>
       {start.error && <ErrorNote>{start.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={start.isPending || start.isSuccess}>
           {start.isPending || start.isSuccess ? t.settingsGit.openingGitHub : t.settingsGit.continueOnGitHub}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
           {t.common.cancel}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }
@@ -143,8 +154,7 @@ function ConnectGitLab({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 border-b border-line bg-raised p-4">
-      <p className="text-sm">{t.settingsGit.connectGitLab}</p>
+    <form onSubmit={submit} className="space-y-5 p-5">
       <p className="text-xs text-muted">
         {rich(t.settingsGit.gitlabIntro, {
           c: (scope) => (
@@ -154,7 +164,7 @@ function ConnectGitLab({ onDone }: { onDone: () => void }) {
           ),
         })}
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-5">
         <Field
           label={t.settingsGit.gitlabAddress}
           name="gitlab-url"
@@ -179,14 +189,14 @@ function ConnectGitLab({ onDone }: { onDone: () => void }) {
         />
       </div>
       {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={!token.trim() || add.isPending}>
           {add.isPending ? t.settingsGit.checkingToken : t.settingsGit.connect}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           {t.common.cancel}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }
@@ -208,10 +218,8 @@ function AddDeployKey({ onDone }: { onDone: () => void }) {
     add.mutate()
   }
   return (
-    <form onSubmit={submit} className="space-y-3 border-b border-line bg-raised p-4">
-      <p className="text-sm">{t.settingsGit.addDeployKey}</p>
-      <p className="text-xs text-muted">{t.settingsGit.deployKeyIntro}</p>
-      <div className="max-w-sm">
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <div>
         <Field
           label={t.settingsGit.deployKeyName}
           name="deploy-key-name"
@@ -223,14 +231,14 @@ function AddDeployKey({ onDone }: { onDone: () => void }) {
         />
       </div>
       {add.error && <ErrorNote>{add.error.message}</ErrorNote>}
-      <div className="flex gap-2">
+      <SheetActions>
         <Button type="submit" disabled={add.isPending}>
           {add.isPending ? t.settingsGit.creating : t.settingsGit.create}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           {t.common.cancel}
         </Button>
-      </div>
+      </SheetActions>
     </form>
   )
 }

@@ -28,6 +28,7 @@ const readers: Record<string, QueryKey[]> = {
   registry_tokens: [['registry']],
   git_sources: [['git-sources'], ['command-search']],
   s3_connections: [['s3-connections'], ['command-search']],
+  s3_access_keys: [['object-store', 'keys']],
   notification_channels: [['notifications']],
   alert_rules: [['notifications']],
   settings: [['settings'], ['registry']],

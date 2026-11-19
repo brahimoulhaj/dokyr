@@ -15,6 +15,40 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.28.0',
+    date: '2026-11-18',
+    changes: {
+      en: [
+        'Built-in storage: access keys limited to one bucket, read only or read & write, for your apps and scripts.',
+        'The root storage credentials are no longer shown; give each app its own key instead.',
+        'The Storage page is split into Overview, Buckets and Access keys tabs.',
+        'The setup guide has new steps for storage, a registry and notifications.',
+        'Git connections, API tokens, build limits and the panel domain open in side sheets.',
+      ],
+      fr: [
+        "Stockage intégré : des clés d'accès limitées à un bucket, en lecture seule ou en lecture et écriture, pour vos applications et scripts.",
+        "Les identifiants root du stockage ne sont plus affichés ; donnez plutôt à chaque application sa propre clé.",
+        "La page Stockage est découpée en onglets : Vue d'ensemble, Buckets et Clés d'accès.",
+        'Le guide de configuration a de nouvelles étapes pour le stockage, un registre et les notifications.',
+        'Les connexions Git, les jetons API, les limites de build et le domaine du panneau s’ouvrent dans des panneaux latéraux.',
+      ],
+      ar: [
+        'التخزين المدمج: مفاتيح وصول محدودة بحاوية واحدة، للقراءة فقط أو للقراءة والكتابة، لتطبيقاتك وسكربتاتك.',
+        'لم تعد بيانات الدخول الجذرية للتخزين تُعرض؛ أعطِ كل تطبيق مفتاحه الخاص بدلاً من ذلك.',
+        'صفحة التخزين مقسّمة إلى تبويبات: نظرة عامة، الحاويات، مفاتيح الوصول.',
+        'دليل الإعداد فيه خطوات جديدة للتخزين والسجل والإشعارات.',
+        'اتصالات Git ورموز API وحدود البناء ونطاق اللوحة تُفتح في لوحات جانبية.',
+      ],
+      es: [
+        'Almacenamiento integrado: claves de acceso limitadas a un bucket, de solo lectura o de lectura y escritura, para tus aplicaciones y scripts.',
+        'Las credenciales root del almacenamiento ya no se muestran; da a cada aplicación su propia clave.',
+        'La página Almacenamiento se divide en pestañas: Resumen, Buckets y Claves de acceso.',
+        'La guía de configuración tiene pasos nuevos para el almacenamiento, un registro y las notificaciones.',
+        'Las conexiones Git, los tokens de API, los límites de build y el dominio del panel se abren en paneles laterales.',
+      ],
+    },
+  },
+  {
     version: '0.27.0',
     date: '2026-11-18',
     changes: {
