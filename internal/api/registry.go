@@ -118,6 +118,13 @@ func (s *Server) handlePutRegistrySettings(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusConflict, "conflict", "this hostname is the panel's own domain; the registry needs one of its own")
 			return
 		}
+		if obs, err := s.store.GetObjectStoreSettings(ctx); err != nil {
+			s.internal(w, "registry settings", err)
+			return
+		} else if obs.Domain != "" && in.Domain == obs.Domain {
+			writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in storage's domain; the registry needs one of its own")
+			return
+		}
 		if taken, err := s.store.DomainExists(ctx, in.Domain); err != nil {
 			s.internal(w, "registry settings", err)
 			return
@@ -267,7 +274,7 @@ func (s *Server) handleRegistryToken(w http.ResponseWriter, r *http.Request) {
 	tok, err := s.registry.Token(r.Context(), user, password, r.Form.Get("service"), r.Form["scope"])
 	switch {
 	case errors.Is(err, registry.ErrDenied):
-		if ok, retry := s.authRate.allow("registry:" + clientIP(r)); !ok {
+		if ok, retry := s.authRate.allow("registry:" + s.clientIP(r)); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "too many attempts, try again later")
 			return

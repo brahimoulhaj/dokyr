@@ -106,6 +106,17 @@ func (s *Server) handlePutPanelSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	old, _, err := s.store.GetSetting(r.Context(), store.SettingPanelDomain)
+	if err != nil {
+		s.internal(w, "panel settings", err)
+		return
+	}
+	if old != in.Domain {
+		if err := s.retirePanelDomain(r.Context(), old, in.Domain); err != nil {
+			s.internal(w, "panel settings", err)
+			return
+		}
+	}
 	for key, value := range map[string]string{store.SettingPanelDomain: in.Domain, store.SettingACMEEmail: in.ACMEEmail, store.SettingPanelTLS: in.TLSMode, store.SettingPanelIPOff: strconv.FormatBool(!ipAccess)} {
 		if err := s.store.SetSetting(r.Context(), key, value); err != nil {
 			s.internal(w, "panel settings", err)

@@ -17,6 +17,9 @@ import (
 type Config struct {
 	AdminListen   string // Caddy network address of the admin API, e.g. "unix//run/caddy/admin.sock"
 	PanelUpstream string // host:port where Caddy reaches the panel
+	// PanelToken, when set, is sent to the panel with every request in PanelTokenHeader:
+	// the panel believes X-Forwarded-For only from requests that carry it.
+	PanelToken    string
 	PanelDomain   string // optional; served over HTTPS with an automatic certificate
 	PanelHTTPOnly bool   // serve PanelDomain over plain HTTP only (CDN terminates TLS)
 	// PanelDomainOnly drops requests for unknown hostnames (e.g. http://<server-ip>) instead
@@ -134,6 +137,19 @@ func httpRouteKey(id string) string { return "route-" + id + "-http" }
 // to the panel, which is what makes http://<server-ip> work on a fresh install.
 // Certificates come from Caddy's automatic HTTPS, driven by the host matchers on the
 // "https" server only, so HTTP-only hostnames never get one.
+// PanelTokenHeader is the request header that carries Config.PanelToken to the panel.
+const PanelTokenHeader = "X-Panel-Proxy-Token"
+
+// toPanel is the handler that passes a request on to the panel. It replaces whatever
+// token header the client sent with the real one, so only the proxy can present it.
+func (c Config) toPanel() object {
+	h := object{"handler": "reverse_proxy", "upstreams": []object{{"dial": c.PanelUpstream}}}
+	if c.PanelToken != "" {
+		h["headers"] = object{"request": object{"set": object{PanelTokenHeader: []string{c.PanelToken}}}}
+	}
+	return h
+}
+
 func Build(c Config) ([]byte, error) {
 	if c.AdminListen == "" {
 		return nil, errors.New("proxy config: admin listen address is required")
@@ -191,9 +207,12 @@ func Build(c Config) ([]byte, error) {
 		}
 		tlsHosts, plainHosts := r.split()
 		proxyTo := []object{{"handler": "reverse_proxy", "upstreams": upstreams}}
+		if r.ID == "panel" && c.PanelDomain != "" {
+			proxyTo = []object{c.toPanel()}
+		}
 		if len(r.PanelPaths) > 0 {
 			proxyTo = []object{{"handler": "subroute", "routes": []object{
-				{"match": []object{{"path": r.PanelPaths}}, "handle": []object{{"handler": "reverse_proxy", "upstreams": []object{{"dial": c.PanelUpstream}}}}, "terminal": true},
+				{"match": []object{{"path": r.PanelPaths}}, "handle": []object{c.toPanel()}, "terminal": true},
 				{"handle": proxyTo},
 			}}}
 		}
@@ -295,7 +314,7 @@ func Build(c Config) ([]byte, error) {
 		})
 	} else {
 		httpRoutes = append(httpRoutes, object{
-			"handle": []object{{"handler": "reverse_proxy", "upstreams": []object{{"dial": c.PanelUpstream}}}},
+			"handle": []object{c.toPanel()},
 		})
 	}
 

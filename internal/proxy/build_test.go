@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -386,5 +387,59 @@ func TestBuildWildcardSite(t *testing.T) {
 		if ValidSiteHost(bad) == nil {
 			t.Errorf("ValidSiteHost(%q) accepted", bad)
 		}
+	}
+}
+
+// With a panel token, every request passed on to the panel carries it, and nothing else does.
+func TestBuildPanelToken(t *testing.T) {
+	c := Config{
+		AdminListen: "unix//run/caddy/admin.sock", PanelUpstream: "dokyr:8080", PanelDomain: "panel.example.com", PanelToken: "s3cret",
+		Routes: []Route{
+			{ID: "app", Hosts: []string{"shop.example.com"}, Upstreams: []string{"app:80"}},
+			{ID: "registry", Hosts: []string{"registry.example.com"}, Upstreams: []string{"registry:5000"}, PanelPaths: []string{"/api/registry/*"}},
+		},
+	}
+	raw, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	toPanel, withToken := 0, 0
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case []any:
+			for _, x := range v {
+				walk(x)
+			}
+		case map[string]any:
+			if v["handler"] == "reverse_proxy" {
+				panel := strings.Contains(fmt.Sprint(v["upstreams"]), "dokyr:8080")
+				token := strings.Contains(fmt.Sprint(v["headers"]), "s3cret")
+				if panel != token {
+					t.Errorf("proxy to %v: token sent = %v", v["upstreams"], token)
+				}
+				if panel {
+					toPanel++
+				}
+				if token {
+					withToken++
+				}
+			}
+			for _, x := range v {
+				walk(x)
+			}
+		}
+	}
+	walk(cfg)
+	if toPanel < 3 || withToken != toPanel { // the panel domain, the registry's panel paths, the IP fallback
+		t.Fatalf("%d handlers reach the panel, %d send the token", toPanel, withToken)
+	}
+	c.PanelToken = ""
+	if raw, err = Build(c); err != nil || strings.Contains(string(raw), PanelTokenHeader) {
+		t.Fatalf("no token, yet the header is set: %v", err)
 	}
 }

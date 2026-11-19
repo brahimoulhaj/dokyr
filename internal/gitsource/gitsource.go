@@ -94,7 +94,14 @@ type cachedToken struct {
 func New(st *store.Store, box *secret.Box) *Service {
 	return &Service{
 		st: st, box: box,
-		http:      &http.Client{Timeout: 20 * time.Second},
+		// A Git host's API answers from its own https address. A redirect anywhere else
+		// would carry the access token along, to wherever the answer pointed.
+		http: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 || req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
+				return errors.New("the Git host redirected to another address")
+			}
+			return nil
+		}},
 		GitHubURL: "https://github.com",
 		GitHubAPI: "https://api.github.com",
 		pending:   map[string]time.Time{},

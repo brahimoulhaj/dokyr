@@ -677,7 +677,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input := in.apply(store.AppInput{})
-	if !validApp(w, input) || !s.validGitSource(w, r, input) || !s.validRegistry(w, r, input) {
+	if !validApp(w, input) || !s.mayChangeApp(w, r, store.AppInput{}, input) || !s.validGitSource(w, r, input) || !s.validRegistry(w, r, input) {
 		return
 	}
 	a, err := s.store.CreateApp(r.Context(), r.PathValue("id"), input)
@@ -728,11 +728,12 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get app", err, "") {
 		return
 	}
-	input := in.apply(store.AppInput{
+	saved := store.AppInput{
 		Mounts: a.Mounts, Processes: a.Processes, Environment: a.Environment, EnvMeta: a.EnvMeta, EnvOrder: a.EnvOrder, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, Git: a.Git,
 		StartCommand: a.StartCommand, Port: a.Port, CPULimit: a.CPULimit, MemoryMB: a.MemoryMB,
-	})
-	if !validApp(w, input) || !s.validGitSource(w, r, input) || !s.validRegistry(w, r, input) {
+	}
+	input := in.apply(saved)
+	if !validApp(w, input) || !s.mayChangeApp(w, r, saved, input) || !s.validGitSource(w, r, input) || !s.validRegistry(w, r, input) {
 		return
 	}
 	a, err = s.store.UpdateApp(r.Context(), a.ID, input)
@@ -1069,6 +1070,20 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request, in domainI
 		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in registry's domain")
 		return store.Domain{}, false
 	}
+	if obs, err := s.store.GetObjectStoreSettings(r.Context()); err != nil {
+		s.internal(w, "create domain", err)
+		return store.Domain{}, false
+	} else if obs.Domain != "" && host == obs.Domain {
+		writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in storage's domain")
+		return store.Domain{}, false
+	}
+	if msg, err := s.retiredHostProblem(r, host, false); err != nil {
+		s.internal(w, "create domain", err)
+		return store.Domain{}, false
+	} else if msg != "" {
+		writeError(w, http.StatusForbidden, "forbidden", msg)
+		return store.Domain{}, false
+	}
 	// A subdomain a route already answers on cannot also be a domain of its own.
 	if taken, err := s.store.DomainExists(r.Context(), host); err != nil {
 		s.internal(w, "create domain", err)
@@ -1229,6 +1244,21 @@ type routeInput struct {
 // and the app is in the domain's project. current is the route being changed, if any.
 func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, d store.Domain, in *routeInput, current *store.Route) bool {
 	in.Subdomain = strings.Trim(strings.ToLower(strings.TrimSpace(in.Subdomain)), ".")
+	// A hostname the panel used to answer on still receives its old session cookies.
+	if in.Subdomain != "" && (current == nil || current.Subdomain != in.Subdomain) {
+		wildcard := in.Subdomain == store.WildcardSubdomain
+		host := d.Hostname
+		if !wildcard {
+			host = store.RouteHost(in.Subdomain, d.Hostname)
+		}
+		if msg, err := s.retiredHostProblem(r, host, wildcard); err != nil {
+			s.internal(w, "check hostname", err)
+			return false
+		} else if msg != "" {
+			writeError(w, http.StatusForbidden, "forbidden", msg)
+			return false
+		}
+	}
 	// "*" needs no check: exact hostnames are matched ahead of it, whoever serves them.
 	if in.Subdomain != "" && in.Subdomain != store.WildcardSubdomain && (current == nil || current.Subdomain != in.Subdomain) {
 		host := store.RouteHost(in.Subdomain, d.Hostname)

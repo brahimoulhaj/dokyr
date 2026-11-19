@@ -24,6 +24,7 @@ import (
 
 	"panel/internal/account"
 	"panel/internal/api"
+	"panel/internal/auth"
 	"panel/internal/brand"
 	"panel/internal/builder"
 	"panel/internal/config"
@@ -206,6 +207,9 @@ func serve(ctx context.Context, cfg config.Config) error {
 	defer ex.Close()
 	prepareDocker(ctx, ex, st, log)
 
+	// A new secret on every start: the proxy sends it with each request it passes on, and
+	// the panel believes the forwarded client address only then.
+	proxyToken := auth.NewToken()
 	px, err := proxy.New(proxy.Options{
 		Executor:      ex,
 		Log:           log,
@@ -219,6 +223,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 		Admin:         cfg.Proxy.Admin,
 		AdminPort:     cfg.Proxy.AdminPort,
 		PanelUpstream: panelUpstream(cfg),
+		PanelToken:    proxyToken,
 		Source:        proxySource(st, brand.Slug+"-registry:5000", fmt.Sprintf("%s-s3:%d", brand.Slug, objectstore.Port)),
 	})
 	if err != nil {
@@ -314,6 +319,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 
 	apiSrv := api.New(st, acc, log, version, webui.FS())
 	apiSrv.SetAuthPublicURL(cfg.PublicURL)
+	apiSrv.SetProxyToken(proxyToken)
 	databases := database.New(ctx, st, ex)
 	if !inContainer() {
 		databases.AdminerPort = 18081

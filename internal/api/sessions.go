@@ -7,8 +7,8 @@ import (
 	"panel/internal/store"
 )
 
-func browserSessionDetails(r *http.Request) store.SessionDetails {
-	return store.SessionDetails{IPAddress: clientIP(r), UserAgent: r.UserAgent()[:min(len(r.UserAgent()), 1024)]}
+func (s *Server) browserSessionDetails(r *http.Request) store.SessionDetails {
+	return store.SessionDetails{IPAddress: s.clientIP(r), UserAgent: r.UserAgent()[:min(len(r.UserAgent()), 1024)]}
 }
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {

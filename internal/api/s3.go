@@ -107,6 +107,10 @@ func (s *Server) handleAddS3(w http.ResponseWriter, r *http.Request) {
 		invalid(w, "name must be at most 64 characters")
 		return
 	}
+	// The built-in storage is on the server's own network by design; anything else there is not.
+	if (s.objectStore == nil || c.Endpoint != s.objectStore.Endpoint()) && !s.mayReach(w, r, c.Endpoint) {
+		return
+	}
 	if s.s3Test != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		err := s.s3Test(ctx, c)

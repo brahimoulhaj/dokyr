@@ -28,7 +28,15 @@ type Config struct {
 	Allow  []netip.Prefix
 	Cert   tls.Certificate
 	Log    *slog.Logger
+
+	// established is called once a client has finished TLS: it frees its handshake slot.
+	established func()
 }
+
+// maxHandshakes is how many connections may be in the unauthenticated phase at once. A
+// client in that phase costs a goroutine and, for MariaDB, a connection to the database:
+// without a cap, anyone who can reach the port could use up the database's own limit.
+const maxHandshakes = 64
 
 // handshakeTimeout bounds the unauthenticated phase, so idle sockets cannot pile up.
 const handshakeTimeout = 15 * time.Second
@@ -88,6 +96,7 @@ func ServeListener(ctx context.Context, l net.Listener, c Config) error {
 	go func() { <-ctx.Done(); l.Close() }()
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	slots := make(chan struct{}, maxHandshakes)
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -100,10 +109,21 @@ func ServeListener(ctx context.Context, l net.Listener, c Config) error {
 			}
 			return err
 		}
+		select {
+		case slots <- struct{}{}:
+		default:
+			c.Log.Info("refused: too many connections in handshake", "remote", conn.RemoteAddr().String())
+			conn.Close()
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.handle(ctx, conn)
+			cc := c
+			var once sync.Once
+			cc.established = func() { once.Do(func() { <-slots }) }
+			defer cc.established()
+			cc.handle(ctx, conn)
 		}()
 	}
 }
@@ -223,6 +243,7 @@ func (c Config) postgres(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 	defer backend.Close()
+	c.established()
 	pipe(client, backend)
 	return nil
 }
@@ -365,6 +386,7 @@ func (c Config) mariadb(ctx context.Context, conn net.Conn) error {
 				return errors.New("authentication failed")
 			}
 			// Bytes already buffered from either side must not be lost.
+			c.established()
 			pipe(&bufferedConn{client, tr}, &bufferedConn{backend, br})
 			return nil
 		}
