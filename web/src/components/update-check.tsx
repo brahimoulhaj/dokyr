@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@yusufceng1z/ding-react'
 import { api, updatesQuery, type Updates } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 import { rememberUpdated } from '../lib/toasts'
 import { cx } from './ui'
 
@@ -17,6 +18,7 @@ export function UpdateCheck({ updates }: { updates?: Updates }) {
   const t = useT()
   const m = t.settingsUpdates
   const queryClient = useQueryClient()
+  const can = useCan()
   const set = (next: Updates) => queryClient.setQueryData(updatesQuery.queryKey, next)
 
   // Pulls the image, hands over to the update helper, then polls until it records a result.
@@ -66,7 +68,7 @@ export function UpdateCheck({ updates }: { updates?: Updates }) {
           id: toastId,
           description: m.pullsNote(next.latest_image ?? target),
           duration: 0,
-          action: {
+          action: !can.admin ? undefined : {
             label: m.updateNow,
             onClick: () => {
               void update(target, next.last_result?.finished_at ?? '')

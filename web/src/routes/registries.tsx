@@ -16,12 +16,13 @@ type SheetKind = 'external' | 'builtin' | null
 export function RegistryPage({ bare = false }: { bare?: boolean }) {
   const t = useT()
   const tr = t.registries
+  const can = useCan()
   const externals = useQuery(registriesQuery)
   // 503 when this panel has no built-in registry: then it is simply not offered.
   const builtin = useQuery({ ...registrySettingsQuery, retry: false })
   const [sheet, setSheet] = useState<SheetKind>(null)
   const builtinOn = !!(builtin.data?.enabled && builtin.data.domain)
-  const canEnable = !!builtin.data && !builtinOn
+  const canEnable = can.admin && !!builtin.data && !builtinOn
   const loading = externals.isPending || builtin.isPending
   const empty = !loading && !builtinOn && (externals.data?.length ?? 0) === 0
 

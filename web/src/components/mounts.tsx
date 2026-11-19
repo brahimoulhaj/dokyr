@@ -2,12 +2,14 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, appQuery, type App, type AppMount } from '../lib/api'
 import { useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 import { Button, ErrorNote, Field, HelpTip, Panel } from './ui'
 
 export function MountSettings({ app }: { app: App }) {
   const t = useT().app
   const common = useT().common
   const client = useQueryClient()
+  const can = useCan()
   const [mounts, setMounts] = useState<AppMount[]>(app.mounts ?? [])
   const [dirty, setDirty] = useState(false)
   const save = useMutation({
@@ -27,11 +29,11 @@ export function MountSettings({ app }: { app: App }) {
           <div className="grid items-end gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-xs text-muted">{t.mountType}
               <select aria-label={t.mountType} value={m.type} onChange={(e) => update(i, { type: e.target.value as AppMount['type'], source: '', content: '', read_only: e.target.value === 'file' })} className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
-                <option value="volume">{t.mountVolume}</option><option value="bind">{t.mountBind}</option><option value="file">{t.mountFile}</option>
+                <option value="volume">{t.mountVolume}</option><option value="bind" disabled={!can.admin && m.type !== 'bind'}>{t.mountBind}</option><option value="file">{t.mountFile}</option>
               </select>
             </label>
             <Field label={t.mountTarget} name={`mount-target-${i}`} value={m.target} onChange={(e) => update(i, { target: e.target.value })} placeholder="/app/data" dir="ltr" required />
-            {m.type !== 'file' && <Field label={m.type === 'bind' ? t.mountHostPath : t.mountVolumeName} name={`mount-source-${i}`} value={m.source} onChange={(e) => update(i, { source: e.target.value })} placeholder={m.type === 'bind' ? '/srv/my-app/data' : 'my-app-data'} dir="ltr" required />}
+            {m.type !== 'file' && <Field label={m.type === 'bind' ? t.mountHostPath : t.mountVolumeName} name={`mount-source-${i}`} value={m.source} onChange={(e) => update(i, { source: e.target.value })} placeholder={m.type === 'bind' ? '/srv/my-app/data' : 'my-app-data'} dir="ltr" required readOnly={m.type === 'bind' && !can.admin} hint={m.type === 'bind' && !can.admin ? common.adminOnly : undefined} />}
           </div>
           {m.type === 'file' && <label className="block space-y-1.5 text-xs text-muted">{t.mountContent}
             <textarea aria-label={t.mountContent} value={m.content} onChange={(e) => update(i, { content: e.target.value })} dir="ltr" spellCheck={false} className="min-h-40 w-full resize-y border border-line bg-bg p-3 font-mono text-xs text-fg focus:border-accent focus:outline-none" />

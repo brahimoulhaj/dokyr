@@ -28,6 +28,7 @@ export function StoragePage() {
   const t = useT()
   const ts = t.storage
   const qc = useQueryClient()
+  const can = useCan()
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { tab?: string }
   const tab: StorageTab = storageTabs.includes(search.tab as StorageTab) ? (search.tab as StorageTab) : 'overview'
@@ -62,7 +63,7 @@ export function StoragePage() {
       <PageHeader
         title={<>{ts.title} <Badge tone="warn">{ts.experimental}</Badge></>}
         subtitle={ts.intro}
-        actions={data && (data.enabled ? (
+        actions={data && can.admin && (data.enabled ? (
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="ghost" onClick={() => setSheet('setup')}>{ts.edit}</Button>
             <Button type="button" variant="danger" disabled={turnOff.isPending} onClick={() => setConfirmOff(true)}>

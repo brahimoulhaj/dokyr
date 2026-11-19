@@ -15,6 +15,36 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.30.0',
+    date: '2026-11-19',
+    changes: {
+      en: [
+        'Security: a maintainer can no longer mount host paths, pick a Buildpacks builder image, change the panel domain, apply updates, or manage notification channels, storage and registry settings: an owner or an admin does. The pages hide those controls for maintainers.',
+        'The proxy tells the panel the real client address with a secret, so containers on the same network cannot fake it to get around the sign-in rate limit.',
+        'Git hosts, GitLab and S3 on private addresses need an admin; webhooks and Git hosts no longer follow redirects.',
+        'Content-Security-Policy and HSTS headers; deploy-hook tokens are hidden in the panel log.',
+      ],
+      fr: [
+        'Sécurité : un mainteneur ne peut plus monter des chemins de l’hôte, choisir une image de builder Buildpacks, changer le domaine du panneau, appliquer des mises à jour ni gérer les canaux de notification, le stockage et le registre : cela revient au propriétaire ou à un admin. Les pages masquent ces commandes aux mainteneurs.',
+        'Le proxy transmet l’adresse réelle du client au panneau avec un secret : un conteneur du même réseau ne peut plus la falsifier pour contourner la limite de connexions.',
+        'Les hôtes Git, GitLab et S3 sur des adresses privées demandent un admin ; les webhooks et les hôtes Git ne suivent plus les redirections.',
+        'En-têtes Content-Security-Policy et HSTS ; les jetons de déploiement sont masqués dans le journal du panneau.',
+      ],
+      ar: [
+        'الأمان: لم يعد بإمكان المشرف (maintainer) ربط مسارات المضيف أو اختيار صورة Buildpacks أو تغيير نطاق اللوحة أو تطبيق التحديثات أو إدارة قنوات الإشعارات والتخزين والسجل؛ هذا للمالك أو للمسؤول. تخفي الصفحات هذه الأزرار عن المشرفين.',
+        'يمرّر الوكيل عنوان العميل الحقيقي إلى اللوحة بسر، فلا تستطيع الحاويات على الشبكة نفسها تزييفه للالتفاف على حدّ محاولات الدخول.',
+        'مضيفات Git وGitLab وS3 على عناوين خاصة تتطلب مسؤولاً؛ ولا تتبع خطافات الويب ومضيفات Git عمليات إعادة التوجيه.',
+        'ترويستا Content-Security-Policy وHSTS؛ ورموز خطاف النشر مخفية في سجل اللوحة.',
+      ],
+      es: [
+        'Seguridad: un mantenedor ya no puede montar rutas del host, elegir una imagen de builder de Buildpacks, cambiar el dominio del panel, aplicar actualizaciones ni gestionar canales de notificación, almacenamiento y registro: lo hace el propietario o un administrador. Las páginas ocultan esos controles a los mantenedores.',
+        'El proxy pasa al panel la dirección real del cliente con un secreto, así que un contenedor de la misma red ya no puede falsearla para esquivar el límite de inicios de sesión.',
+        'Los hosts Git, GitLab y S3 en direcciones privadas requieren un administrador; los webhooks y los hosts Git ya no siguen redirecciones.',
+        'Cabeceras Content-Security-Policy y HSTS; los tokens de despliegue se ocultan en el registro del panel.',
+      ],
+    },
+  },
+  {
     version: '0.29.0',
     date: '2026-11-19',
     changes: {

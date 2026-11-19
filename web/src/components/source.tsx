@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { gitBranchesQuery, gitReposQuery, gitSourcesQuery, registriesQuery, registrySettingsQuery, repositoriesQuery, type App, type BuildOptions, type GitSource, type SourceInput } from '../lib/api'
 import { repoName } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
+import { useCan } from '../lib/roles'
 import { ComboField, type ComboOption } from './combobox'
 import { CheckOption, cx, Field } from './ui'
 
@@ -217,6 +218,7 @@ function ImageFields({ form, onChange }: { form: SourceForm; onChange: (f: Sourc
 function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceForm) => void }) {
   const set = (key: keyof SourceForm) => (e: { target: { value: string } }) => onChange({ ...form, [key]: e.target.value })
   const t = useT()
+  const can = useCan()
   const sources = useQuery(gitSourcesQuery)
   const connected = form.git_source_id !== ''
   // A deploy key lists nothing: the repository is typed as an SSH URL.
@@ -341,7 +343,8 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
             name="build_image"
             dir="ltr"
             placeholder="heroku/builder:24"
-            hintTooltip hint={t.source.builderImageHint}
+            hintTooltip hint={can.admin ? t.source.builderImageHint : t.common.adminOnly}
+            readOnly={!can.admin}
             value={form.build_image}
             onChange={set('build_image')}
             autoComplete="off"

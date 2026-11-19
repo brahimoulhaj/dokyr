@@ -47,7 +47,7 @@ function Channels() {
   const remove = useMutation({ mutationFn: (c: Channel) => api(`/notification-channels/${c.id}`, { method: 'DELETE' }), onSettled: refresh })
   return <>
     <QueryState loading={channels.isPending} error={channels.error} what={t.channels} />
-    {channels.data && <Panel title={t.channels} actions={<Button variant="ghost" onClick={() => open('new')}>{t.addChannel}</Button>}>
+    {channels.data && <Panel title={t.channels} actions={can.admin && <Button variant="ghost" onClick={() => open('new')}>{t.addChannel}</Button>}>
       {channels.data.length === 0 ? <Empty title={t.noChannels}>{t.noChannelsHint}</Empty> :
         <ul className="divide-y divide-line">{channels.data.map((c) => <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="min-w-0 space-y-1">
@@ -56,11 +56,11 @@ function Channels() {
             {c.last_error && <p className="text-xs text-danger">{c.last_error}</p>}
             {remove.error && remove.variables?.id === c.id && <p className="text-xs text-danger">{remove.error.message}</p>}
           </div>
-          <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${c.name}`} items={[
+          {can.admin && <ActionsMenu label={t.actions} ariaLabel={`${t.actions} · ${c.name}`} items={[
             { label: t.test, disabled: test.isPending, onSelect: () => test.mutate(c) },
             { label: t.editChannel, onSelect: () => open(c) },
             ...(can.remove ? [{ label: t.deleteChannel, danger: true, onSelect: () => setDeleting(c) }] : []),
-          ]} />
+          ]} />}
         </li>)}</ul>}
     </Panel>}
     <Sheet open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }} title={mode === 'new' ? t.addChannel : t.editChannel} description={t.channelHint}>
