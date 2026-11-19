@@ -99,6 +99,7 @@ type appJSON struct {
 	Builder             string                      `json:"builder"`
 	BuildContext        string                      `json:"build_context"`
 	DockerfilePath      string                      `json:"dockerfile_path"`
+	BuildOptions        store.BuildOptions          `json:"build_options"`
 	StartCommand        string                      `json:"start_command"`
 	Template            string                      `json:"template"`       // id of the template the app was created from; "" = none
 	NeedsRedeploy       bool                        `json:"needs_redeploy"` // settings changed since the running deployment; only on GET /api/apps/{id}
@@ -120,7 +121,7 @@ func toAppJSON(a store.App) appJSON {
 		CurrentDeploymentID: a.CurrentDeploymentID,
 		GitSourceID:         a.Git.ConnectionID,
 		GitRepository:       a.Git.Repository, GitBranch: a.Git.Branch, Builder: a.Git.Builder,
-		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile,
+		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile, BuildOptions: a.Git.Options,
 		StartCommand: a.StartCommand, Template: a.Template,
 		Strategy:   a.Strategy(),
 		PushDeploy: a.PushDeploy,
@@ -457,21 +458,22 @@ type appFields struct {
 	// without a value in Environment keeps its stored value.
 	EnvironmentMeta *map[string]store.EnvVarMeta `json:"environment_meta"`
 	// EnvironmentOrder is the variables' order with the comments between them; not sent, the order stays.
-	EnvironmentOrder *[]string `json:"environment_order"`
-	Name             *string   `json:"name"`
-	SourceType       *string   `json:"source_type"`
-	Image            *string   `json:"image"`
-	RegistryID       *string   `json:"registry_id"`
-	GitSourceID      *string   `json:"git_source_id"`
-	GitRepository    *string   `json:"git_repository"`
-	GitBranch        *string   `json:"git_branch"`
-	Builder          *string   `json:"builder"`
-	BuildContext     *string   `json:"build_context"`
-	DockerfilePath   *string   `json:"dockerfile_path"`
-	StartCommand     *string   `json:"start_command"`
-	Port             *int      `json:"port"`
-	CPULimit         *float64  `json:"cpu_limit"`
-	MemoryLimitMB    *int64    `json:"memory_limit_mb"`
+	EnvironmentOrder *[]string           `json:"environment_order"`
+	Name             *string             `json:"name"`
+	SourceType       *string             `json:"source_type"`
+	Image            *string             `json:"image"`
+	RegistryID       *string             `json:"registry_id"`
+	GitSourceID      *string             `json:"git_source_id"`
+	GitRepository    *string             `json:"git_repository"`
+	GitBranch        *string             `json:"git_branch"`
+	Builder          *string             `json:"builder"`
+	BuildContext     *string             `json:"build_context"`
+	DockerfilePath   *string             `json:"dockerfile_path"`
+	BuildOptions     *store.BuildOptions `json:"build_options"`
+	StartCommand     *string             `json:"start_command"`
+	Port             *int                `json:"port"`
+	CPULimit         *float64            `json:"cpu_limit"`
+	MemoryLimitMB    *int64              `json:"memory_limit_mb"`
 }
 
 // apply sets the fields present in f on in, trimmed, and fills Git defaults.
@@ -504,6 +506,12 @@ func (f appFields) apply(in store.AppInput) store.AppInput {
 	str(&in.Git.Builder, f.Builder)
 	str(&in.Git.BuildContext, f.BuildContext)
 	str(&in.Git.Dockerfile, f.DockerfilePath)
+	if f.BuildOptions != nil {
+		o := *f.BuildOptions
+		o.BuildCommand, o.Image = strings.TrimSpace(o.BuildCommand), strings.TrimSpace(o.Image)
+		o.OutputDir = cleanRepoPath(strings.TrimSpace(o.OutputDir))
+		in.Git.Options = o
+	}
 	str(&in.StartCommand, f.StartCommand)
 	if f.Port != nil {
 		in.Port = *f.Port
@@ -618,8 +626,14 @@ func validApp(w http.ResponseWriter, in store.AppInput) bool {
 	case git && (!branchRe.MatchString(g.Branch) || strings.Contains(g.Branch, "..") ||
 		strings.HasSuffix(g.Branch, "/") || strings.HasSuffix(g.Branch, ".lock")):
 		invalid(w, "git_branch must be a branch name like main or release/2.0")
-	case git && g.Builder != store.BuilderAuto && g.Builder != store.BuilderDockerfile && g.Builder != store.BuilderRailpack:
-		invalid(w, "builder must be auto, dockerfile or railpack")
+	case git && !validBuilder(g.Builder):
+		invalid(w, "builder must be auto, dockerfile, railpack, nixpacks, buildpacks or static")
+	case git && (len(g.Options.BuildCommand) > 4096 || strings.ContainsRune(g.Options.BuildCommand, 0)):
+		invalid(w, "build_options.build_command must be at most 4096 characters, without NUL")
+	case git && g.Options.OutputDir != "" && !validRepoPath(g.Options.OutputDir):
+		invalid(w, "build_options.output_dir must be a folder inside the build context, like dist or build/web")
+	case git && g.Options.Image != "" && (!imageRe.MatchString(g.Options.Image) || strings.Contains(g.Options.Image, "..")):
+		invalid(w, "build_options.image must be an image reference like heroku/builder:24 or node:22-alpine")
 	case git && g.BuildContext != "" && !validRepoPath(g.BuildContext):
 		invalid(w, "build_context must be a folder inside the repository, like . or services/api")
 	case git && !validRepoPath(g.Dockerfile):
@@ -1525,4 +1539,14 @@ func (s *Server) handleSearchEvents(w http.ResponseWriter, r *http.Request) {
 		"items": mapSlice(list, func(e store.Event) eventJSON {
 			return eventJSON{e.ID, e.Actor, e.Action, e.TargetType, e.TargetID, e.TargetName, e.Detail, e.CreatedAt}
 		})})
+}
+
+// validBuilder reports whether b is one of the builders of a Git app.
+func validBuilder(b string) bool {
+	switch b {
+	case store.BuilderAuto, store.BuilderDockerfile, store.BuilderRailpack,
+		store.BuilderNixpacks, store.BuilderBuildpacks, store.BuilderStatic:
+		return true
+	}
+	return false
 }

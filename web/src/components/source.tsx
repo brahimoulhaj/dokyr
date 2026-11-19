@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { gitBranchesQuery, gitReposQuery, gitSourcesQuery, registriesQuery, registrySettingsQuery, repositoriesQuery, type App, type GitSource, type SourceInput } from '../lib/api'
+import { gitBranchesQuery, gitReposQuery, gitSourcesQuery, registriesQuery, registrySettingsQuery, repositoriesQuery, type App, type BuildOptions, type GitSource, type SourceInput } from '../lib/api'
 import { repoName } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
 import { ComboField, type ComboOption } from './combobox'
-import { cx, Field } from './ui'
+import { CheckOption, cx, Field } from './ui'
 
 /** The source part of an app form, kept as strings while editing. */
 export type SourceForm = {
@@ -16,9 +16,46 @@ export type SourceForm = {
   git_source_id: string
   git_repository: string
   git_branch: string
-  builder: 'auto' | 'dockerfile' | 'railpack'
+  builder: Builder
   build_context: string
   dockerfile_path: string
+  /** Nixpacks and Static. */
+  build_command: string
+  /** Static. */
+  output_dir: string
+  spa: boolean
+  /** Buildpacks: the builder image. Static: the image the build command runs in. */
+  build_image: string
+}
+
+export type Builder = 'auto' | 'dockerfile' | 'railpack' | 'nixpacks' | 'buildpacks' | 'static'
+
+/** Whether a builder reads the Dockerfile path. */
+export const usesDockerfile = (b: string) => b === 'auto' || b === 'dockerfile'
+
+/** A builder's name as shown in the interface. */
+export function builderLabel(b: string, auto: string): string {
+  return { auto, dockerfile: 'Dockerfile', railpack: 'Railpack', nixpacks: 'Nixpacks', buildpacks: 'Buildpacks', static: 'Static' }[b] ?? b
+}
+
+/** The options the chosen builder reads; the others are left out, so they do not linger. */
+function buildOptions(f: SourceForm): BuildOptions {
+  const command = f.build_command.trim()
+  switch (f.builder) {
+    case 'nixpacks':
+      return command ? { build_command: command } : {}
+    case 'buildpacks':
+      return f.build_image.trim() ? { image: f.build_image.trim() } : {}
+    case 'static':
+      return {
+        ...(command ? { build_command: command } : {}),
+        ...(f.output_dir.trim() ? { output_dir: f.output_dir.trim() } : {}),
+        ...(f.spa ? { spa: true } : {}),
+        ...(command && f.build_image.trim() ? { image: f.build_image.trim() } : {}),
+      }
+    default:
+      return {}
+  }
 }
 
 export function sourceForm(app?: App): SourceForm {
@@ -32,6 +69,10 @@ export function sourceForm(app?: App): SourceForm {
     builder: (app?.builder as SourceForm['builder']) || 'auto',
     build_context: app?.build_context ?? '',
     dockerfile_path: app?.dockerfile_path || 'Dockerfile',
+    build_command: app?.build_options?.build_command ?? '',
+    output_dir: app?.build_options?.output_dir ?? '',
+    spa: app?.build_options?.spa ?? false,
+    build_image: app?.build_options?.image ?? '',
   }
 }
 
@@ -46,6 +87,7 @@ export function sourceInput(f: SourceForm): SourceInput {
     builder: f.builder,
     build_context: f.build_context.trim(),
     dockerfile_path: f.dockerfile_path.trim(),
+    build_options: buildOptions(f),
   }
 }
 
@@ -251,6 +293,9 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
           { value: 'auto', label: t.source.builderAuto, note: t.source.builderAutoNote },
           { value: 'dockerfile', label: 'Dockerfile' },
           { value: 'railpack', label: 'Railpack', note: t.source.builderRailpackNote },
+          { value: 'nixpacks', label: 'Nixpacks', note: t.source.builderNixpacksNote },
+          { value: 'buildpacks', label: 'Buildpacks', note: t.source.builderBuildpacksNote },
+          { value: 'static', label: 'Static', note: t.source.builderStaticNote },
         ]}
         value={form.builder}
         onChange={(b) => onChange({ ...form, builder: b as SourceForm['builder'] })}
@@ -267,7 +312,7 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
           value={form.build_context}
           onChange={set('build_context')}
         />
-        {form.builder !== 'railpack' && (
+        {usesDockerfile(form.builder) && (
           <Field
             label="Dockerfile"
             name="dockerfile_path"
@@ -279,7 +324,60 @@ function GitFields({ form, onChange }: { form: SourceForm; onChange: (f: SourceF
             onChange={set('dockerfile_path')}
           />
         )}
+        {form.builder === 'static' && (
+          <Field
+            label={t.source.outputDir}
+            name="output_dir"
+            dir="ltr"
+            placeholder="dist"
+            hintTooltip hint={t.source.outputDirHint}
+            value={form.output_dir}
+            onChange={set('output_dir')}
+          />
+        )}
+        {form.builder === 'buildpacks' && (
+          <Field
+            label={t.source.builderImage}
+            name="build_image"
+            dir="ltr"
+            placeholder="heroku/builder:24"
+            hintTooltip hint={t.source.builderImageHint}
+            value={form.build_image}
+            onChange={set('build_image')}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        )}
       </div>
+      {(form.builder === 'nixpacks' || form.builder === 'static') && (
+        <Field
+          label={t.source.buildCommand}
+          name="build_command"
+          dir="ltr"
+          placeholder={form.builder === 'static' ? 'npm ci && npm run build' : 'npm run build'}
+          hintTooltip hint={form.builder === 'static' ? t.source.staticBuildCommandHint : t.source.buildCommandHint}
+          value={form.build_command}
+          onChange={set('build_command')}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      )}
+      {form.builder === 'static' && form.build_command.trim() !== '' && (
+        <Field
+          label={t.source.buildImage}
+          name="build_image"
+          dir="ltr"
+          placeholder="node:22-alpine"
+          hintTooltip hint={t.source.buildImageHint}
+          value={form.build_image}
+          onChange={set('build_image')}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      )}
+      {form.builder === 'static' && (
+        <CheckOption checked={form.spa} onChange={(spa) => onChange({ ...form, spa })} label={t.source.spa} hint={t.source.spaHint} />
+      )}
     </>
   )
 }

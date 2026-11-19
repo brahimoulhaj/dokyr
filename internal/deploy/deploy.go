@@ -62,6 +62,12 @@ type Builder interface {
 	Build(ctx context.Context, src store.GitSource, dir, tag, appID string, vars builder.Vars, line builder.LineFunc) error
 }
 
+// forgetter is a Builder that keeps something for an app between builds (a cache volume)
+// and can drop it when the app is deleted.
+type forgetter interface {
+	Forget(ctx context.Context, appID string) error
+}
+
 // commitMessager is a Builder that can also read the message of the commit it fetched.
 type commitMessager interface {
 	CommitMessage(ctx context.Context, dir string) (string, error)
@@ -614,7 +620,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		phase(store.PhaseBuilding)
 		logw.printf("Deploying %s from %s (branch %s)", app.Name, app.Git.Repository, app.Git.Branch)
 		var err error
-		image, err = s.build(ctx, final, app, dep, buildVars(resolved, app.EnvMeta), logw)
+		image, err = s.build(ctx, final, &app, dep, buildVars(resolved, app.EnvMeta), logw)
 		buildDone()
 		if err != nil {
 			fail("", err)
@@ -975,7 +981,9 @@ func (s *Service) pull(ctx context.Context, image string, auth *executor.Registr
 
 // build fetches a Git app at its branch tip and builds it into a local image, which it
 // returns. The workspace is removed afterwards, whatever happens.
-func (s *Service) build(ctx, final context.Context, app store.App, dep store.Deployment, vars builder.Vars, logw *logWriter) (string, error) {
+// build fetches and builds a Git app. It may add a build variable to the app (see
+// addPHPExtensions); app is updated to match what is stored.
+func (s *Service) build(ctx, final context.Context, app *store.App, dep store.Deployment, vars builder.Vars, logw *logWriter) (string, error) {
 	if s.opts.Builder == nil {
 		return "", errors.New("this panel cannot build from Git")
 	}
@@ -1033,6 +1041,7 @@ func (s *Service) build(ctx, final context.Context, app store.App, dep store.Dep
 		return "", err
 	}
 
+	vars = s.addPHPExtensions(final, app, dir, vars, logw)
 	tag := imageTag(app.ID, commit)
 	logw.printf("Building image %s (builder: %s)", tag, src.Builder)
 	if n, m := len(vars.Args), len(vars.Secrets); n+m > 0 {
@@ -1518,6 +1527,11 @@ func (s *Service) Remove(ctx context.Context, appID string) error {
 			}
 		}
 	}
+	if f, ok := s.opts.Builder.(forgetter); ok {
+		if err := f.Forget(ctx, appID); err != nil {
+			s.opts.Log.Error("remove build cache", "app", appID, "error", err)
+		}
+	}
 	return os.RemoveAll(filepath.Join(s.opts.DataDir, "deployments", appID))
 }
 
@@ -1638,4 +1652,45 @@ func (w *logWriter) close() {
 	if w.f != nil {
 		w.f.Close()
 	}
+}
+
+// addPHPExtensions gives a PHP project built by Railpack the MySQL and PostgreSQL drivers:
+// the first time such an app is built, the build variable that lists the extensions is
+// added to the app, where it can be edited like any other. An app that already has the
+// variable, even empty, is left alone. A failure is logged and the build goes on.
+func (s *Service) addPHPExtensions(ctx context.Context, app *store.App, dir string, vars builder.Vars, logw *logWriter) builder.Vars {
+	const name = builder.PHPExtensionsVariable
+	_, own := app.Environment[name]
+	_, plain := vars.Args[name] // one inherited from the project counts too
+	_, secret := vars.Secrets[name]
+	if own || plain || secret || !builder.RailpackPHP(dir, app.Git) {
+		return vars
+	}
+	_, added, err := s.opts.Store.AddAppBuildVariable(ctx, app.ID, name, builder.DefaultPHPExtensions)
+	if err != nil {
+		logw.printf("Warning: could not add %s to the app: %v", name, err)
+		return vars
+	}
+	if !added {
+		return vars
+	}
+	// The same change on this deployment's own view of the app, and only that one: its
+	// fingerprint must say what was deployed, not what was edited meanwhile.
+	env := map[string]string{name: builder.DefaultPHPExtensions}
+	for k, v := range app.Environment {
+		env[k] = v
+	}
+	meta := map[string]store.EnvVarMeta{name: {Scope: store.EnvScopeBuild}}
+	for k, v := range app.EnvMeta {
+		meta[k] = v
+	}
+	app.Environment, app.EnvMeta = env, meta
+	app.EnvOrder = append(append([]string{}, app.EnvOrder...), name)
+	logw.printf("PHP project: added the build variable %s=%s to the app, so the image has the MySQL and PostgreSQL drivers; edit it in the app's Environment settings", name, builder.DefaultPHPExtensions)
+	args := map[string]string{name: builder.DefaultPHPExtensions}
+	for k, v := range vars.Args {
+		args[k] = v
+	}
+	vars.Args = args
+	return vars
 }

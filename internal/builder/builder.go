@@ -51,11 +51,12 @@ type Limits struct {
 
 func (l Limits) capped() bool { return l.CPUs > 0 || l.MemoryMB > 0 }
 
-// Local runs git, docker and railpack on the panel's own host.
+// Local runs git, docker and the builder CLIs (railpack, nixpacks) on the panel's own host.
 type Local struct {
 	Git      string // git binary; empty = "git"
 	Docker   string // docker binary; empty = "docker"
 	Railpack string // railpack binary; empty = "railpack"
+	Nixpacks string // nixpacks binary; empty = "nixpacks"
 	// RailpackFrontend overrides the BuildKit frontend image; empty = RailpackFrontend.
 	RailpackFrontend string
 	// Limits caps builds. BuildKit inside dockerd ignores per-build limits, so a capped
@@ -443,6 +444,12 @@ func (l *Local) Build(ctx context.Context, src store.GitSource, dir, tag, appID 
 		return l.buildDockerfile(ctx, src, dir, tag, appID, vars, line)
 	case store.BuilderRailpack:
 		return l.buildRailpack(ctx, src, dir, tag, appID, vars, line)
+	case store.BuilderNixpacks:
+		return l.buildNixpacks(ctx, src, dir, tag, appID, vars, line)
+	case store.BuilderBuildpacks:
+		return l.buildBuildpacks(ctx, src, dir, tag, appID, vars, line)
+	case store.BuilderStatic:
+		return l.buildStatic(ctx, src, dir, tag, appID, vars, line)
 	case store.BuilderAuto:
 		if hasDockerfile(dir, src) {
 			say(line, fmt.Sprintf("Found %s: building with the Dockerfile", displayPath(path.Join(src.BuildContext, src.Dockerfile))))

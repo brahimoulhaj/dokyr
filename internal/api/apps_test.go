@@ -449,7 +449,10 @@ func TestGitAppsAPI(t *testing.T) {
 		git(map[string]any{"git_branch": "-x"}),
 		git(map[string]any{"git_branch": "a..b"}),
 		git(map[string]any{"git_branch": "feature/"}),
-		git(map[string]any{"builder": "nixpacks"}),
+		git(map[string]any{"builder": "kaniko"}),
+		git(map[string]any{"builder": "static", "build_options": map[string]any{"output_dir": "../dist"}}),
+		git(map[string]any{"builder": "static", "build_options": map[string]any{"build_command": "a\x00b"}}),
+		git(map[string]any{"builder": "buildpacks", "build_options": map[string]any{"image": "not an image"}}),
 		git(map[string]any{"build_context": "../x"}),
 		git(map[string]any{"build_context": "/etc"}),
 		git(map[string]any{"dockerfile_path": "../Dockerfile"}),
@@ -460,6 +463,20 @@ func TestGitAppsAPI(t *testing.T) {
 		if code, m := e.call("POST", apps, bad); code != 422 {
 			t.Errorf("POST %v = %d %v, want 422", bad, code, m)
 		}
+	}
+
+	// The new builders keep their options, tidied; saving without them leaves them alone.
+	st := e.must(201, "POST", apps, git(map[string]any{"name": "site", "builder": "static",
+		"build_options": map[string]any{"build_command": " npm run build ", "output_dir": "./dist/", "spa": true, "image": "node:22-alpine"}}))
+	if o := st["build_options"].(map[string]any); st["builder"] != "static" || o["build_command"] != "npm run build" || o["output_dir"] != "dist" || o["spa"] != true || o["image"] != "node:22-alpine" {
+		t.Errorf("static app = %v %v", st["builder"], o)
+	}
+	st = e.must(200, "PATCH", "/api/apps/"+st["id"].(string), map[string]any{"port": 8080})
+	if o := st["build_options"].(map[string]any); o["output_dir"] != "dist" {
+		t.Errorf("build options after an unrelated save = %v", o)
+	}
+	for _, b := range []string{"nixpacks", "buildpacks"} {
+		e.must(201, "POST", apps, git(map[string]any{"name": "b-" + b, "builder": b}))
 	}
 
 	a := e.must(201, "POST", apps, git(map[string]any{"build_context": "./services/api/", "image": "ignored:1"}))

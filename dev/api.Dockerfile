@@ -21,6 +21,22 @@ RUN set -eu; \
     tar -xzf "/tmp/$file" -C /usr/local/bin railpack; \
     rm "/tmp/$file"; \
     railpack --version
+# Nixpacks writes the Dockerfile of the Nixpacks builder. Pinned and checksummed; keep the
+# version equal to builder.NixpacksVersion. (Buildpacks need no CLI: the builder image's
+# own lifecycle runs in a container.)
+ARG NIXPACKS_VERSION=1.41.0
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) arch=x86_64;  sum=0f55de7874507b9cf7502113120bd96f2ab6979f78d10eaf2eb2ade9207b3af6 ;; \
+      arm64) arch=aarch64; sum=912bd02dd2bb6f9c3a9ed965fe8a68b4aa318dc7a2546e2eca6f2806a894ba39 ;; \
+      *) echo "no nixpacks for $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    file="nixpacks-v${NIXPACKS_VERSION}-${arch}-unknown-linux-musl.tar.gz"; \
+    wget -q -O "/tmp/$file" "https://github.com/railwayapp/nixpacks/releases/download/v${NIXPACKS_VERSION}/$file"; \
+    echo "$sum  /tmp/$file" | sha256sum -c -; \
+    tar -xzf "/tmp/$file" -C /usr/local/bin nixpacks; \
+    rm "/tmp/$file"; \
+    nixpacks --version
 WORKDIR /src
 
 COPY go.mod go.sum ./

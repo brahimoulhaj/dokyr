@@ -590,6 +590,7 @@ type fakeBuilder struct {
 	started    chan string        // when set, receives each tag as its build starts
 	vars       builder.Vars       // build-time variables of the last build
 	output     []string           // extra build output lines
+	files      map[string]string  // files of the fetched repository
 }
 
 func (b *fakeBuilder) Fetch(_ context.Context, src store.GitSource, auth builder.Auth, dir string, line builder.LineFunc) (string, error) {
@@ -604,6 +605,11 @@ func (b *fakeBuilder) Fetch(_ context.Context, src store.GitSource, auth builder
 	if b.fetchErr != nil && (b.fetchFails == 0 || b.failed < b.fetchFails) {
 		b.failed++
 		return "", b.fetchErr
+	}
+	for name, body := range b.files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			return "", err
+		}
 	}
 	return b.commit, nil
 }

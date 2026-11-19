@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"panel/internal/builder"
 	"reflect"
 	"strings"
 	"testing"
@@ -234,5 +235,77 @@ func TestSecretValues(t *testing.T) {
 	w.hide(got)
 	if s := w.redact("x abcdefgh-long y abcdef z MIIBVgIBADANBg visible-value"); s != "x *** y *** z *** visible-value" {
 		t.Errorf("redact = %q", s)
+	}
+}
+
+// TestDeployAddsPHPExtensions: the first Railpack build of a PHP project adds the build
+// variable that lists the database drivers, once; what the user makes of it afterwards stays.
+func TestDeployAddsPHPExtensions(t *testing.T) {
+	const name = builder.PHPExtensionsVariable
+	e, ctx := newEnv(t), context.Background()
+	b := &fakeBuilder{commit: strings.Repeat("ab12", 10), files: map[string]string{"composer.json": "{}"}}
+	e.useGit(b)
+	setBuilder := func(kind string, env map[string]string, meta map[string]store.EnvVarMeta) {
+		t.Helper()
+		git := e.app.Git
+		git.Builder = kind
+		var err error
+		if e.app, err = e.st.UpdateApp(ctx, e.app.ID, store.AppInput{Name: e.app.Name, SourceType: store.SourceGit, Port: e.app.Port, Git: git, Environment: env, EnvMeta: meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deploy := func() {
+		t.Helper()
+		if dep := e.deploy(); dep.Status != store.DeploySucceeded {
+			t.Fatalf("deployment: %s", dep.Error)
+		}
+	}
+
+	// A Dockerfile build is not Railpack's: nothing is added.
+	deploy()
+	if a, _ := e.st.GetApp(ctx, e.app.ID); len(a.Environment) != 0 || b.vars.Args[name] != "" {
+		t.Fatalf("Dockerfile build: env %v, build args %v", a.Environment, b.vars.Args)
+	}
+
+	// Automatic without a Dockerfile is Railpack: added to the app as a build-time variable,
+	// given to this very build, and the app does not then say it needs a redeploy.
+	setBuilder(store.BuilderAuto, map[string]string{"APP_ENV": "production"}, nil)
+	deploy()
+	a, _ := e.st.GetApp(ctx, e.app.ID)
+	if a.Environment[name] != builder.DefaultPHPExtensions || a.EnvMeta[name] != (store.EnvVarMeta{Scope: store.EnvScopeBuild}) || a.Environment["APP_ENV"] != "production" {
+		t.Fatalf("app after the first build: env %v, meta %v", a.Environment, a.EnvMeta)
+	}
+	if got := a.EnvOrder; len(got) == 0 || got[len(got)-1] != name {
+		t.Fatalf("order = %v", got)
+	}
+	if b.vars.Args[name] != builder.DefaultPHPExtensions {
+		t.Fatalf("build args = %v", b.vars.Args)
+	}
+	check, _, _ := e.st.AppHealthCheck(ctx, e.app.ID)
+	if a.DeployedConfig != a.ConfigHash(check) {
+		t.Fatal("the app says its settings changed since the deployment")
+	}
+
+	// Edited to PostgreSQL only: kept, and passed as it is.
+	e.app = a
+	setBuilder(store.BuilderRailpack, map[string]string{name: "pdo_pgsql"}, map[string]store.EnvVarMeta{name: {Scope: store.EnvScopeBuild}})
+	deploy()
+	if a, _ := e.st.GetApp(ctx, e.app.ID); a.Environment[name] != "pdo_pgsql" || b.vars.Args[name] != "pdo_pgsql" {
+		t.Fatalf("edited value: env %v, build args %v", a.Environment, b.vars.Args)
+	}
+
+	// Emptied: still the user's choice, not filled again.
+	setBuilder(store.BuilderRailpack, map[string]string{name: ""}, map[string]store.EnvVarMeta{name: {Scope: store.EnvScopeBuild}})
+	deploy()
+	if a, _ := e.st.GetApp(ctx, e.app.ID); a.Environment[name] != "" {
+		t.Fatalf("emptied value filled again: %v", a.Environment)
+	}
+
+	// Not a PHP project: nothing is added.
+	b.files = map[string]string{"package.json": "{}"}
+	setBuilder(store.BuilderRailpack, map[string]string{}, nil)
+	deploy()
+	if a, _ := e.st.GetApp(ctx, e.app.ID); len(a.Environment) != 0 {
+		t.Fatalf("Node project got %v", a.Environment)
 	}
 }

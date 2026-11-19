@@ -170,6 +170,21 @@ func TestRailpackPinMatchesImages(t *testing.T) {
 	}
 }
 
+func TestBuilderPinsMatchImages(t *testing.T) {
+	for name, want := range map[string]string{"NIXPACKS_VERSION": NixpacksVersion} {
+		re := regexp.MustCompile(`(?m)^ARG ` + name + `=(\S+)$`)
+		for _, f := range []string{"../../Dockerfile", "../../dev/api.Dockerfile"} {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m := re.FindSubmatch(raw); m == nil || string(m[1]) != want {
+				t.Errorf("%s pins %s %q, the builder package says %q", f, name, m, want)
+			}
+		}
+	}
+}
+
 // stubTools writes fake docker and railpack binaries that log their arguments.
 func stubTools(t *testing.T) (*Local, func() []string) {
 	t.Helper()

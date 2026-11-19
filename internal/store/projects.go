@@ -168,15 +168,15 @@ type App struct {
 
 const appCols = `id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb,
 	desired_state, COALESCE(current_deployment_id, ''),
-	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order, template, deployed_config`
+	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order, template, deployed_config, build_options`
 
 func (s *Store) scanApp(row scanner) (App, error) {
 	var a App
-	var environment, mounts, processes, envMeta, envOrder string
+	var environment, mounts, processes, envMeta, envOrder, buildOptions string
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.Name, &a.SourceType, &a.Image, &a.Port, &a.CPULimit, &a.MemoryMB,
 		&a.DesiredState, &a.CurrentDeploymentID,
-		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder, &a.Template, &a.DeployedConfig)
+		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder, &a.Template, &a.DeployedConfig, &buildOptions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -203,6 +203,9 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	}
 	a.EnvMeta = nonNilMeta(a.EnvMeta)
 	a.EnvOrder = s.openEnvOrder(envOrder, a.Environment)
+	if err := json.Unmarshal([]byte(buildOptions), &a.Git.Options); err != nil {
+		return a, fmt.Errorf("app %s build options: %w", a.ID, err)
+	}
 	a.CreatedAt, a.UpdatedAt = parseTime(created), parseTime(updated)
 	return a, err
 }
@@ -240,6 +243,12 @@ const (
 	BuilderAuto       = "auto"
 	BuilderDockerfile = "dockerfile"
 	BuilderRailpack   = "railpack"
+	// BuilderNixpacks writes a Dockerfile with Nixpacks, then builds it like any other.
+	BuilderNixpacks = "nixpacks"
+	// BuilderBuildpacks builds with Cloud Native Buildpacks (pack) and a builder image.
+	BuilderBuildpacks = "buildpacks"
+	// BuilderStatic runs an optional build command and serves a folder with Caddy.
+	BuilderStatic = "static"
 )
 
 // GitSource says where a Git app's code is and how it is built.
@@ -250,6 +259,27 @@ type GitSource struct {
 	Builder      string // BuilderAuto, BuilderDockerfile or BuilderRailpack
 	BuildContext string // folder inside the repository; "" = its root
 	Dockerfile   string // path relative to the build context; with BuilderAuto, its presence picks the Dockerfile
+	Options      BuildOptions
+}
+
+// Default images of the builders that take one.
+const (
+	DefaultBuildpacksBuilder = "heroku/builder:24" // amd64 and arm64
+	DefaultStaticBuildImage  = "node:22-alpine"
+)
+
+// BuildOptions are the settings of the Nixpacks, Buildpacks and Static builders; the
+// others ignore them. Empty fields take the builder's defaults.
+type BuildOptions struct {
+	// BuildCommand replaces the detected build step (Nixpacks) or builds the site (Static,
+	// run in Image at the build context; empty = the files are served as they are).
+	BuildCommand string `json:"build_command,omitempty"`
+	// OutputDir is the folder Static serves, relative to the build context; "" = its root.
+	OutputDir string `json:"output_dir,omitempty"`
+	// SPA answers unknown paths with index.html (Static), for client-side routing.
+	SPA bool `json:"spa,omitempty"`
+	// Image is the builder image (Buildpacks) or the image the build command runs in (Static).
+	Image string `json:"image,omitempty"`
 }
 
 // AppInput holds the fields a user can set on an app. Image is used by image apps and
@@ -300,13 +330,17 @@ func (s *Store) CreateApp(ctx context.Context, projectID string, in AppInput) (A
 	if err != nil {
 		return App{}, err
 	}
+	buildOptions, err := json.Marshal(in.Git.Options)
+	if err != nil {
+		return App{}, err
+	}
 	aid, ts := id.New(), now()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO apps (id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb, desired_state,
-			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order, template)
-		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ? FROM projects WHERE id = ?`,
+			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order, template, build_options)
+		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ? FROM projects WHERE id = ?`,
 		aid, in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB, StateStopped,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), in.Template, projectID)
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), in.Template, string(buildOptions), projectID)
 	if err != nil {
 		return App{}, conflict(err)
 	}
@@ -358,14 +392,18 @@ func (s *Store) UpdateApp(ctx context.Context, appID string, in AppInput) (App, 
 	if err != nil {
 		return App{}, err
 	}
+	buildOptions, err := json.Marshal(in.Git.Options)
+	if err != nil {
+		return App{}, err
+	}
 	err = affected(s.db.ExecContext(ctx, `
 		UPDATE apps SET name = ?, source_type = ?, image = ?, port = ?, cpu_limit = ?, memory_limit_mb = ?,
 			git_repository = ?, git_branch = ?, builder = ?, build_context = ?, dockerfile_path = ?,
 			git_source_id = NULLIF(?, ''), environment = ?, updated_at = ?, mounts = ?, start_command = ?,
-			registry_id = NULLIF(?, ''), processes = ?, environment_meta = ?, environment_order = ?
+			registry_id = NULLIF(?, ''), processes = ?, environment_meta = ?, environment_order = ?, build_options = ?
 		WHERE id = ?`,
 		in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), now(), string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), appID))
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), now(), string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), string(buildOptions), appID))
 	if err != nil {
 		return App{}, err
 	}

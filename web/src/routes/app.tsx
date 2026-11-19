@@ -29,7 +29,7 @@ import {
   type Page,
   isWildcard,
 } from '../lib/api'
-import { SourceFields, sourceChanged, sourceForm, sourceInput } from '../components/source'
+import { builderLabel, SourceFields, sourceChanged, sourceForm, sourceInput, usesDockerfile } from '../components/source'
 import { DatabasePrompt } from '../components/connect-database'
 import { rich, useT } from '../lib/i18n'
 import { withToast } from '../lib/toasts'
@@ -306,8 +306,8 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
                 · <span dir="ltr">{app.git_branch}</span>
               </Fact>
               <Fact label={t.source.builder}>
-                {app.builder === 'railpack' ? 'Railpack' : app.builder === 'auto' ? t.source.builderAuto : 'Dockerfile'}
-                {app.builder !== 'railpack' && (
+                {builderLabel(app.builder, t.source.builderAuto)}
+                {usesDockerfile(app.builder) && (
                   <>
                     {' · '}
                     <span dir="ltr">{[app.build_context, app.dockerfile_path].filter(Boolean).join('/')}</span>

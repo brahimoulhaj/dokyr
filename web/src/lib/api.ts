@@ -209,6 +209,7 @@ export type App = {
   build_context: string
   /** Relative to the build context. */
   dockerfile_path: string
+  build_options: BuildOptions
   /** Replaces the image's entrypoint and command, run by /bin/sh -c; empty = the image's own. */
   start_command: string
   /** rolling, or recreate (stop old first, short gap) for an app with a volume or a host path. */
@@ -299,6 +300,18 @@ export type PanelEvent = {
   created_at: string
 }
 
+/** Settings of the Nixpacks, Buildpacks and Static builders; empty fields take the defaults. */
+export type BuildOptions = {
+  /** Nixpacks: replaces the detected build step. Static: builds the site; empty = served as it is. */
+  build_command?: string
+  /** Static: the folder served, relative to the build context; empty = its root. */
+  output_dir?: string
+  /** Static: unknown paths answer index.html. */
+  spa?: boolean
+  /** Buildpacks: the builder image. Static: the image the build command runs in. */
+  image?: string
+}
+
 export type SourceInput =
   | { source_type: 'image'; image: string; registry_id: string }
   | {
@@ -309,6 +322,7 @@ export type SourceInput =
       builder: string
       build_context: string
       dockerfile_path: string
+      build_options: BuildOptions
     }
 
 export type AppInput = SourceInput & { environment?: Record<string, string>; environment_meta?: Record<string, EnvMeta>; environment_order?: string[]; name: string; start_command?: string; port: number; cpu_limit: number; memory_limit_mb: number }

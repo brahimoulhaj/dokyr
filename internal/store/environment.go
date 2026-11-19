@@ -317,3 +317,45 @@ func (s *Store) ProjectEnvOrder(ctx context.Context, projectID string) ([]string
 func (s *Store) SetProjectEnvOrder(ctx context.Context, projectID string, order []string, env map[string]string) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE projects SET environment_order = ? WHERE id = ?`, sealEnvOrder(order, env), projectID))
 }
+
+// AddAppBuildVariable adds a build-time variable to an app unless a variable of that name
+// exists, whatever its value: one the user emptied or changed stays as they left it. It
+// returns the app as stored afterwards and whether the variable was added.
+func (s *Store) AddAppBuildVariable(ctx context.Context, appID, name, value string) (App, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return App{}, false, err
+	}
+	defer tx.Rollback()
+	a, err := s.scanApp(tx.QueryRowContext(ctx, `SELECT `+appCols+` FROM apps WHERE id = ?`, appID))
+	if err != nil {
+		return App{}, false, err
+	}
+	if _, has := a.Environment[name]; has {
+		return a, false, nil
+	}
+	if a.Environment == nil {
+		a.Environment = map[string]string{}
+	}
+	a.Environment[name] = value
+	a.EnvMeta = nonNilMeta(a.EnvMeta)
+	a.EnvMeta[name] = EnvVarMeta{Scope: EnvScopeBuild}
+	a.EnvOrder = append(a.EnvOrder, name)
+	environment, err := s.sealEnvironment(a.Environment)
+	if err != nil {
+		return App{}, false, err
+	}
+	meta, err := json.Marshal(a.EnvMeta)
+	if err != nil {
+		return App{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE apps SET environment = ?, environment_meta = ?, environment_order = ?, updated_at = ? WHERE id = ?`,
+		string(environment), string(meta), sealEnvOrder(a.EnvOrder, a.Environment), now(), appID); err != nil {
+		return App{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return App{}, false, err
+	}
+	a, err = s.GetApp(ctx, appID)
+	return a, true, err
+}

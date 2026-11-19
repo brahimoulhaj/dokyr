@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { NewFromCompose } from '../components/compose'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { FormActions, NameList, NewAppLayout, SummaryRows } from '../components/new-app-layout'
-import { SourceFields, sourceForm, sourceInput, type OtherSource, type SourceForm } from '../components/source'
+import { builderLabel, SourceFields, sourceForm, sourceInput, usesDockerfile, type OtherSource, type SourceForm } from '../components/source'
 import { NewFromTemplate } from '../components/templates'
 import { Button, ErrorNote, Field, HelpTip, PageHeader, QueryState } from '../components/ui'
 import { api, gitSourcesQuery, projectQuery, projectsQuery, registriesQuery, type App } from '../lib/api'
@@ -88,9 +88,12 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
           { label: t.source.repositoryUrl, value: source.git_repository.trim(), ltr: true },
           { label: t.source.branch, value: source.git_branch.trim(), ltr: true },
           { label: t.source.repositoryAccess, value: gitSources.data?.find((g) => g.id === source.git_source_id)?.name ?? t.source.publicByUrl },
-          { label: t.source.builder, value: source.builder === 'auto' ? t.source.builderAuto : source.builder === 'dockerfile' ? 'Dockerfile' : 'Railpack' },
+          { label: t.source.builder, value: builderLabel(source.builder, t.source.builderAuto) },
           ...(source.build_context.trim() ? [{ label: t.source.buildContext, value: source.build_context.trim(), ltr: true }] : []),
-          ...(source.builder !== 'railpack' ? [{ label: 'Dockerfile', value: source.dockerfile_path.trim(), ltr: true }] : []),
+          ...(usesDockerfile(source.builder) ? [{ label: 'Dockerfile', value: source.dockerfile_path.trim(), ltr: true }] : []),
+          ...((source.builder === 'nixpacks' || source.builder === 'static') && source.build_command.trim() ? [{ label: t.source.buildCommand, value: source.build_command.trim(), ltr: true }] : []),
+          ...(source.builder === 'static' ? [{ label: t.source.outputDir, value: source.output_dir.trim() || '.', ltr: true }] : []),
+          ...(source.builder === 'buildpacks' ? [{ label: t.source.builderImage, value: source.build_image.trim() || 'heroku/builder:24', ltr: true }] : []),
         ]),
     { label: t.project.containerPort, value: port, ltr: true },
     { label: t.app.environment, value: variables === null ? <span className="text-danger">{t.app.environmentInvalid}</span> : variables.length === 0 ? t.newApp.none : <NameList names={variables} /> },
