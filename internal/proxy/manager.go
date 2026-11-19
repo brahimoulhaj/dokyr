@@ -53,6 +53,7 @@ type Options struct {
 	Admin         string // AdminSocket or AdminTCP
 	AdminPort     int    // AdminTCP: port on 127.0.0.1
 	PanelUpstream string // host:port where Caddy reaches the panel
+	PanelToken    string // see Config.PanelToken
 	// Source returns the routing state from the database. The Manager fills in
 	// AdminListen and PanelUpstream itself.
 	Source func(ctx context.Context) (Config, error)
@@ -273,6 +274,7 @@ func (m *Manager) build(ctx context.Context) (Config, []byte, error) {
 	}
 	cfg.AdminListen = m.adminListen()
 	cfg.PanelUpstream = m.opts.PanelUpstream
+	cfg.PanelToken = m.opts.PanelToken
 	raw, err := Build(cfg)
 	return cfg, raw, err
 }

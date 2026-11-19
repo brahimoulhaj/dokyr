@@ -12,19 +12,20 @@ import (
 
 // Setting keys.
 const (
-	SettingPanelDomain = "panel_domain"        // hostname the panel is served on over HTTPS
-	SettingACMEEmail   = "acme_email"          // account email for the certificate authority
-	SettingPanelIPOff  = "panel_ip_access_off" // "true": with a panel domain set, requests by IP (unknown hosts) are dropped
-	SettingPanelTLS    = "panel_domain_tls"    // TLS mode of the panel domain: TLSAuto (default) or TLSHTTPOnly
-	SettingOnboarded   = "onboarded_at"        // when the owner finished or skipped the onboarding steps
-	SettingUpdateAuto  = "update_auto"         // "true": apply panel updates on their own
-	SettingUpdateSeen  = "update_seen"         // finished_at of the last update result recorded as an event
-	SettingBuildCPUs   = "build_cpus"          // CPU cap shared by Git builds; "0" = none; absent = the environment's default
-	SettingBuildMemory = "build_memory_mb"     // memory cap (MB) shared by Git builds; "0" = none; absent = the environment's default
-	SettingRegistry    = "registry"            // JSON RegistrySettings of the built-in registry
-	SettingRegistryS3  = "registry_s3"         // id of the S3 connection the registry stores in; absent = a Docker volume
-	SettingHostTermOff = "host_terminal_off"   // "true": nobody can open the host terminal
-	SettingHostTermUsr = "host_terminal_user"  // user the host terminal opens as; absent = root
+	SettingPanelDomain  = "panel_domain"          // hostname the panel is served on over HTTPS
+	SettingACMEEmail    = "acme_email"            // account email for the certificate authority
+	SettingPanelIPOff   = "panel_ip_access_off"   // "true": with a panel domain set, requests by IP (unknown hosts) are dropped
+	SettingPanelRetired = "panel_domains_retired" // JSON list of hostnames the panel used to be served on
+	SettingPanelTLS     = "panel_domain_tls"      // TLS mode of the panel domain: TLSAuto (default) or TLSHTTPOnly
+	SettingOnboarded    = "onboarded_at"          // when the owner finished or skipped the onboarding steps
+	SettingUpdateAuto   = "update_auto"           // "true": apply panel updates on their own
+	SettingUpdateSeen   = "update_seen"           // finished_at of the last update result recorded as an event
+	SettingBuildCPUs    = "build_cpus"            // CPU cap shared by Git builds; "0" = none; absent = the environment's default
+	SettingBuildMemory  = "build_memory_mb"       // memory cap (MB) shared by Git builds; "0" = none; absent = the environment's default
+	SettingRegistry     = "registry"              // JSON RegistrySettings of the built-in registry
+	SettingRegistryS3   = "registry_s3"           // id of the S3 connection the registry stores in; absent = a Docker volume
+	SettingHostTermOff  = "host_terminal_off"     // "true": nobody can open the host terminal
+	SettingHostTermUsr  = "host_terminal_user"    // user the host terminal opens as; absent = root
 )
 
 // BuildLimits caps the CPU and memory that Git builds share. Zero leaves a resource uncapped.

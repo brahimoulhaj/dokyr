@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -68,11 +69,24 @@ func (l *Local) buildNixpacks(ctx context.Context, src store.GitSource, dir, tag
 	if err := json.Unmarshal(planOut, &plan); err != nil {
 		return fmt.Errorf("nixpacks plan: %w", err)
 	}
+	// Nixpacks writes into .nixpacks of the repository, and the panel edits the Dockerfile
+	// there: a repository that ships that folder (or anything in it) as a symbolic link
+	// would send those writes somewhere else on the panel's disk.
+	outDir := filepath.Join(contextDir, ".nixpacks")
+	if err := noSymlinks(outDir); err != nil {
+		return fmt.Errorf("nixpacks: %w", err)
+	}
 	say(line, "Nixpacks "+NixpacksVersion+": writing the Dockerfile")
 	if err := run(ctx, line, os.Environ(), l.nixpacks(), append([]string{"build", contextDir, "--out", contextDir}, flags...)...); err != nil {
 		return fmt.Errorf("nixpacks: %w", err)
 	}
-	dockerfile := filepath.Join(contextDir, ".nixpacks", "Dockerfile")
+	if err := noSymlinks(outDir); err != nil {
+		return fmt.Errorf("nixpacks: %w", err)
+	}
+	dockerfile := filepath.Join(outDir, "Dockerfile")
+	if fi, err := os.Lstat(dockerfile); err != nil || !fi.Mode().IsRegular() {
+		return errors.New("nixpacks: wrote no Dockerfile")
+	}
 	if len(vars.Secrets) > 0 {
 		raw, err := os.ReadFile(dockerfile)
 		if err != nil {
@@ -103,6 +117,24 @@ func (l *Local) buildNixpacks(ctx context.Context, src store.GitSource, dir, tag
 		return fmt.Errorf("docker build: %w", err)
 	}
 	return nil
+}
+
+// noSymlinks refuses a path that is, or holds, a symbolic link. A path that does not
+// exist is fine.
+func noSymlinks(root string) error {
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s in the repository must not be a symbolic link", filepath.Base(p))
+		}
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // mountSecrets gives every RUN instruction of a Dockerfile the named BuildKit secrets as

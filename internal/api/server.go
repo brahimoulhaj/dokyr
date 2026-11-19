@@ -32,6 +32,7 @@ type Server struct {
 	updater        Updater
 	hostTerminal   HostTerminal
 	hostUnlocks    hostUnlocks
+	proxyToken     string // what the proxy proves itself with; see clientIP
 	cronJobs       CronJobs
 	git            *gitsource.Service
 	metrics        HostMetrics
@@ -112,7 +113,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/invites/accept", s.limit(s.authRate, s.handleAcceptInvite))
 
 	mux.HandleFunc("GET /api/settings/panel", s.requireAuth(s.handleGetPanelSettings))
-	mux.HandleFunc("PUT /api/settings/panel", s.requireAuth(s.handlePutPanelSettings))
+	// The panel's own address: changing it moves where everyone signs in.
+	mux.HandleFunc("PUT /api/settings/panel", s.requireAuth(sessionOnly(adminOnly(s.handlePutPanelSettings))))
 	mux.HandleFunc("GET /api/settings/panel/dns", s.requireAuth(s.handlePanelDNS))
 
 	mux.HandleFunc("GET /api/settings/builds", s.requireAuth(s.handleGetBuildSettings))
@@ -120,8 +122,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/settings/builds", s.requireAuth(s.handleResetBuildSettings))
 	mux.HandleFunc("GET /api/settings/panel-backup", s.requireAuth(s.handleGetPanelBackup))
 	mux.HandleFunc("PUT /api/settings/panel-backup", s.requireAuth(sessionOnly(adminOnly(s.handlePutPanelBackup))))
-	mux.HandleFunc("POST /api/settings/panel-backup/run", s.requireAuth(s.handleRunPanelBackup))
-	mux.HandleFunc("GET /api/settings/panel-backup/backups", s.requireAuth(s.handleListPanelBackups))
+	mux.HandleFunc("POST /api/settings/panel-backup/run", s.requireAuth(adminOnly(s.handleRunPanelBackup)))
+	mux.HandleFunc("GET /api/settings/panel-backup/backups", s.requireAuth(adminOnly(s.handleListPanelBackups)))
 	mux.HandleFunc("GET /api/settings/panel-backup/backups/{name}", s.requireAuth(sessionOnly(adminOnly(s.handleDownloadPanelBackup))))
 
 	mux.HandleFunc("GET /api/onboarding", s.requireAuth(s.handleGetOnboarding))
@@ -129,8 +131,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/updates", s.requireAuth(s.handleGetUpdates))
 	mux.HandleFunc("POST /api/updates/check", s.requireAuth(s.handleCheckUpdates))
-	mux.HandleFunc("POST /api/updates/apply", s.requireAuth(s.handleApplyUpdate))
-	mux.HandleFunc("PUT /api/updates/settings", s.requireAuth(s.handleUpdateSettings))
+	mux.HandleFunc("POST /api/updates/apply", s.requireAuth(adminOnly(s.handleApplyUpdate)))
+	mux.HandleFunc("PUT /api/updates/settings", s.requireAuth(adminOnly(s.handleUpdateSettings)))
 
 	mux.HandleFunc("GET /api/tokens", s.requireAuth(sessionOnly(s.handleListTokens)))
 	mux.HandleFunc("POST /api/tokens", s.requireAuth(sessionOnly(s.handleCreateToken)))
@@ -149,7 +151,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/registries", s.requireAuth(s.handleAddRegistry))
 	mux.HandleFunc("DELETE /api/registries/{id}", s.requireAuth(s.handleDeleteRegistry))
 	mux.HandleFunc("GET /api/object-store", s.requireAuth(s.handleGetObjectStore))
-	mux.HandleFunc("PUT /api/object-store", s.requireAuth(sessionOnly(s.handlePutObjectStore)))
+	mux.HandleFunc("PUT /api/object-store", s.requireAuth(sessionOnly(adminOnly(s.handlePutObjectStore))))
 	mux.HandleFunc("GET /api/object-store/buckets", s.requireAuth(s.handleListBuckets))
 	mux.HandleFunc("POST /api/object-store/buckets", s.requireAuth(s.handleCreateBucket))
 	mux.HandleFunc("DELETE /api/object-store/buckets/{name}", s.requireAuth(s.handleDeleteBucket))
@@ -157,7 +159,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/object-store/keys", s.requireAuth(sessionOnly(s.handleCreateAccessKey)))
 	mux.HandleFunc("DELETE /api/object-store/keys/{id}", s.requireAuth(s.handleDeleteAccessKey))
 	mux.HandleFunc("GET /api/registry/settings", s.requireAuth(s.handleGetRegistrySettings))
-	mux.HandleFunc("PUT /api/registry/settings", s.requireAuth(sessionOnly(s.handlePutRegistrySettings)))
+	mux.HandleFunc("PUT /api/registry/settings", s.requireAuth(sessionOnly(adminOnly(s.handlePutRegistrySettings))))
 	mux.HandleFunc("GET /api/registry/tokens", s.requireAuth(s.handleListRegistryTokens))
 	mux.HandleFunc("POST /api/registry/tokens", s.requireAuth(sessionOnly(s.handleCreateRegistryToken)))
 	mux.HandleFunc("DELETE /api/registry/tokens/{id}", s.requireAuth(sessionOnly(s.handleDeleteRegistryToken)))
@@ -251,10 +253,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/apps/{id}/routes", s.requireAuth(s.handleAppRoutes))
 	mux.HandleFunc("GET /api/notifications/kinds", s.requireAuth(s.handleNotificationKinds))
 	mux.HandleFunc("GET /api/notification-channels", s.requireAuth(s.handleListChannels))
-	mux.HandleFunc("POST /api/notification-channels", s.requireAuth(sessionOnly(s.handleCreateChannel)))
-	mux.HandleFunc("PUT /api/notification-channels/{id}", s.requireAuth(sessionOnly(s.handleUpdateChannel)))
-	mux.HandleFunc("DELETE /api/notification-channels/{id}", s.requireAuth(sessionOnly(s.handleDeleteChannel)))
-	mux.HandleFunc("POST /api/notification-channels/{id}/test", s.requireAuth(sessionOnly(s.handleTestChannel)))
+	mux.HandleFunc("POST /api/notification-channels", s.requireAuth(sessionOnly(adminOnly(s.handleCreateChannel))))
+	mux.HandleFunc("PUT /api/notification-channels/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleUpdateChannel))))
+	mux.HandleFunc("DELETE /api/notification-channels/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleDeleteChannel))))
+	mux.HandleFunc("POST /api/notification-channels/{id}/test", s.requireAuth(sessionOnly(adminOnly(s.handleTestChannel))))
 	mux.HandleFunc("GET /api/alert-rules", s.requireAuth(s.handleListRules))
 	mux.HandleFunc("POST /api/alert-rules", s.requireAuth(sessionOnly(s.handleCreateRule)))
 	mux.HandleFunc("PUT /api/alert-rules/{id}", s.requireAuth(sessionOnly(s.handleUpdateRule)))

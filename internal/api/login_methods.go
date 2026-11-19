@@ -543,7 +543,7 @@ func (s *Server) handleGitHubLoginCallback(w http.ResponseWriter, r *http.Reques
 		fail()
 		return
 	}
-	token, _, err := s.accounts.NewSession(ctx, u.ID, browserSessionDetails(r))
+	token, _, err := s.accounts.NewSession(ctx, u.ID, s.browserSessionDetails(r))
 	if err != nil {
 		fail()
 		return

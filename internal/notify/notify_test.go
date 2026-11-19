@@ -56,6 +56,15 @@ func TestMergeAndPublic(t *testing.T) {
 	if err != nil || cfg["password"] != "secret" || cfg["port"] != "465" || cfg["extra"] != "" || cfg["host"] != "smtp.example.com" {
 		t.Fatalf("merge kept %v %v", cfg, err)
 	}
+	// The saved password does not follow the channel to another mail server.
+	moved := map[string]string{"host": "smtp.evil.example", "port": "587", "from": "a@example.com", "to": "b@example.com", "username": "u"}
+	if _, err := Merge("email", saved, moved); err == nil {
+		t.Fatal("kept the saved password for another mail server")
+	}
+	moved["password"] = "new"
+	if got, err := Merge("email", saved, moved); err != nil || got["password"] != "new" {
+		t.Fatalf("new server with its password: %v %v", got, err)
+	}
 	pub := Public("email", cfg)
 	if pub["password"] != nil || pub["password_set"] != true || pub["host"] != "smtp.example.com" {
 		t.Fatalf("public %v", pub)

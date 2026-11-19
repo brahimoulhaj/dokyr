@@ -546,6 +546,11 @@ func (l *Local) buildRailpack(ctx context.Context, src store.GitSource, dir, tag
 	}
 	for _, name := range sortedKeys(vars.Secrets) {
 		if v := vars.Secrets[name]; v != "" {
+			// A secret reaches prepare through its environment, and prepare runs here, in
+			// the panel: a name the system itself reads would change how it runs.
+			if processVariable(name) {
+				return fmt.Errorf("the secret build variable %s is a name the build tools read themselves: make it a plain build variable, or rename it", name)
+			}
 			prepare = append(prepare, "--env", name)
 			prepareEnv = append(prepareEnv, name+"="+v)
 			all[name] = v
@@ -640,6 +645,24 @@ func inside(root, rel string, wantDir bool) (string, error) {
 		return "", errors.New("is not a file")
 	}
 	return p, nil
+}
+
+// processVariable reports whether name is an environment variable that changes how a
+// program on the panel's side starts or what it runs: the loader's, the shell's, and those
+// of git, ssh, Docker and mise.
+func processVariable(name string) bool {
+	switch name {
+	case "PATH", "HOME", "SHELL", "IFS", "ENV", "BASH_ENV", "TMPDIR", "TMP", "TEMP", "USER", "PWD",
+		"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR",
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy":
+		return true
+	}
+	for _, prefix := range []string{"LD_", "DYLD_", "GIT_", "SSH_", "DOCKER_", "BUILDKIT_", "BUILDX_", "MISE_"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // run starts name with args, passes each output line (stdout and stderr together) to

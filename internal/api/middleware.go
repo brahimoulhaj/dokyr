@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"net"
 	"net/http"
 	"net/netip"
@@ -16,8 +17,12 @@ import (
 	"panel/internal/account"
 	"panel/internal/auth"
 	"panel/internal/brand"
+	"panel/internal/proxy"
 	"panel/internal/store"
 )
+
+// deployHookPath is followed by an app's webhook token.
+const deployHookPath = "/api/hooks/deploy/"
 
 type ctxKey int
 
@@ -62,8 +67,12 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/health" {
-			s.log.Info("request", "method", r.Method, "path", r.URL.Path, "status", sw.status,
-				"ms", time.Since(start).Milliseconds(), "ip", clientIP(r))
+			path := r.URL.Path
+			if strings.HasPrefix(path, deployHookPath) { // the rest of the path is the credential
+				path = deployHookPath + "[token]"
+			}
+			s.log.Info("request", "method", r.Method, "path", path, "status", sw.status,
+				"ms", time.Since(start).Milliseconds(), "ip", s.clientIP(r))
 		}
 	})
 }
@@ -89,6 +98,15 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		// Over HTTPS only, and for this hostname alone: http://<server-ip> keeps working.
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			h.Set("Strict-Transport-Security", "max-age=15552000")
+		}
+		// API answers are data, never a page. Adminer, proxied under the same prefix, is
+		// one and brings its own scripts.
+		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.Contains(r.URL.Path, "/adminer/") {
+			h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -143,7 +161,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if !allowed(w, r, u) {
 			return
 		}
-		if err := s.store.TouchSession(r.Context(), auth.HashToken(c.Value), browserSessionDetails(r)); err != nil {
+		if err := s.store.TouchSession(r.Context(), auth.HashToken(c.Value), s.browserSessionDetails(r)); err != nil {
 			s.log.Error("session activity", "error", err)
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
@@ -234,17 +252,31 @@ func sessionOnly(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// proxyTokenHeader carries the secret the proxy adds to every request it passes on.
+const proxyTokenHeader = proxy.PanelTokenHeader
+
+// SetProxyToken sets the secret the proxy sends with every request (proxy.Config.PanelToken).
+// Without one, X-Forwarded-For is never believed.
+func (s *Server) SetProxyToken(token string) { s.proxyToken = token }
+
+func (s *Server) clientIP(r *http.Request) string { return clientIP(r, s.proxyToken) }
+
 // clientIP is the address of the browser. Behind the proxy every request arrives from
 // Caddy, which sets X-Forwarded-For to the real client and discards whatever the client
-// sent. The header is believed only when the direct peer is on a private or loopback
-// address, so a client that reaches the panel port directly cannot pick its own address.
-func clientIP(r *http.Request) string {
+// sent. The header is believed only when the request carries the proxy's token: app
+// containers share the proxy's network and reach the panel port directly, so a private
+// peer address alone proves nothing, and they would otherwise pick their own address
+// (and with it a fresh rate limit for every request).
+func clientIP(r *http.Request, proxyToken string) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	peer, err := netip.ParseAddr(host)
 	if err != nil || !(peer.IsPrivate() || peer.IsLoopback()) {
+		return host
+	}
+	if proxyToken == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get(proxyTokenHeader)), []byte(proxyToken)) != 1 {
 		return host
 	}
 	xff := r.Header.Get("X-Forwarded-For")
@@ -297,7 +329,7 @@ func (l *rateLimiter) allow(key string) (bool, time.Duration) {
 
 func (s *Server) limit(l *rateLimiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ok, retry := l.allow(clientIP(r))
+		ok, retry := l.allow(s.clientIP(r))
 		if !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "too many attempts, try again later")

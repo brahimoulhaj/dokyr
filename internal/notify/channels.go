@@ -77,6 +77,11 @@ func Merge(kindID string, saved, in map[string]string) (map[string]string, error
 			out[f] = v
 		}
 	}
+	// A saved password belongs to the server it was entered for: pointing the channel at
+	// another host must not send it there.
+	if kindID == "email" && saved["password"] != "" && strings.TrimSpace(in["password"]) == "" && out["host"] != saved["host"] {
+		return nil, fmt.Errorf("%w: enter the password again to change the mail server", ErrInvalid)
+	}
 	for _, f := range k.Required {
 		if out[f] == "" {
 			return nil, fmt.Errorf("%w: %s is required", ErrInvalid, strings.ReplaceAll(f, "_", " "))
@@ -157,7 +162,10 @@ type Sender struct {
 }
 
 func NewSender() *Sender {
-	return &Sender{HTTP: &http.Client{Timeout: 15 * time.Second}, TelegramAPI: "https://api.telegram.org"}
+	// A webhook answers where it is called: a redirect is reported, not followed, so a
+	// channel cannot be bounced to an address nobody entered.
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &Sender{HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: noRedirect}, TelegramAPI: "https://api.telegram.org"}
 }
 
 func (s *Sender) Send(ctx context.Context, kindID string, cfg map[string]string, m Message) error {

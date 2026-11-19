@@ -79,6 +79,9 @@ func (s *Server) handleAddGitLab(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
+	if u, err := url.Parse(strings.TrimSpace(in.BaseURL)); err == nil && u.Host != "" && !s.mayReach(w, r, u.Host) {
+		return
+	}
 	c, err := s.git.AddGitLab(r.Context(), in.Name, in.BaseURL, in.Token)
 	if s.gitError(w, "add gitlab connection", err) {
 		return

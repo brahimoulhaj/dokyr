@@ -1,13 +1,32 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 
 	"panel/internal/brand"
 )
+
+var inlineScriptRe = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+
+// pageCSP is the policy of the web app's page: its own files only, plus the inline
+// scripts index.html itself carries (the theme applied before first paint), by hash.
+// Styles may be inline: the terminal and the charts set them from code.
+func pageCSP(index []byte) string {
+	scripts := "script-src 'self'"
+	for _, m := range inlineScriptRe.FindAllSubmatch(index, -1) {
+		sum := sha256.Sum256(m[1])
+		scripts += " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	}
+	return "default-src 'self'; " + scripts + "; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; " +
+		"font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self'; " +
+		"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+}
 
 // spa serves the embedded web app. Unknown paths fall back to index.html so that
 // client-side routes survive a page reload.
@@ -40,6 +59,7 @@ func (s *Server) spa() http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Security-Policy", pageCSP(index))
 		w.Write(index)
 	})
 }

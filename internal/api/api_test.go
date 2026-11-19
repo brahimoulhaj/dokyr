@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -334,21 +335,29 @@ func TestPanelSettings(t *testing.T) {
 }
 
 func TestClientIP(t *testing.T) {
-	for _, tc := range []struct{ remote, xff, want string }{
-		{"203.0.113.9:4000", "", "203.0.113.9"},
-		{"203.0.113.9:4000", "198.51.100.1", "203.0.113.9"}, // direct public peer: header ignored
-		{"172.18.0.3:4000", "198.51.100.1", "198.51.100.1"}, // from the proxy
-		{"127.0.0.1:4000", "10.0.0.1, 198.51.100.7", "198.51.100.7"},
-		{"172.18.0.3:4000", "garbage", "172.18.0.3"},
-		{"127.0.0.1:4000", "", "127.0.0.1"},
+	for _, tc := range []struct{ remote, xff, token, want string }{
+		{"203.0.113.9:4000", "", "", "203.0.113.9"},
+		{"203.0.113.9:4000", "198.51.100.1", "secret", "203.0.113.9"}, // direct public peer: header ignored
+		{"172.18.0.3:4000", "198.51.100.1", "secret", "198.51.100.1"}, // from the proxy
+		{"172.18.0.4:4000", "198.51.100.1", "", "172.18.0.4"},         // an app container on the proxy's network
+		{"172.18.0.4:4000", "198.51.100.1", "guess", "172.18.0.4"},
+		{"127.0.0.1:4000", "10.0.0.1, 198.51.100.7", "secret", "198.51.100.7"},
+		{"172.18.0.3:4000", "garbage", "secret", "172.18.0.3"},
+		{"127.0.0.1:4000", "", "secret", "127.0.0.1"},
 	} {
 		r := httptest.NewRequest("GET", "/", nil)
 		r.RemoteAddr = tc.remote
 		if tc.xff != "" {
 			r.Header.Set("X-Forwarded-For", tc.xff)
 		}
-		if got := clientIP(r); got != tc.want {
-			t.Errorf("clientIP(%s, xff=%q) = %s, want %s", tc.remote, tc.xff, got, tc.want)
+		if tc.token != "" {
+			r.Header.Set(proxyTokenHeader, tc.token)
+		}
+		if got := clientIP(r, "secret"); got != tc.want {
+			t.Errorf("clientIP(%s, xff=%q, token=%q) = %s, want %s", tc.remote, tc.xff, tc.token, got, tc.want)
+		}
+		if got, peer := clientIP(r, ""), netip.MustParseAddrPort(tc.remote).Addr().String(); got != peer {
+			t.Errorf("clientIP(%s) without a proxy token = %s, want the peer", tc.remote, got)
 		}
 	}
 }

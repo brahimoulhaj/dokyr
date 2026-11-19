@@ -282,3 +282,46 @@ require("fs").writeFileSync("built.txt", "built " + process.env.GREETING)`+"\n")
 		t.Errorf("non-builder image: %v", err)
 	}
 }
+
+func TestNoSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, ".nixpacks")
+	if err := noSymlinks(out); err != nil {
+		t.Fatalf("a missing folder: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(out, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "Dockerfile"), []byte("FROM scratch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := noSymlinks(out); err != nil {
+		t.Fatalf("plain files: %v", err)
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(out, "assets", "x")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	if err := noSymlinks(out); err == nil {
+		t.Fatal("accepted a symbolic link inside the folder")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := noSymlinks(link); err == nil {
+		t.Fatal("accepted a folder that is a symbolic link")
+	}
+}
+
+func TestProcessVariable(t *testing.T) {
+	for _, name := range []string{"PATH", "LD_PRELOAD", "DOCKER_HOST", "GIT_SSH_COMMAND", "MISE_SHIMS_DIR", "HOME", "https_proxy"} {
+		if !processVariable(name) {
+			t.Errorf("%s should be refused as a secret build variable", name)
+		}
+	}
+	for _, name := range []string{"NPM_TOKEN", "DATABASE_URL", "RAILPACK_NODE_VERSION", "PATHS", "MY_PATH", "LDAP_PASSWORD"} {
+		if processVariable(name) {
+			t.Errorf("%s is an ordinary name", name)
+		}
+	}
+}

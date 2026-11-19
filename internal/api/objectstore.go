@@ -258,7 +258,21 @@ func (s *Server) handleCreateAccessKey(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	key, secret, err := s.objectStore.CreateAccessKey(r.Context(), in.Name, strings.TrimSpace(in.Bucket), in.Permission)
+	in.Bucket = strings.TrimSpace(in.Bucket)
+	if !isAdmin(userFrom(r.Context())) {
+		// A key reads (and, with write, replaces) everything in its bucket: the panel's
+		// own backups and the database dumps when the bucket is one a connection uses.
+		used, err := s.bucketBacksConnection(r.Context(), in.Bucket)
+		if err != nil {
+			s.internal(w, "create access key", err)
+			return
+		}
+		if used {
+			writeError(w, http.StatusForbidden, "forbidden", "this bucket holds the panel's backups; ask an admin for a key")
+			return
+		}
+	}
+	key, secret, err := s.objectStore.CreateAccessKey(r.Context(), in.Name, in.Bucket, in.Permission)
 	if s.objectStoreError(w, "create access key", err) {
 		return
 	}
@@ -268,6 +282,24 @@ func (s *Server) handleCreateAccessKey(w http.ResponseWriter, r *http.Request) {
 		store.S3AccessKey
 		SecretKey string `json:"secret_key"`
 	}{key, secret})
+}
+
+// bucketBacksConnection reports whether a bucket of the built-in storage is the panel's
+// own or the target of an S3 connection (backups go to those).
+func (s *Server) bucketBacksConnection(ctx context.Context, bucket string) (bool, error) {
+	if bucket == objectstore.DefaultBucket {
+		return true, nil
+	}
+	conns, err := s.store.ListS3Connections(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range conns {
+		if c.Bucket == bucket && c.Endpoint == s.objectStore.Endpoint() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) handleDeleteAccessKey(w http.ResponseWriter, r *http.Request) {

@@ -87,6 +87,9 @@ func (s *Server) handleImportCompose(w http.ResponseWriter, r *http.Request) {
 			invalid(w, "service "+app.Name+": "+msg)
 			return
 		}
+		if !s.mayChangeApp(w, r, store.AppInput{}, app) {
+			return
+		}
 		if taken[app.Name] {
 			writeError(w, http.StatusConflict, "conflict", "an app named "+app.Name+" already exists in the project: rename the service")
 			return
