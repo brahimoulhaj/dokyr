@@ -15,6 +15,32 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.33.0',
+    date: '2026-11-20',
+    changes: {
+      en: [
+        'A remote CLI, first step: `dokyr login https://your-panel` signs in from your own machine through the browser. You approve the device on the panel, and the CLI never sees your password.',
+        'The CLI gets an API token named after the device, listed under API tokens and revocable there.',
+        '`dokyr projects list` shows the projects of the panel in the terminal (`--json` for scripts). No released binaries yet: build it with `make cli`.',
+      ],
+      fr: [
+        'Une CLI distante, première étape : `dokyr login https://votre-panneau` vous connecte depuis votre machine en passant par le navigateur. Vous approuvez l’appareil sur le panneau, et la CLI ne voit jamais votre mot de passe.',
+        'La CLI reçoit un jeton d’API au nom de l’appareil, listé dans Jetons d’API et révocable à cet endroit.',
+        '`dokyr projects list` affiche les projets du panneau dans le terminal (`--json` pour les scripts). Pas encore de binaires publiés : compilez-la avec `make cli`.',
+      ],
+      ar: [
+        'واجهة أوامر عن بُعد، الخطوة الأولى: `dokyr login https://your-panel` يسجّل دخولك من جهازك عبر المتصفح. توافق على الجهاز في اللوحة، ولا ترى واجهة الأوامر كلمة مرورك أبدًا.',
+        'تحصل واجهة الأوامر على رمز API باسم الجهاز، يظهر في صفحة رموز API ويمكن إبطاله منها.',
+        '`dokyr projects list` يعرض مشاريع اللوحة في الطرفية (`--json` للسكربتات). لا توجد ملفات تنفيذية منشورة بعد: ابنِها بالأمر `make cli`.',
+      ],
+      es: [
+        'Una CLI remota, primer paso: `dokyr login https://tu-panel` inicia sesión desde tu propia máquina a través del navegador. Apruebas el dispositivo en el panel, y la CLI nunca ve tu contraseña.',
+        'La CLI recibe un token de API con el nombre del dispositivo, que aparece en Tokens de API y se puede revocar allí.',
+        '`dokyr projects list` muestra los proyectos del panel en la terminal (`--json` para scripts). Aún no hay binarios publicados: compílala con `make cli`.',
+      ],
+    },
+  },
+  {
     version: '0.32.0',
     date: '2026-11-20',
     changes: {
