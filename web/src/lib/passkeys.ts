@@ -63,3 +63,14 @@ export async function loginWithPasskey(): Promise<User> {
   if (!credential) throw new Error('Passkey sign-in was cancelled.')
   return api<User>('/auth/passkeys/login/finish', { method: 'POST', body: credentialJSON(credential) })
 }
+
+/** Confirms with one of the signed-in user's passkeys, in place of the password, to unlock host access. */
+export async function unlockHostWithPasskey() {
+  const { publicKey: options } = await api<{ publicKey: RequestJSON }>('/auth/passkeys/host-unlock/begin', { method: 'POST', body: {} })
+  const credential = await navigator.credentials.get({ publicKey: {
+    ...options, challenge: decode(options.challenge),
+    allowCredentials: options.allowCredentials?.map((c) => ({ ...c, id: decode(c.id) })),
+  } }) as PublicKeyCredential | null
+  if (!credential) throw new Error('Passkey confirmation was cancelled.')
+  await api('/auth/passkeys/host-unlock/finish', { method: 'POST', body: credentialJSON(credential) })
+}

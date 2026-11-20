@@ -18,6 +18,10 @@ var metricRetention = map[int]time.Duration{
 	MetricHour:   30 * 24 * time.Hour,
 }
 
+// MetricHost is the kind, and the resource id, of the host's own samples. For them
+// DiskRead and DiskWrite hold the data disk's used and total bytes.
+const MetricHost = "host"
+
 // MetricSample is one bucket of container usage for an app or database instance.
 type MetricSample struct {
 	Kind        string  `json:"-"`
@@ -113,7 +117,7 @@ type MetricWindow struct {
 func (s *Store) MetricWindows(ctx context.Context, kind, resourceID string, from int64) ([]MetricWindow, error) {
 	rows, err := s.db.QueryContext(ctx, `WITH w AS (
  SELECT kind,resource_id,ts,cpu,CASE WHEN memory_limit>0 THEN 100.0*memory/memory_limit ELSE 0 END AS pct
- FROM metrics_samples WHERE resolution=? AND ts>=? AND (?='' OR kind=?) AND (?='' OR resource_id=?))
+ FROM metrics_samples WHERE resolution=? AND ts>=? AND ((?='' AND kind IN ('app','database')) OR kind=?) AND (?='' OR resource_id=?))
 SELECT kind,resource_id,COUNT(*),MIN(cpu),MIN(pct),
  (SELECT cpu FROM w l WHERE l.kind=w.kind AND l.resource_id=w.resource_id ORDER BY ts DESC LIMIT 1),
  (SELECT pct FROM w l WHERE l.kind=w.kind AND l.resource_id=w.resource_id ORDER BY ts DESC LIMIT 1)

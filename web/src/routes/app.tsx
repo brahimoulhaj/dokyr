@@ -6,7 +6,7 @@ import { EnvironmentSettings } from '../components/environment'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { DeployHookPanel } from '../components/deploy-hook'
+import { DeployHookPanel, PushDeployPanel } from '../components/deploy-hook'
 import { DeploymentTimeline } from '../components/deployment-timeline'
 import { HealthCheckPanel } from '../components/health-check'
 import { LogViewer } from '../components/logviewer'
@@ -661,7 +661,7 @@ function Settings({ app }: { app: App }) {
         {section === 'volumes' && <MountSettings key={`mounts-${app.id}`} app={app} />}
         {section === 'processes' && <ProcessSettings key={`processes-${app.id}`} app={app} />}
         {section === 'health' && <HealthCheckPanel app={app} />}
-        {section === 'webhook' && <DeployHookPanel app={app} />}
+        {section === 'webhook' && <div className="space-y-4"><DeployHookPanel app={app} /><PushDeployPanel app={app} /></div>}
         {section === 'danger' && <DangerZone app={app} />}
       </div>
     </div>

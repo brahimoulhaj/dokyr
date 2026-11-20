@@ -5,6 +5,7 @@ import { locale, useT } from '../lib/i18n'
 import { formatBytes as bytes } from '../lib/format'
 import { cx, HelpTip, Panel } from './ui'
 import { useMetricsStream } from '../lib/live'
+import { ResourceMetrics } from './resource-metrics'
 
 const percent = (value: number | null | undefined) => value == null ? '—' : `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value)}%`
 
@@ -100,4 +101,29 @@ export function HostMetrics() {
       {m.unavailable.length > 0 && <p className="border-t border-line px-4 py-2 text-xs text-warn">{m.unavailable.includes('host_network_mount') ? t.networkMount : t.partial}</p>}
     </>}
   </Panel>
+}
+
+const HISTORY_KEY = 'host-history-open'
+
+/**
+ * The stored host history (30 days), under the live card. Closed until asked for, so an
+ * idle Overview sends no requests; the choice is remembered in this browser.
+ */
+export function HostHistory() {
+  const t = useT().metrics.usage
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(HISTORY_KEY) === '1' } catch { return false }
+  })
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    try { localStorage.setItem(HISTORY_KEY, next ? '1' : '0') } catch { /* storage blocked */ }
+  }
+  return <div className="space-y-2">
+    <button type="button" aria-expanded={open} onClick={toggle} className="flex w-full items-center justify-between gap-3 border border-line bg-surface px-4 py-2.5 text-start text-xs text-muted hover:text-fg">
+      <span>{t.hostTitle}</span>
+      <span aria-hidden="true">{open ? '−' : '+'}</span>
+    </button>
+    {open && <ResourceMetrics kind="host" />}
+  </div>
 }

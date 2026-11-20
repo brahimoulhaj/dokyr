@@ -84,3 +84,21 @@ func (s *Store) DeleteGitConnection(ctx context.Context, connID string) error {
 	}
 	return err
 }
+
+// AppsByGitConnection lists the Git apps that fetch through a connection.
+func (s *Store) AppsByGitConnection(ctx context.Context, connID string) ([]App, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+appCols+` FROM apps WHERE source_type = ? AND git_source_id = ? ORDER BY id`, SourceGit, connID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []App{}
+	for rows.Next() {
+		a, err := s.scanApp(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}

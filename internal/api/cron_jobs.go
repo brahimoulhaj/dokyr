@@ -120,7 +120,7 @@ func (s *Server) handleListCronJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"jobs": out, "enabled": cfg.Enabled, "default_user": cfg.User,
-		"unlocked": s.hostUnlocks.ok(sessionHash(r)),
+		"unlocked": s.hostUnlocks.ok(sessionHash(r)), "passkey": s.hasPasskey(r),
 	})
 }
 

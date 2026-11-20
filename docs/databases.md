@@ -116,8 +116,17 @@ PostgreSQL presets cover `public`, existing tables/sequences and future objects 
 managed users. Full access permits creation in `public`, without server administration or
 arbitrary schema creation. A user owning objects must transfer ownership before access can
 be reduced. Initial application access to its original database is protected. MariaDB
-grants are scoped to one database, with underscore wildcards escaped. Custom users and
-grants made outside the panel are not discovered or reconciled in this increment.
+grants are scoped to one database, with underscore wildcards escaped.
+
+**Sync with server** reads the instance and makes these lists say what is there: databases,
+users and permissions made outside the panel (in Adminer, over SQL) are added, the ones
+dropped there are forgotten, and each permission is set to the level the server grants
+(a level is read from what the user can do: connect, read tables, write them, create in
+the database). It runs as a queued operation, only reads, and never changes the server.
+A user found this way is marked **Made outside the panel**: the panel has no password for
+it, so its connection details are unavailable until its password is rotated here. The
+instance's initial database, initial user and that user's access are never touched. Names
+the panel cannot handle safely (unusual characters) and administrator accounts are left out.
 
 ## Databases, users and grants API
 
@@ -126,8 +135,8 @@ Endpoints: `GET /api/databases/{id}/catalog`, `POST /api/databases/{id}/database
 `PUT /api/databases/{id}/grants` (body `{"database_id":"…","user_id":"…","access":"read_only"}`).
 Writes require a browser session and return a tracked operation (202). User credentials:
 `GET /api/databases/{id}/users/{user-id}/connection?database_id={database-id}`, session only,
-with a no-store response. Deletion of individual databases/users and password rotation
-remain for a later increment.
+with a no-store response (409 `external_user` for a user made outside the panel whose
+password was not rotated yet). `POST /api/databases/{id}/catalog/sync` starts a sync.
 
 ## Testing against real engines
 

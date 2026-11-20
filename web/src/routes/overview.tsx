@@ -5,7 +5,7 @@ import { activeDeploymentsQuery, appProblemsQuery, eventsQuery, meQuery, metaQue
 import { deploymentVersion, duration, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { EventList } from './activity'
-import { HostMetrics } from '../components/host-metrics'
+import { HostHistory, HostMetrics } from '../components/host-metrics'
 import { DockerMetrics } from '../components/docker-metrics'
 import { poll } from '../lib/live'
 
@@ -24,6 +24,7 @@ export function OverviewPage() {
       <ActiveDeployments />
       <AppProblems />
       <HostMetrics />
+      <HostHistory />
       <DockerMetrics />
 
       <QueryState loading={projects.isPending} error={projects.error} what={t.projects.what} />

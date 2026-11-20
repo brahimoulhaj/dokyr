@@ -17,6 +17,7 @@ import (
 	"panel/internal/deploy"
 	"panel/internal/executor"
 	"panel/internal/gitsource"
+	"panel/internal/i18n"
 	"panel/internal/proxy"
 	"panel/internal/store"
 )
@@ -47,6 +48,9 @@ type Deployer interface {
 	StreamLogs(ctx context.Context, appID, process string, opts executor.LogOptions, fn func(executor.LogLine)) error
 	// ProcessStates reports what the container of each extra process is doing.
 	ProcessStates(ctx context.Context, app store.App) []deploy.ProcessState
+	// NeedsRedeploy tells whether the app's settings, or a value its variables take from
+	// the project, a database or another app, changed since the running deployment.
+	NeedsRedeploy(ctx context.Context, app store.App) bool
 }
 
 // SetDeployer connects the deploy service; without one, runtime actions answer 503.
@@ -100,6 +104,7 @@ type appJSON struct {
 	BuildContext        string                      `json:"build_context"`
 	DockerfilePath      string                      `json:"dockerfile_path"`
 	BuildOptions        store.BuildOptions          `json:"build_options"`
+	WatchPaths          []string                    `json:"watch_paths"` // Git apps: a push deploys only when it touches one; empty = every push
 	StartCommand        string                      `json:"start_command"`
 	Template            string                      `json:"template"`       // id of the template the app was created from; "" = none
 	NeedsRedeploy       bool                        `json:"needs_redeploy"` // settings changed since the running deployment; only on GET /api/apps/{id}
@@ -123,6 +128,7 @@ func toAppJSON(a store.App) appJSON {
 		GitRepository:       a.Git.Repository, GitBranch: a.Git.Branch, Builder: a.Git.Builder,
 		BuildContext: a.Git.BuildContext, DockerfilePath: a.Git.Dockerfile, BuildOptions: a.Git.Options,
 		StartCommand: a.StartCommand, Template: a.Template,
+		WatchPaths: a.WatchPaths,
 		Strategy:   a.Strategy(),
 		PushDeploy: a.PushDeploy,
 		CreatedAt:  a.CreatedAt, UpdatedAt: a.UpdatedAt,
@@ -470,6 +476,7 @@ type appFields struct {
 	BuildContext     *string             `json:"build_context"`
 	DockerfilePath   *string             `json:"dockerfile_path"`
 	BuildOptions     *store.BuildOptions `json:"build_options"`
+	WatchPaths       *[]string           `json:"watch_paths"`
 	StartCommand     *string             `json:"start_command"`
 	Port             *int                `json:"port"`
 	CPULimit         *float64            `json:"cpu_limit"`
@@ -511,6 +518,9 @@ func (f appFields) apply(in store.AppInput) store.AppInput {
 		o.BuildCommand, o.Image = strings.TrimSpace(o.BuildCommand), strings.TrimSpace(o.Image)
 		o.OutputDir = cleanRepoPath(strings.TrimSpace(o.OutputDir))
 		in.Git.Options = o
+	}
+	if f.WatchPaths != nil {
+		in.WatchPaths = cleanWatchPaths(*f.WatchPaths)
 	}
 	str(&in.StartCommand, f.StartCommand)
 	if f.Port != nil {
@@ -634,6 +644,8 @@ func validApp(w http.ResponseWriter, in store.AppInput) bool {
 		invalid(w, "build_options.output_dir must be a folder inside the build context, like dist or build/web")
 	case git && g.Options.Image != "" && (!imageRe.MatchString(g.Options.Image) || strings.Contains(g.Options.Image, "..")):
 		invalid(w, "build_options.image must be an image reference like heroku/builder:24 or node:22-alpine")
+	case git && !validWatchPaths(in.WatchPaths):
+		invalid(w, "watch_paths takes up to 50 patterns of paths inside the repository, like services/api/** or *.md, each at most 200 characters")
 	case git && g.BuildContext != "" && !validRepoPath(g.BuildContext):
 		invalid(w, "build_context must be a folder inside the repository, like . or services/api")
 	case git && !validRepoPath(g.Dockerfile):
@@ -702,12 +714,8 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := toAppJSON(a)
-	if a.CurrentDeploymentID != "" && a.DeployedConfig != "" {
-		if check, _, err := s.store.AppHealthCheck(r.Context(), a.ID); err == nil {
-			out.NeedsRedeploy = a.ConfigHash(check) != a.DeployedConfig
-		}
-	}
 	if s.deployer != nil {
+		out.NeedsRedeploy = s.deployer.NeedsRedeploy(r.Context(), a)
 		out.RuntimeState = s.deployer.RuntimeState(r.Context(), a.ID)
 		if h, ok := s.deployer.AppHealth(a.ID); ok {
 			out.Health = &h
@@ -729,7 +737,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	saved := store.AppInput{
-		Mounts: a.Mounts, Processes: a.Processes, Environment: a.Environment, EnvMeta: a.EnvMeta, EnvOrder: a.EnvOrder, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, Git: a.Git,
+		Mounts: a.Mounts, Processes: a.Processes, Environment: a.Environment, EnvMeta: a.EnvMeta, EnvOrder: a.EnvOrder, Name: a.Name, SourceType: a.SourceType, Image: a.Image, RegistryID: a.RegistryID, Git: a.Git, WatchPaths: a.WatchPaths,
 		StartCommand: a.StartCommand, Port: a.Port, CPULimit: a.CPULimit, MemoryMB: a.MemoryMB,
 	}
 	input := in.apply(saved)
@@ -974,6 +982,18 @@ func (s *Server) handleDeploymentLog(w http.ResponseWriter, r *http.Request) {
 			s.internal(w, "read deployment log", err)
 			return
 		}
+	}
+	// The file is English; the panel's own lines are shown in the reader's language.
+	if lang := i18n.FromRequest(r); lang != i18n.Default && len(body) > 0 {
+		lines := strings.Split(string(body), "\n")
+		for i, line := range lines {
+			if ts, rest, ok := strings.Cut(line, " "); ok {
+				if _, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+					lines[i] = ts + " " + logLine(lang, rest)
+				}
+			}
+		}
+		body = []byte(strings.Join(lines, "\n"))
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

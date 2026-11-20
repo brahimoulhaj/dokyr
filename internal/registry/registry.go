@@ -544,7 +544,7 @@ func (s *Service) GarbageCollect(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer ex.RemoveContainer(context.WithoutCancel(ctx), id, true)
+	defer func() { _ = ex.RemoveContainer(context.WithoutCancel(ctx), id, true) }()
 	if err := ex.StartContainer(ctx, id); err != nil {
 		return "", err
 	}

@@ -26,6 +26,7 @@ func (s *Server) handleDatabaseManage(action string) http.HandlerFunc {
 		}
 		payload := map[string]string{}
 		switch action {
+		case "catalog_sync":
 		case "database_delete":
 			payload["database_id"] = r.PathValue("database")
 		case "user_delete", "password_rotate":
@@ -75,9 +76,10 @@ func (s *Server) handleDatabaseUserConnection(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var username, dbName string
+	external := false
 	for _, u := range catalog.Users {
 		if u.ID == r.PathValue("user") {
-			username = u.Name
+			username, external = u.Name, u.External
 		}
 	}
 	for _, db := range catalog.Databases {
@@ -87,6 +89,10 @@ func (s *Server) handleDatabaseUserConnection(w http.ResponseWriter, r *http.Req
 	}
 	if username == "" || dbName == "" {
 		writeError(w, 404, "not_found", "database or user not found in this instance")
+		return
+	}
+	if external {
+		writeError(w, 409, "external_user", "This user was created outside the panel, which does not know its password. Rotate the password to get its connection details")
 		return
 	}
 	password, err := s.store.DatabaseUserPassword(r.Context(), d.ID, username)

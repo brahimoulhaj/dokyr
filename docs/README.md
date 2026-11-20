@@ -11,6 +11,7 @@ Detailed guides behind the [main README](../README.md). Progress is tracked in
 - [Users and roles](users-and-roles.md): invites, the roles table, host terminal confirmation.
 - [Sign-in methods](sign-in.md): passkeys, GitHub sign-in, active sessions.
 - [Cron jobs](cron-jobs.md): scheduled commands on the host.
+- [Deploy on push](deploy-on-push.md): the deploy webhook, the GitHub App's webhook, watch paths.
 - [Databases](databases.md): PostgreSQL/MariaDB instances, Adminer, backups, retention, `${db.*}` references, API.
 - [Monitoring](monitoring.md): host and Docker metrics, app problems on the dashboard.
 

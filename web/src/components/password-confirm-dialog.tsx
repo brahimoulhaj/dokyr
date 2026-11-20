@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog'
 import { useMutation } from '@tanstack/react-query'
-import { LockKey } from '@phosphor-icons/react'
+import { Fingerprint, LockKey } from '@phosphor-icons/react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useT } from '../lib/i18n'
 import { Button, ErrorNote } from './ui'
@@ -12,6 +12,8 @@ export type PasswordAction = {
   tone?: 'primary' | 'danger'
   pendingLabel?: string
   onConfirm: (password: string) => Promise<unknown>
+  /** Offered beside the password when set: confirms with a passkey instead. */
+  onPasskey?: () => Promise<unknown>
 }
 
 /** Mounted only for the selected action, so closing discards the password and errors. */
@@ -29,7 +31,12 @@ export function PasswordConfirmDialog({ action, onClose, onComplete }: {
     mutationFn: action.onConfirm,
     onSuccess: () => { setPassword(''); onComplete() },
   })
-  const busy = confirmation.isPending
+  const passkey = useMutation({
+    mutationFn: async () => { await action.onPasskey?.() },
+    onSuccess: () => { setPassword(''); onComplete() },
+  })
+  const busy = confirmation.isPending || passkey.isPending
+  const failure = confirmation.error ?? passkey.error
   useEffect(() => {
     if (confirmation.error) { input.current?.focus(); input.current?.select() }
   }, [confirmation.error])
@@ -51,11 +58,17 @@ export function PasswordConfirmDialog({ action, onClose, onComplete }: {
             <div className="space-y-1.5">
               <label htmlFor={inputID} className="block text-xs text-muted">{t.security.currentPassword}</label>
               <input ref={input} id={inputID} name="confirm-password" type="password" autoComplete="current-password" required dir="ltr"
-                value={password} disabled={busy} aria-invalid={!!confirmation.error} aria-describedby={confirmation.error ? errorID : undefined}
-                onChange={(event) => { setPassword(event.target.value); if (confirmation.error) confirmation.reset() }}
+                value={password} disabled={busy} aria-invalid={!!confirmation.error} aria-describedby={failure ? errorID : undefined}
+                onChange={(event) => { setPassword(event.target.value); if (confirmation.error) confirmation.reset(); if (passkey.error) passkey.reset() }}
                 className="block h-9 w-full border border-line bg-bg px-3 text-sm text-fg focus:border-accent focus:outline-none disabled:opacity-50" />
             </div>
-            {confirmation.error && <div id={errorID}><ErrorNote>{confirmation.error instanceof DOMException && confirmation.error.name === 'NotAllowedError' ? t.security.cancelled : confirmation.error.message}</ErrorNote></div>}
+            {action.onPasskey && (
+              <Button type="button" variant="ghost" className="w-full justify-center gap-2" disabled={busy} onClick={() => { confirmation.reset(); passkey.mutate() }}>
+                <Fingerprint size={16} aria-hidden />
+                {passkey.isPending ? t.security.working : t.security.confirmWithPasskey}
+              </Button>
+            )}
+            {failure && <div id={errorID}><ErrorNote>{failure instanceof DOMException && failure.name === 'NotAllowedError' ? t.security.cancelled : failure.message}</ErrorNote></div>}
           </div>
           <div className="flex flex-wrap justify-end gap-2 border-t border-line bg-raised/40 px-4 py-3">
             <AlertDialog.Close disabled={busy} render={<Button type="button" variant="ghost" />}>{t.common.cancel}</AlertDialog.Close>

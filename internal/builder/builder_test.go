@@ -170,6 +170,37 @@ func TestRailpackPinMatchesImages(t *testing.T) {
 	}
 }
 
+// The tools the builders run (git, ssh, the docker CLI and buildx) come from Alpine: both
+// images pin the same versions, on the same Alpine release.
+func TestToolPinsMatchAcrossImages(t *testing.T) {
+	read := func(f string) string {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	image, dev := read("../../Dockerfile"), read("../../dev/api.Dockerfile")
+	for _, name := range []string{"GIT_VERSION", "OPENSSH_VERSION", "DOCKER_CLI_VERSION", "BUILDX_VERSION"} {
+		re := regexp.MustCompile(`(?m)^ARG ` + name + `=(\S+)$`)
+		a, b := re.FindStringSubmatch(image), re.FindStringSubmatch(dev)
+		if a == nil || b == nil || a[1] != b[1] {
+			t.Errorf("%s: Dockerfile pins %q, dev/api.Dockerfile %q", name, a, b)
+		}
+		if !strings.Contains(image, "~${"+name+"}") || !strings.Contains(dev, "~${"+name+"}") {
+			t.Errorf("%s is declared but an image does not install that version", name)
+		}
+	}
+	alpine := regexp.MustCompile(`(?m)^FROM (?:alpine:|golang:[0-9.]+-alpine)(\d+\.\d+)\s*$`)
+	a, b := alpine.FindStringSubmatch(image), alpine.FindStringSubmatch(dev)
+	if a == nil || b == nil || a[1] != b[1] {
+		t.Errorf("the images are not on the same Alpine: %q and %q", a, b)
+	}
+	if regexp.MustCompile(`apk add[^\n]*\s(git|openssh-client|docker-cli|docker-cli-buildx)(\s|$)`).MatchString(image + dev) {
+		t.Error("an image installs a build tool without a version")
+	}
+}
+
 func TestBuilderPinsMatchImages(t *testing.T) {
 	for name, want := range map[string]string{"NIXPACKS_VERSION": NixpacksVersion} {
 		re := regexp.MustCompile(`(?m)^ARG ` + name + `=(\S+)$`)

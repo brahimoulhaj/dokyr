@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"panel/internal/secret"
+	"panel/internal/store/sqlcgen"
 )
 
 // ErrNotFound is returned when a single-row lookup matches nothing.
@@ -20,6 +21,7 @@ const timeLayout = "2006-01-02T15:04:05Z"
 
 type Store struct {
 	db        *sql.DB
+	q         *sqlcgen.Queries // the typed queries of internal/store/queries (sqlc); see sqlc.yaml
 	path      string
 	backupDir string
 	box       *secret.Box // encrypts app environments; nil only in tests and tools that never touch apps
@@ -48,7 +50,7 @@ func Open(path, backupDir string) (*Store, error) {
 		changeHubs.Delete(dsn)
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	return &Store{db: db, path: path, backupDir: backupDir, dsn: dsn, changes: changes}, nil
+	return &Store{db: db, q: sqlcgen.New(db), path: path, backupDir: backupDir, dsn: dsn, changes: changes}, nil
 }
 
 func (s *Store) Close() error {

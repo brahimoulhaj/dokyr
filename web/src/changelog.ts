@@ -15,6 +15,40 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.31.0',
+    date: '2026-11-20',
+    changes: {
+      en: [
+        'Deploy on push: a Git app can deploy only when chosen paths change (Settings → Deploy webhook), and a new GitHub App connection reports pushes itself, with no webhook per repository.',
+        'Host access: a host shell closes after a time without input (Settings → Security), a passkey can confirm instead of the password, and a cron script that starts with #! runs with that interpreter.',
+        'Databases: Sync with server lists the databases, users and permissions made outside the panel.',
+        '“Changes not deployed” also follows project variables, database references and other apps’ addresses. The Overview keeps 30 days of host history.',
+        'Errors from the server and the panel’s lines in deployment logs follow the interface language.',
+      ],
+      fr: [
+        'Déploiement au push : une app Git peut ne se déployer que si des chemins choisis changent (Paramètres → Webhook de déploiement), et une nouvelle connexion GitHub App signale elle-même les pushs, sans webhook par dépôt.',
+        'Accès à l’hôte : un shell de l’hôte se ferme après un temps sans saisie (Paramètres → Sécurité), une clé d’accès peut confirmer à la place du mot de passe, et un script cron qui commence par #! s’exécute avec cet interpréteur.',
+        'Bases de données : « Synchroniser avec le serveur » liste les bases, utilisateurs et permissions créés hors du panneau.',
+        '« Modifications non déployées » suit aussi les variables du projet, les références de base de données et les adresses des autres apps. La vue d’ensemble garde 30 jours d’historique du serveur.',
+        'Les erreurs du serveur et les lignes du panneau dans les journaux de déploiement suivent la langue de l’interface.',
+      ],
+      ar: [
+        'النشر عند الدفع: يمكن لتطبيق Git ألا يُنشر إلا عند تغيّر مسارات محددة (الإعدادات ← Webhook النشر)، واتصال GitHub App الجديد يُبلغ عن عمليات الدفع بنفسه دون webhook لكل مستودع.',
+        'الوصول إلى الخادم: تُغلق صدفة الخادم بعد مدة بلا إدخال (الإعدادات ← الأمان)، ويمكن التأكيد بمفتاح مرور بدل كلمة المرور، وسكربت cron الذي يبدأ بـ #! يُنفَّذ بذلك المفسّر.',
+        'قواعد البيانات: «المزامنة مع الخادم» تسرد القواعد والمستخدمين والصلاحيات المنشأة خارج اللوحة.',
+        '«تغييرات غير منشورة» تتبع أيضًا متغيرات المشروع ومراجع قواعد البيانات وعناوين التطبيقات الأخرى. النظرة العامة تحفظ 30 يومًا من سجل الخادم.',
+        'أخطاء الخادم وسطور اللوحة في سجلات النشر تتبع لغة الواجهة.',
+      ],
+      es: [
+        'Despliegue al hacer push: una app Git puede desplegarse solo cuando cambian las rutas elegidas (Ajustes → Webhook de despliegue), y una conexión GitHub App nueva avisa ella misma de los pushes, sin webhook por repositorio.',
+        'Acceso al servidor: un shell del servidor se cierra tras un tiempo sin entrada (Ajustes → Seguridad), una llave de acceso puede confirmar en lugar de la contraseña, y un script cron que empieza por #! se ejecuta con ese intérprete.',
+        'Bases de datos: «Sincronizar con el servidor» lista las bases, usuarios y permisos creados fuera del panel.',
+        '«Cambios sin desplegar» sigue también las variables del proyecto, las referencias de bases de datos y las direcciones de otras apps. El resumen guarda 30 días de historial del servidor.',
+        'Los errores del servidor y las líneas del panel en los registros de despliegue siguen el idioma de la interfaz.',
+      ],
+    },
+  },
+  {
     version: '0.30.0',
     date: '2026-11-19',
     changes: {

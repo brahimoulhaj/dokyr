@@ -73,7 +73,7 @@ func (s *Store) CreateDBOperationPayload(ctx context.Context, d DBInstance, acti
 	}
 	desired, status := StateRunning, "provisioning"
 	switch action {
-	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate":
+	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate", "catalog_sync":
 		// SQL work on a running instance leaves its lifecycle state alone.
 		desired, status = d.DesiredState, d.Status
 	}
@@ -139,4 +139,9 @@ func (s *Store) FinishDBOperation(ctx context.Context, oid, reason string) error
 		status = "failed"
 	}
 	return affected(s.db.ExecContext(ctx, `UPDATE db_operations SET status = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND status IN ('queued', 'running')`, status, reason, now(), now(), oid))
+}
+
+// SetDBOperationDetail replaces an operation's detail: what it turned out to do.
+func (s *Store) SetDBOperationDetail(ctx context.Context, opID, detail string) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE db_operations SET detail = ?, updated_at = ? WHERE id = ?`, detail, now(), opID))
 }

@@ -10,6 +10,7 @@ import { api, cronJobsQuery, cronRunsQuery, type CronJob, type CronJobList, type
 import { dateTime, duration, timeAgo } from '../lib/format'
 import { locale, useT } from '../lib/i18n'
 import { poll } from '../lib/live'
+import { passkeysSupported, unlockHostWithPasskey } from '../lib/passkeys'
 import { withToast } from '../lib/toasts'
 
 type Texts = ReturnType<typeof useT>['cronJobs']
@@ -52,7 +53,7 @@ const jobLabel = (job: CronJob) => job.name || firstLine(job.command)
 
 /** What waits for the password: jobs are commands on the host, so adding, changing or
  * running one takes the password again, as the host terminal does (the same 15 minutes). */
-type Pending = { run: () => void; confirm: string; user: string }
+type Pending = { run: () => void; confirm: string; user: string; passkey?: boolean }
 
 function useHostGuard() {
   const queryClient = useQueryClient()
@@ -60,7 +61,7 @@ function useHostGuard() {
   async function guard(p: Pending) {
     try {
       const now = await queryClient.fetchQuery({ ...cronJobsQuery, staleTime: 0 })
-      if (!now.unlocked) { setPending(p); return }
+      if (!now.unlocked) { setPending({ ...p, passkey: now.passkey && passkeysSupported() }); return }
     } catch { /* the action reports what is wrong */ }
     p.run()
   }
@@ -121,6 +122,7 @@ export function CronJobsPage() {
             confirm: pending.confirm,
             detail: tc.confirmDetail(pending.user) + (pending.user === 'root' ? ' ' + tc.rootWarning : ''),
             onConfirm: (password) => api('/host/terminal/unlock', { method: 'POST', body: { password } }),
+            onPasskey: pending.passkey ? unlockHostWithPasskey : undefined,
           }}
           onClose={clear}
           onComplete={() => { pending.run(); clear() }}

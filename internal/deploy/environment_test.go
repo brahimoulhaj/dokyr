@@ -281,8 +281,7 @@ func TestDeployAddsPHPExtensions(t *testing.T) {
 	if b.vars.Args[name] != builder.DefaultPHPExtensions {
 		t.Fatalf("build args = %v", b.vars.Args)
 	}
-	check, _, _ := e.st.AppHealthCheck(ctx, e.app.ID)
-	if a.DeployedConfig != a.ConfigHash(check) {
+	if e.svc.NeedsRedeploy(ctx, a) {
 		t.Fatal("the app says its settings changed since the deployment")
 	}
 

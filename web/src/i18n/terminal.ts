@@ -7,6 +7,7 @@ export const en = {
   ended: 'Session ended', shortcut: 'Ctrl+C interrupt · Ctrl+L clear', output: 'Interactive container terminal',
   changed: 'Container changed. Reconnect to open the new container.',
   hostFailed: 'Cannot open a shell on the host. Check your session, then reconnect.', hostOutput: 'Interactive host terminal',
+  hostIdleClosed: 'Closed after the idle time set in Settings → Security passed without input. Reconnect to open a new shell.',
 }
 export const fr: typeof en = {
   idleClosed: 'Déconnecté après 2 minutes hors du terminal. Reconnectez-vous pour ouvrir un nouveau shell.',
@@ -17,6 +18,7 @@ export const fr: typeof en = {
   ended: 'Session terminée', shortcut: 'Ctrl+C interrompre · Ctrl+L effacer', output: 'Terminal interactif du conteneur',
   changed: 'Le conteneur a changé. Reconnectez-vous au nouveau conteneur.',
   hostFailed: 'Impossible d’ouvrir un shell sur l’hôte. Vérifiez votre session, puis reconnectez-vous.', hostOutput: 'Terminal interactif de l’hôte',
+  hostIdleClosed: 'Fermé : le délai d’inactivité défini dans Paramètres → Sécurité est passé sans saisie. Reconnectez-vous pour ouvrir un nouveau shell.',
 }
 export const ar: typeof en = {
   idleClosed: 'تم قطع الاتصال بعد دقيقتين خارج الطرفية. أعد الاتصال لفتح صدفة جديدة.',
@@ -27,6 +29,7 @@ export const ar: typeof en = {
   ended: 'انتهت الجلسة', shortcut: 'Ctrl+C إيقاف · Ctrl+L مسح', output: 'طرفية تفاعلية للحاوية',
   changed: 'تغيّرت الحاوية. أعد الاتصال لفتح الحاوية الجديدة.',
   hostFailed: 'تعذّر فتح صدفة على الخادم. تحقق من جلستك ثم أعد الاتصال.', hostOutput: 'طرفية تفاعلية للخادم',
+  hostIdleClosed: 'أُغلقت بعد انقضاء مدة الخمول المحددة في الإعدادات ← الأمان دون إدخال. أعد الاتصال لفتح صدفة جديدة.',
 }
 export const es: typeof en = {
   idleClosed: 'Desconectado tras 2 minutos fuera del terminal. Reconecta para abrir un nuevo shell.',
@@ -37,4 +40,5 @@ export const es: typeof en = {
   ended: 'Sesión finalizada', shortcut: 'Ctrl+C interrumpir · Ctrl+L limpiar', output: 'Terminal interactivo del contenedor',
   changed: 'El contenedor ha cambiado. Reconecta para abrir el nuevo contenedor.',
   hostFailed: 'No se pudo abrir un shell en el servidor. Comprueba la sesión y reconecta.', hostOutput: 'Terminal interactivo del servidor',
+  hostIdleClosed: 'Cerrado: pasó sin entrada el tiempo de inactividad definido en Ajustes → Seguridad. Reconecta para abrir un nuevo shell.',
 }

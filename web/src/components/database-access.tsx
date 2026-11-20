@@ -35,6 +35,10 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: databaseOperationsQuery.queryKey }),
   })
+  const sync = useMutation({
+    mutationFn: () => submitDatabaseOperation(() => api<{ operation: DatabaseOperation }>(`/databases/${d.id}/catalog/sync`, { method: 'POST' }), t.databases.operationRunning.catalog_sync(d.name)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: databaseOperationsQuery.queryKey }),
+  })
   type Change = { action: 'database_delete' | 'user_delete' | 'password_rotate'; id: string; name: string; initial?: boolean }
   const [confirming, setConfirming] = useState<Change | null>(null)
   const [shown, setShown] = useState<Change | null>(null) // kept while the dialog closes
@@ -48,6 +52,11 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
   return <div className="space-y-5">
     <QueryState loading={catalog.isPending} error={catalog.error} what={t.databases.access} />
     {catalog.data && <>
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-line px-4 py-3">
+        <p className="min-w-0 flex-1 text-xs text-muted">{t.databases.syncHint}</p>
+        <Button variant="ghost" className="h-8! px-3! text-xs!" disabled={busy || sync.isPending} onClick={() => sync.mutate()}>{t.databases.sync}</Button>
+      </div>
+      {sync.error && <ErrorNote>{sync.error.message}</ErrorNote>}
       <Panel title={t.databases.databasesList} actions={<Button className="h-8! px-3! text-xs!" disabled={busy} onClick={() => setCreating('database_create')}>{t.databases.newDatabase}</Button>}>
         {catalog.data.databases.length ? <ul className="divide-y divide-line">{catalog.data.databases.map((db) => <li key={db.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
           <span className="flex items-center gap-2"><code dir="ltr">{db.name}</code>{db.name === d.database_name && <Badge tone="muted">{t.databases.initialAccess}</Badge>}</span>
@@ -58,7 +67,7 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
       </Panel>
       <Panel title={t.databases.usersList} actions={<Button className="h-8! px-3! text-xs!" disabled={busy} onClick={() => setCreating('user_create')}>{t.databases.newUser}</Button>}>
         {catalog.data.users.length ? <ul className="divide-y divide-line">{catalog.data.users.map((user) => <li key={user.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm"><code dir="ltr">{user.name}</code>{user.initial && <Badge tone="muted">{t.databases.initialAccess}</Badge>}</div>
+          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm"><code dir="ltr">{user.name}</code>{user.initial && <Badge tone="muted">{t.databases.initialAccess}</Badge>}{user.external && <Badge tone="warn">{t.databases.externalUser}</Badge>}</div>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
               {catalog.data!.grants.filter((g) => g.user_id === user.id).map((g) => <span key={g.database_id} className="border border-line px-2 py-1">{catalog.data!.databases.find((db) => db.id === g.database_id)?.name} · {labels[g.access]}</span>)}
               {!catalog.data!.grants.some((g) => g.user_id === user.id) && <span>{t.databases.noAccess}</span>}
@@ -66,7 +75,7 @@ export function DatabaseAccess({ d, busy }: { d: DatabaseInstance; busy: boolean
           </div>
           <ActionsMenu label={t.databases.actions} ariaLabel={`${t.databases.actions} · ${user.name}`} items={[
             { label: t.databases.permissions, disabled: busy, onSelect: () => setEditing(user) },
-            { label: t.databases.connection, onSelect: () => setConnection(user) },
+            ...(user.external ? [] : [{ label: t.databases.connection, onSelect: () => setConnection(user) }]),
             { label: t.databases.rotatePassword, disabled: busy || change.isPending, onSelect: () => ask({ action: 'password_rotate', id: user.id, name: user.name, initial: user.initial }) },
             ...(user.initial || !can.remove ? [] : [{ label: t.databases.deleteResource, danger: true, disabled: busy || change.isPending, onSelect: () => ask({ action: 'user_delete', id: user.id, name: user.name }) }]),
           ]} />

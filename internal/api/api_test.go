@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -427,5 +428,67 @@ func TestUpdates(t *testing.T) {
 	fu.err = errors.New("pull failed")
 	if code, _ := e.call("POST", "/api/updates/apply", nil); code != 502 {
 		t.Fatalf("apply with failed pull = %d", code)
+	}
+}
+
+// Errors are written in English and sent in the language the request asks for: the web
+// app's cookie, or Accept-Language; the code stays the same.
+func TestErrorsFollowTheLanguage(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	get := func(header, value string) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", e.url+"/api/apps/nope", nil)
+		if header != "" {
+			req.Header.Set(header, value)
+		}
+		res, err := e.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&m)
+		return res.StatusCode, m["error"].(map[string]any)
+	}
+	_, english := get("", "")
+	if english["code"] != "not_found" || english["message"] != "not found" {
+		t.Fatalf("English = %v", english)
+	}
+	for _, c := range [][2]string{{"Cookie", "lang=fr"}, {"Accept-Language", "fr-FR,fr;q=0.9,en;q=0.8"}} {
+		code, french := get(c[0], c[1])
+		if code != 404 || french["code"] != "not_found" || french["message"] == english["message"] || french["message"] == "" {
+			t.Errorf("%s: %s = %d %v", c[0], c[1], code, french)
+		}
+	}
+	if _, other := get("Accept-Language", "de"); other["message"] != english["message"] {
+		t.Errorf("a language without a catalog = %v", other)
+	}
+	// A message with a value in it.
+	req, _ := http.NewRequest("POST", e.url+"/api/projects", strings.NewReader(`{"name":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", e.url)
+	req.Header.Set("Accept-Language", "es")
+	res, err := e.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var m map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&m)
+	if msg, _ := m["error"].(map[string]any)["message"].(string); res.StatusCode != 422 || !strings.Contains(msg, "debe") {
+		t.Errorf("Spanish validation error = %d %v", res.StatusCode, m)
+	}
+	// Deployment logs: the panel's own lines, values kept; a build's output as it came.
+	if got := logLine("fr", "Fetching branch release/2.0"); got == "Fetching branch release/2.0" || !strings.HasSuffix(got, "release/2.0") {
+		t.Errorf("log line = %q", got)
+	}
+	for _, same := range []string{"  | Fetching branch main", "npm warn deprecated"} {
+		if got := logLine("fr", same); got != same {
+			t.Errorf("log line %q became %q", same, got)
+		}
+	}
+	if got := logLine("en", "Deployment succeeded"); got != "Deployment succeeded" {
+		t.Errorf("English log line = %q", got)
 	}
 }

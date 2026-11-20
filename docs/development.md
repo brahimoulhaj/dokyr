@@ -56,8 +56,26 @@ See [CLI → In development](cli.md#in-development).
 ```sh
 make build              # bin/dokyr, web app embedded
 make test               # go vet, go test, web typecheck
+make lint               # golangci-lint (.golangci.yml) and eslint (web/eslint.config.js), as CI runs them
+make sqlc               # regenerate internal/store/sqlcgen from internal/store/queries
 make image VERSION=0.1.0
 ```
+
+Tests that need a Docker daemon (`TestReal…`: a full deploy, builders, databases, the
+proxy) are skipped by `go test -short`, which is what CI runs; run them without `-short`
+on a machine with Docker. `make installer-e2e` installs the panel from a local image and
+checks the result; it installs for real, so it only runs in CI or with `E2E_FRESH_VM=1`
+on a throwaway VM.
+
+Messages the server writes for people (API errors, deployment log lines) are written in
+English in the code and translated where they are shown, from the catalogs in
+`internal/i18n/messages_*.go`. A new message needs an entry in each: `go test ./internal/i18n`
+lists the ones that are missing.
+
+Typed queries: stores move to [sqlc](https://sqlc.dev) one at a time. A query goes in
+`internal/store/queries/*.sql`; `make sqlc` generates its Go in `internal/store/sqlcgen`
+against `internal/store/schema.sql`, a snapshot of the migrated database that
+`UPDATE_SCHEMA=1 go test ./internal/store -run TestSchemaSnapshot` renews after a migration.
 
 ## Releases
 

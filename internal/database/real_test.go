@@ -142,7 +142,21 @@ func TestRealDatabaseInstances(t *testing.T) {
 				t.Helper()
 				manage("grant_update", map[string]string{"user_id": userID, "database_id": databaseID, "access": level}, want)
 			}
+			// A sync reads the server back: what the panel granted must come back as it is.
+			synced := func(want string) {
+				t.Helper()
+				op, err := svc.Manage(ctx, did, "catalog_sync", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				svc.Wait()
+				if op, err = st.GetDBOperation(ctx, op.ID); err != nil || op.Status != "succeeded" || op.Detail != want {
+					t.Fatalf("sync = %s %q (%s, %v), want %q", op.Status, op.Detail, op.Error, err, want)
+				}
+			}
+			synced("nothing to change") // a user without any access yet
 			grant("read_only", "succeeded")
+			synced("nothing to change")
 			if err := asReporter("SELECT * FROM records;\n"); err != nil {
 				t.Fatal("read-only cannot select", err)
 			}
@@ -162,6 +176,7 @@ func TestRealDatabaseInstances(t *testing.T) {
 				t.Fatal("future table is not readable", err)
 			}
 			grant("read_write", "succeeded")
+			synced("nothing to change")
 			if err := asReporter("INSERT INTO records VALUES (2);\n"); err != nil {
 				t.Fatal("read/write user cannot insert", err)
 			}
@@ -169,10 +184,12 @@ func TestRealDatabaseInstances(t *testing.T) {
 				t.Fatal("read/write user can create tables")
 			}
 			grant("none", "succeeded")
+			synced("nothing to change")
 			if err := asReporter("SELECT * FROM records;\n"); err == nil {
 				t.Fatal("revoked user can still read")
 			}
 			grant("full", "succeeded")
+			synced("nothing to change")
 			if err := asReporter("CREATE TABLE owned_table (n INTEGER);\n"); err != nil {
 				t.Fatal("full user cannot create table", err)
 			}
@@ -180,6 +197,60 @@ func TestRealDatabaseInstances(t *testing.T) {
 				grant("read_only", "failed")
 			} else {
 				grant("read_only", "succeeded")
+			}
+			// Made by hand, behind the panel's back: a database, a user that reads it, and
+			// the panel's own database dropped.
+			admin := func(db, sql string) {
+				t.Helper()
+				if err := ex.Exec(ctx, ContainerName(did), adminCommand(d, creds, db, sql)); err != nil {
+					t.Fatalf("%s: %v", sql, err)
+				}
+			}
+			if engine.name == "postgres" {
+				admin("postgres", "CREATE DATABASE by_hand;\nCREATE ROLE outsider LOGIN PASSWORD 'outsider-pass';\n")
+				admin("by_hand", "CREATE TABLE t (n INTEGER);\nGRANT SELECT ON ALL TABLES IN SCHEMA public TO outsider;\n")
+				admin("postgres", "DROP DATABASE analytics_data WITH (FORCE);\n")
+			} else {
+				admin("", "CREATE DATABASE by_hand;\nCREATE USER 'outsider'@'%' IDENTIFIED BY 'outsider-pass';\nGRANT SELECT ON `by\\_hand`.* TO 'outsider'@'%';\nDROP DATABASE analytics_data;\n")
+			}
+			synced("1 databases added, 1 databases removed, 1 users added, 1 permissions updated")
+			catalog, err = svc.Catalog(ctx, did)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var outsider store.DatabaseUser
+			var byHand string
+			for _, u := range catalog.Users {
+				if u.Name == "outsider" {
+					outsider = u
+				}
+			}
+			for _, db := range catalog.Databases {
+				if db.Name == "by_hand" {
+					byHand = db.ID
+				}
+				if db.Name == "analytics_data" {
+					t.Fatal("a dropped database is still listed")
+				}
+			}
+			found := false
+			for _, g := range catalog.Grants {
+				if g.UserID == outsider.ID && g.DatabaseID == byHand {
+					found = g.Access == "read_only"
+				}
+			}
+			if !outsider.External || byHand == "" || !found {
+				t.Fatalf("after the sync: user %+v, database %q, read only %v; grants %+v", outsider, byHand, found, catalog.Grants)
+			}
+			synced("nothing to change")
+			// The panel takes the user over: a rotation gives it a password that works.
+			manage("password_rotate", map[string]string{"user_id": outsider.ID}, "succeeded")
+			rotated, err := st.DatabaseUserPassword(ctx, did, "outsider")
+			if err != nil || rotated == "" {
+				t.Fatal("no password after the rotation", err)
+			}
+			if err := ex.Exec(ctx, ContainerName(did), userCommand(d, "outsider", rotated, "by_hand", "SELECT * FROM t;\n")); engine.name == "postgres" && err != nil {
+				t.Fatal("the rotated password does not work", err)
 			}
 			if err := svc.Action(ctx, did, "restart"); err != nil {
 				t.Fatal(err)

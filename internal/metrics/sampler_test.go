@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 
 	"panel/internal/executor"
+	"panel/internal/hostmetrics"
 	"panel/internal/store"
 )
 
@@ -101,5 +102,80 @@ func TestSampler(t *testing.T) {
 	}
 	if _, ok := s.prev["old"]; ok {
 		t.Fatal("counters of a removed container kept")
+	}
+}
+
+// The host's own usage is stored with the containers', also when no container runs, and
+// stays out of the windows the usage alerts read.
+func TestSamplerHost(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if _, err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, &fakeHost{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	clock := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return clock }
+	percent, rx := 25.0, 1000.0
+	snapshot := hostmetrics.Snapshot{}
+	s.HostSample = FromHost(func() hostmetrics.Snapshot { return snapshot })
+	if err := s.Sample(ctx); err != nil { // the collector has nothing yet
+		t.Fatal(err)
+	}
+	snapshot = hostmetrics.Snapshot{CollectedAt: time.Now(), CPU: hostmetrics.CPU{Cores: 4}}
+	if err := s.Sample(ctx); err != nil { // no CPU reading yet: its first one primes the counters
+		t.Fatal(err)
+	}
+	read := func() []store.MetricSample {
+		t.Helper()
+		got, err := st.MetricSeries(ctx, store.MetricHost, store.MetricHost, store.MetricRaw, 10, clock.Unix()-3600, clock.Unix()+1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := read(); len(got) != 0 {
+		t.Fatalf("stored before there was a reading: %+v", got)
+	}
+	snapshot = hostmetrics.Snapshot{
+		CollectedAt: time.Now(), CPU: hostmetrics.CPU{Cores: 4, Percent: &percent},
+		Memory:  &hostmetrics.Memory{Total: 8 << 30, Used: 2 << 30},
+		Network: &hostmetrics.Network{ReceiveRate: &rx},
+		Disk:    &hostmetrics.Disk{Memory: hostmetrics.Memory{Total: 100 << 30, Used: 40 << 30}},
+	}
+	if err := s.Sample(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := read()
+	if len(got) != 1 || got[0].CPU != 1 || got[0].Memory != 2<<30 || got[0].MemoryLimit != 8<<30 || got[0].NetRx != 1000 || got[0].NetTx != 0 ||
+		got[0].DiskRead != 40<<30 || got[0].DiskWrite != 100<<30 {
+		t.Fatalf("host sample = %+v", got)
+	}
+	// An old snapshot (the collector stopped) is not stored again and again.
+	snapshot.CollectedAt = time.Now().Add(-time.Minute)
+	clock = clock.Add(Interval)
+	if err := s.Sample(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); len(got) != 1 {
+		t.Fatalf("a stale snapshot was stored: %+v", got)
+	}
+	// Rolled up like any resource, and not a target of the usage alerts on "everything".
+	if err := st.RollupMetrics(ctx, clock.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	minutes, err := st.MetricSeries(ctx, store.MetricHost, store.MetricHost, store.MetricMinute, 60, clock.Unix()-3600, clock.Unix()+1)
+	if err != nil || len(minutes) != 1 || minutes[0].DiskWrite != 100<<30 {
+		t.Fatalf("minute rollup = %+v %v", minutes, err)
+	}
+	if w, err := st.MetricWindows(ctx, "", "", clock.Unix()-3600); err != nil || len(w) != 0 {
+		t.Fatalf("the host is in the alert windows: %+v %v", w, err)
+	}
+	if w, err := st.MetricWindows(ctx, store.MetricHost, "", clock.Unix()-3600); err != nil || len(w) != 1 {
+		t.Fatalf("asked for by kind: %+v %v", w, err)
 	}
 }

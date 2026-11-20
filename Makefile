@@ -5,7 +5,10 @@ VERSION ?= dev
 NAME    := $(shell sed -n 's/^[[:space:]]*Name = "\([^"]*\)".*/\1/p' internal/brand/brand.go)
 IMAGE   ?= ghcr.io/brahimoulhaj/paas
 
-.PHONY: help deps web build test dev dev-down dev-import-data dev-api dev-web image installer clean
+GOLANGCI_LINT ?= v2.15.0
+SQLC          ?= v1.31.1
+
+.PHONY: help deps web build test lint sqlc installer-e2e dev dev-down dev-import-data dev-api dev-web image installer clean
 
 help:
 	@echo "make deps     - download Go modules and pnpm packages"
@@ -17,7 +20,10 @@ help:
 	@echo "make web      - build the web app into internal/webui/dist"
 	@echo "make build    - build bin/$(SLUG) with the web app embedded"
 	@echo "make test     - Go tests and web typecheck"
+	@echo "make lint     - golangci-lint (Go) and eslint (web)"
+	@echo "make sqlc     - regenerate the typed queries (internal/store/sqlcgen) from internal/store/queries"
 	@echo "make image    - build the Docker image $(IMAGE):$(VERSION)"
+	@echo "make installer-e2e - install from a local image on a throwaway VM and check it (CI)"
 	@echo "make installer - write bin/install.sh for $(IMAGE):$(VERSION) (IMAGE=registry/name to change)"
 
 deps:
@@ -34,6 +40,16 @@ test:
 	go vet ./...
 	go test ./...
 	cd web && pnpm run typecheck
+
+# The linters CI runs. golangci-lint is fetched and built at the pinned version on first use.
+lint:
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT) run ./...
+	cd web && pnpm run lint
+
+# Typed queries: sqlc.yaml, internal/store/queries/*.sql against internal/store/schema.sql.
+# sqlc is fetched and built at the pinned version on first use (it needs a C compiler).
+sqlc:
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC) generate
 
 # Everything in containers, with live reload. The shared network must exist before
 # compose starts, because compose.yaml declares it external.
@@ -72,6 +88,10 @@ installer:
 	    install/install.sh.tmpl > bin/install.sh
 	chmod 755 bin/install.sh
 	@! grep -n '@@' bin/install.sh || { echo "unfilled placeholder in bin/install.sh"; exit 1; }
+
+# Installs for real, so only on a machine made for it (CI, or E2E_FRESH_VM=1): see install/e2e.sh.
+installer-e2e: image installer
+	sh install/e2e.sh $(SLUG) $(PREFIX) $(IMAGE):$(VERSION)
 
 clean:
 	rm -rf bin tmp .data

@@ -72,7 +72,10 @@ func (s *Service) StartGitHub(origin, organization, name string) (Manifest, erro
 		"setup_url":           origin + "/git",
 		"public":              false,
 		"default_permissions": map[string]string{"contents": "read", "metadata": "read"},
-		"default_events":      []string{},
+		// The app's own webhook: GitHub tells the panel about pushes to every repository
+		// the app is installed on, so an app deploys on push without a webhook per repository.
+		"hook_attributes": map[string]any{"url": origin + WebhookPath, "active": true},
+		"default_events":  []string{"push"},
 	})
 	if err != nil {
 		return Manifest{}, err
@@ -307,4 +310,30 @@ func (s *Service) githubBranches(ctx context.Context, connID string, c creds, fu
 		out = append(out, b.Name)
 	}
 	return out, nil
+}
+
+// WebhookPath is where a GitHub App made by StartGitHub sends its events.
+const WebhookPath = "/api/hooks/github"
+
+// GitHubWebhook finds the GitHub App connection with this app id and returns its id and
+// the secret GitHub signs the app's webhook deliveries with. store.ErrNotFound when no
+// connection is that app, or it was made before the panel used the app's webhook.
+func (s *Service) GitHubWebhook(ctx context.Context, appID int64) (connID, secret string, err error) {
+	rows, err := s.st.ListGitConnections(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	for _, row := range rows {
+		if row.Type != store.GitTypeGitHubApp {
+			continue
+		}
+		c, err := s.open(row)
+		if err != nil {
+			return "", "", err
+		}
+		if c.AppID == appID && appID != 0 && c.WebhookSecret != "" {
+			return row.ID, c.WebhookSecret, nil
+		}
+	}
+	return "", "", store.ErrNotFound
 }

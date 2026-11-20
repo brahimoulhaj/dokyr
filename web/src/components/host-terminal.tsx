@@ -245,6 +245,8 @@ function HostSession({ visible, nonce, guard, onState, onExit }: { visible: bool
       socket.current = null
       // `exit` in the shell closes its tab, as a desktop terminal does.
       if (event.code === 1000 && !failed) { live.current.onExit(); return }
+      // 4001: the panel closed the shell after the idle time set in Settings → Security.
+      if (event.code === 4001) setMessage(live.current.t.hostIdleClosed)
       terminal.options.disableStdin = true
       setEnded(true)
       live.current.onState('disconnected')

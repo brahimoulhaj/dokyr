@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, appQuery, type App } from '../lib/api'
+import { api, appQuery, gitSourcesQuery, type App } from '../lib/api'
 import { useT } from '../lib/i18n'
-import { Button, ConfirmButton, ErrorNote, HelpTip, Panel, QueryState } from './ui'
+import { Button, CheckOption, ConfirmButton, ErrorNote, HelpTip, Panel, QueryState } from './ui'
 
 type DeployHook = { enabled: boolean; token?: string }
 
@@ -88,6 +88,57 @@ export function DeployHookPanel({ app }: { app: App }) {
           </>
         )}
         {(create.error || remove.error) && <ErrorNote>{(create.error ?? remove.error)!.message}</ErrorNote>}
+      </div>
+    </Panel>
+  )
+}
+
+/** Deploy on push for a Git app: the GitHub App's own webhook, and the paths a push must touch. */
+export function PushDeployPanel({ app }: { app: App }) {
+  const t = useT()
+  const th = t.deployHook
+  const queryClient = useQueryClient()
+  const sources = useQuery({ ...gitSourcesQuery, retry: false, enabled: !!app.git_source_id })
+  const viaApp = sources.data?.find((s) => s.id === app.git_source_id)?.push_events ?? false
+  const refresh = () => queryClient.invalidateQueries({ queryKey: appQuery(app.id).queryKey, exact: true })
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => api<App>(`/apps/${app.id}/push-deploy`, { method: 'PUT', body: { on } }),
+    onSuccess: refresh,
+  })
+  const saved = app.watch_paths.join('\n')
+  const [draft, setDraft] = useState<string | null>(null)
+  const text = draft ?? saved
+  const save = useMutation({
+    mutationFn: () => api<App>(`/apps/${app.id}`, { method: 'PATCH', body: { watch_paths: text.split('\n').map((l) => l.trim()).filter(Boolean) } }),
+    onSuccess: () => { setDraft(null); refresh() },
+  })
+  if (app.source_type !== 'git') return null
+  return (
+    <Panel title={<span className="inline-flex items-center gap-2">{th.pushTitle}<HelpTip label={th.pushTitle}>{th.pushIntro}</HelpTip></span>}>
+      <div className="space-y-4 p-4">
+        {viaApp && (
+          <div className="space-y-1">
+            <CheckOption checked={app.push_deploy} disabled={toggle.isPending} onChange={(on) => toggle.mutate(on)} label={th.appPush(app.git_branch)} hint={th.appPushHint} />
+            {toggle.error && <ErrorNote>{toggle.error.message}</ErrorNote>}
+          </div>
+        )}
+        <form onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-2">
+          <label htmlFor="watch-paths" className="block text-xs text-muted">{th.watchPaths}</label>
+          <textarea
+            id="watch-paths"
+            dir="ltr"
+            rows={4}
+            spellCheck={false}
+            autoCapitalize="none"
+            placeholder={'services/api/\npackages/shared\n!**/*.md'}
+            value={text}
+            onChange={(e) => setDraft(e.target.value)}
+            className="block w-full border border-line bg-bg px-3 py-2 font-mono text-xs text-fg placeholder:text-muted/60 focus:border-accent focus:outline-none"
+          />
+          <p className="text-xs text-muted">{th.watchPathsHint}</p>
+          {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
+          <Button type="submit" disabled={draft === null || text === saved || save.isPending}>{save.isPending ? t.common.working : t.common.save}</Button>
+        </form>
       </div>
     </Panel>
   )

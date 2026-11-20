@@ -110,7 +110,7 @@ export const metaQuery = {
   staleTime: Infinity,
 }
 
-export type HostTerminalSettings = { enabled: boolean; user: string; available: boolean; unlocked: boolean }
+export type HostTerminalSettings = { enabled: boolean; user: string; idle_minutes: number; available: boolean; unlocked: boolean; passkey: boolean }
 export const hostTerminalQuery = { queryKey: ['host-terminal'] as const, queryFn: () => api<HostTerminalSettings>('/host/terminal/settings') }
 
 export type CronRun = {
@@ -122,7 +122,7 @@ export type CronJob = {
   next_run_at: string | null; last_run: CronRun | null; created_at: string; updated_at: string
 }
 /** `enabled` is the host access switch of Settings; `default_user` its run-as user ('' when none is set). */
-export type CronJobList = { jobs: CronJob[]; enabled: boolean; default_user: string; unlocked: boolean }
+export type CronJobList = { jobs: CronJob[]; enabled: boolean; default_user: string; unlocked: boolean; passkey: boolean }
 export const cronJobsQuery = { queryKey: ['cron-jobs'] as const, queryFn: () => api<CronJobList>('/cron-jobs') }
 export const cronRunsQuery = (id: string) => ({ queryKey: ['cron-jobs', id, 'runs'] as const, queryFn: () => api<CronRun[]>(`/cron-jobs/${id}/runs`) })
 
@@ -214,8 +214,10 @@ export type App = {
   start_command: string
   /** rolling, or recreate (stop old first, short gap) for an app with a volume or a host path. */
   strategy: 'rolling' | 'recreate'
-  /** Image apps on the built-in registry: deploy when the tag is pushed again. */
+  /** Image apps on the built-in registry: deploy when the tag is pushed again. Git apps on a GitHub App connection: deploy when the branch is pushed. */
   push_deploy: boolean
+  /** Git apps: a push deploys only when it touches one of these patterns; empty = every push. */
+  watch_paths: string[]
   port: number
   cpu_limit: number
   memory_limit_mb: number
@@ -457,6 +459,8 @@ export type GitSource = {
   install_url?: string
   /** Deploy key: the line to add to a repository. */
   public_key?: string
+  /** GitHub: the app's own webhook reports pushes, so its apps deploy on push without a webhook per repository. */
+  push_events: boolean
   created_at: string
 }
 

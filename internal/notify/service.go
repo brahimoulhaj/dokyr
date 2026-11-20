@@ -71,7 +71,7 @@ func (s *Service) Handle(e store.Event) {
 				continue // one message per channel even when rules overlap
 			}
 			seen[r.ChannelID] = true
-			s.deliver(ctx, r.ChannelID, m)
+			_ = s.deliver(ctx, r.ChannelID, m) // a failed delivery is recorded on its channel
 		}
 	}()
 }

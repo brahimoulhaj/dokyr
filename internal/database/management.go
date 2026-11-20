@@ -13,7 +13,7 @@ import (
 
 func managementAction(action string) bool {
 	switch action {
-	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate":
+	case "database_create", "user_create", "grant_update", "backup", "restore", "database_delete", "user_delete", "password_rotate", "catalog_sync":
 		return true
 	}
 	return false
@@ -197,6 +197,15 @@ func (s *Service) manageOperation(ctx context.Context, op store.DBOperation) err
 	}
 	run := func(db, sql string) error { return s.ex.Exec(ctx, ContainerName(d.ID), adminCommand(d, c, db, sql)) }
 	switch op.Action {
+	case "catalog_sync":
+		res, err := s.syncCatalog(ctx, d, c, catalog)
+		if err != nil {
+			return err
+		}
+		if err := s.st.SetDBOperationDetail(ctx, op.ID, res.String()); err != nil {
+			return errors.New("The catalog was synchronized, but its summary could not be saved")
+		}
+		return nil
 	case "database_create":
 		for _, db := range catalog.Databases {
 			if db.Name == p["name"] {

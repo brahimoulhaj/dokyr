@@ -31,14 +31,18 @@ type metricSeriesJSON struct {
 	Points []store.MetricSample `json:"points"`
 }
 
-// handleResourceMetrics serves the usage history of an app or a database instance.
+// handleResourceMetrics serves the usage history of an app, a database instance or the
+// host (whose disk fields are the data disk's used and total bytes, see store.MetricHost).
 func (s *Server) handleResourceMetrics(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		var err error
-		if kind == "app" {
+		switch kind {
+		case "app":
 			_, err = s.store.GetApp(r.Context(), id)
-		} else {
+		case store.MetricHost:
+			id = store.MetricHost
+		default:
 			_, err = s.store.GetDBInstance(r.Context(), id)
 		}
 		if s.storeError(w, "get "+kind, err, "") {

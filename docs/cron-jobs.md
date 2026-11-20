@@ -15,10 +15,22 @@ hand-written crontabs alone, and run only while the panel is up: a slot missed w
 was stopped is not caught up. A job still running at its next slot is skipped, and a run
 is stopped after 6 hours.
 
+A script runs with bash (sh on a server without bash), from the home folder of its user.
+A first line that starts with `#!` names another interpreter instead, as in a file:
+
+```python
+#!/usr/bin/env python3
+import shutil
+print(shutil.disk_usage("/").free)
+```
+
+The script is written to a private temporary file, handed to that interpreter and removed
+when the run ends (the file is not executed itself, so a `/tmp` mounted `noexec` is fine).
+
 ## Access rules
 
 A job is a command on the host, so it follows the host terminal's rules: browser session
-of the owner or an admin only (no API token), the password again before adding, changing,
-enabling or running one, and nothing runs or changes while host access is switched off in
+of the owner or an admin only (no API token), the password again (or a passkey of the
+account, when it has one) before adding, changing, enabling or running one, and nothing runs or changes while host access is switched off in
 Settings → Security. A new job runs as the user set there; root has to be typed. Changes,
 manual runs and failed runs are recorded in Activity.

@@ -257,7 +257,7 @@ func (s *Service) runOperation(ctx context.Context, op store.DBOperation) error 
 		err = s.deleteInstance(ctx, op.InstanceID)
 	case "backup", "restore":
 		err = s.backupOperation(ctx, op)
-	case "database_create", "user_create", "grant_update", "database_delete", "user_delete", "password_rotate":
+	case "database_create", "user_create", "grant_update", "database_delete", "user_delete", "password_rotate", "catalog_sync":
 		err = s.manageOperation(ctx, op)
 	}
 	// Keep interrupted work unfinished: startup resumes the same operation ID.

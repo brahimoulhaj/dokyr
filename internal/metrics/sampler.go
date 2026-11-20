@@ -38,9 +38,12 @@ type Sampler struct {
 	log  *slog.Logger
 	// Include picks the containers measured; nil keeps every app and database container.
 	Include func(executor.Container) bool
-	now     func() time.Time
-	mu      sync.Mutex
-	prev    map[string]counters
+	// HostSample, when set, is the host's own usage right now, stored with every sample
+	// of the containers; false while there is nothing to store yet.
+	HostSample func() (store.MetricSample, bool)
+	now        func() time.Time
+	mu         sync.Mutex
+	prev       map[string]counters
 }
 
 func New(st *store.Store, host Host, log *slog.Logger) *Sampler {
@@ -160,6 +163,12 @@ func (s *Sampler) Sample(ctx context.Context) error {
 		// for its second reading, so its rates never show a false drop to zero.
 		if rated[k] {
 			samples = append(samples, *byResource[k])
+		}
+	}
+	if s.HostSample != nil {
+		if m, ok := s.HostSample(); ok {
+			m.Kind, m.ResourceID = store.MetricHost, store.MetricHost
+			samples = append(samples, m)
 		}
 	}
 	ts := at.Unix()
