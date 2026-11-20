@@ -15,6 +15,36 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.32.0',
+    date: '2026-11-20',
+    changes: {
+      en: [
+        'Security: a maintainer can no longer mount the panel’s own volumes, nor change or open a terminal in an app that mounts a host path (such as the Docker socket); an owner or an admin does.',
+        'Apps can no longer forge network traffic on the network they share with the panel, and a hostname the panel used to have is not served by a wildcard route.',
+        'An open host shell closes when its user stops being an admin, and resetting the owner password from the server also revokes API tokens.',
+        'New guides: first deploy, backups and restore, recovery over SSH, and security.',
+      ],
+      fr: [
+        'Sécurité : un mainteneur ne peut plus monter les volumes du panneau, ni modifier une app qui monte un chemin de l’hôte (comme le socket Docker) ou y ouvrir un terminal ; cela revient au propriétaire ou à un admin.',
+        'Les apps ne peuvent plus falsifier le trafic du réseau qu’elles partagent avec le panneau, et un ancien nom d’hôte du panneau n’est plus servi par une route générique.',
+        'Un shell de l’hôte ouvert se ferme quand son utilisateur n’est plus admin, et réinitialiser le mot de passe du propriétaire depuis le serveur révoque aussi les jetons d’API.',
+        'Nouveaux guides : premier déploiement, sauvegardes et restauration, récupération par SSH, et sécurité.',
+      ],
+      ar: [
+        'الأمان: لم يعد بإمكان المشرف (maintainer) ربط وحدات تخزين اللوحة نفسها، ولا تعديل تطبيق يربط مسارًا من الخادم (مثل مقبس Docker) أو فتح طرفيته؛ هذا للمالك أو للمسؤول.',
+        'لم تعد التطبيقات قادرة على تزييف حركة الشبكة التي تتشاركها مع اللوحة، ولا يُخدَم اسم مضيف قديم للوحة عبر مسار عام (*).',
+        'تُغلق صدفة الخادم المفتوحة حين لا يعود مستخدمها مسؤولاً، وإعادة تعيين كلمة مرور المالك من الخادم تُبطل رموز API أيضًا.',
+        'أدلة جديدة: أول نشر، النسخ الاحتياطي والاستعادة، الاسترداد عبر SSH، والأمان.',
+      ],
+      es: [
+        'Seguridad: un mantenedor ya no puede montar los volúmenes del propio panel, ni cambiar una app que monta una ruta del host (como el socket de Docker) o abrir su terminal; lo hace el propietario o un administrador.',
+        'Las apps ya no pueden falsear el tráfico de la red que comparten con el panel, y un nombre de host que tuvo el panel no lo sirve una ruta comodín.',
+        'Un shell del servidor abierto se cierra cuando su usuario deja de ser administrador, y restablecer la contraseña del propietario desde el servidor también revoca los tokens de API.',
+        'Guías nuevas: primer despliegue, copias de seguridad y restauración, recuperación por SSH, y seguridad.',
+      ],
+    },
+  },
+  {
     version: '0.31.0',
     date: '2026-11-20',
     changes: {
