@@ -78,6 +78,14 @@ func (s streams) muted(text string) string {
 	return lipgloss.NewStyle().Foreground(s.palette().muted).Render(text)
 }
 
+// styled is text in a colour, for a terminal.
+func (s streams) styled(c color.Color, bold bool, text string) string {
+	if !s.interactive {
+		return text
+	}
+	return lipgloss.NewStyle().Foreground(c).Bold(bold).Render(text)
+}
+
 // fail prints the error a command ended with.
 func (s streams) fail(prefix string, err error) {
 	if !s.interactive {
@@ -139,6 +147,8 @@ func (s streams) theme() huh.Theme {
 		t.Focused.Description = t.Focused.Description.Foreground(p.muted)
 		t.Focused.ErrorIndicator = t.Focused.ErrorIndicator.Foreground(p.danger)
 		t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(p.danger)
+		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(p.accent)
+		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(p.accent)
 		t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(p.accent)
 		t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(p.accent)
 		t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(p.muted)
