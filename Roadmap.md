@@ -477,7 +477,7 @@ This one only speaks the HTTP API, as a user, with that user's role.
 
 ### Commands
 - [~] `dokyr registry list|delete`, `dokyr registry login` (Docker signed in to the built-in registry) — `registry list [REPOSITORY]` (aliases `ls`, `images`, `--json`): one line per tag with the name to pull, size, platforms and digest; client only, so it needs no release; checked read-only against the VPS (v0.34.0, three build images), not with the registry off
-- [~] `dokyr projects list|create`, `dokyr apps list|create|show` — `projects list` and `projects create NAME [--description]`, both with `--json`; `apps` left
+- [~] `dokyr projects list|create`, `dokyr apps list|create|show` — `projects list` and `projects create NAME [--description]`; `apps list [--project]` and `apps show APP [--project]` (an app by name or id; state, health, source, addresses, limits, processes); all with `--json`; `apps create` and `apps delete` left
 - [ ] `dokyr deploy APP` with the deployment log streamed to the terminal and the exit code of the deploy; `--no-wait`; `dokyr rollback APP [DEPLOYMENT]`
 - [ ] `dokyr logs APP [--follow] [--since]`, `dokyr ps` (apps with state and health)
 - [ ] `dokyr env list|set|unset APP` (secrets never printed), `dokyr env pull|push` with a `.env` file
