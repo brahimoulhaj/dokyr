@@ -62,7 +62,7 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string, created *[]ma
 	mux.HandleFunc("GET /api/projects/{id}/apps", func(w http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("id") {
 		case "01P":
-			_, _ = io.WriteString(w, `[{"id":"01A","project_id":"01P","name":"api","source_type":"git","git_repository":"https://github.com/org/api.git","git_branch":"main","port":8080,"desired_state":"running","runtime_state":"running","extra":1},`+
+			_, _ = io.WriteString(w, `[{"id":"01A","project_id":"01P","name":"api","source_type":"git","git_repository":"https://github.com/org/api.git","git_branch":"main","port":8080,"desired_state":"running","runtime_state":"running","current_deployment_id":"D8","extra":1},`+
 				`{"id":"01B","project_id":"01P","name":"web","source_type":"image","image":"nginx:1.27","port":80,"desired_state":"stopped","runtime_state":"exited"}]`)
 		case "02P":
 			_, _ = io.WriteString(w, `[{"id":"02A","project_id":"02P","name":"api","source_type":"image","image":"ghcr.io/org/api:2","port":0,"runtime_state":"none"}]`)
@@ -102,6 +102,74 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string, created *[]ma
 	})
 	mux.HandleFunc("GET /api/apps/{id}/routes", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `[{"url":"https://api.example.com/"},{"url":"https://example.com/api"}]`)
+	})
+	// Deployments. 01A deploys and succeeds, its log stream breaking once in the middle;
+	// 01B is busy with a deployment already running; 02A fails.
+	mux.HandleFunc("POST /api/apps/{id}/deploy", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("id") {
+		case "01A":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"id":"D1","app_id":"01A","status":"queued","trigger":"manual"}`)
+		case "02A":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"id":"D3","app_id":"02A","status":"queued","trigger":"manual"}`)
+		default:
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"error":{"code":"busy","message":"another operation on this app is in progress"}}`)
+		}
+	})
+	mux.HandleFunc("GET /api/deployments/active", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"D2","app_id":"01B","app_name":"web","project_id":"01P","status":"running","phase":"health_checking","trigger":"webhook","started_at":"2026-11-20T10:00:00Z"}]`)
+	})
+	mux.HandleFunc("GET /api/deployments/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("id") {
+		case "D3":
+			_, _ = io.WriteString(w, `{"id":"D3","app_id":"02A","status":"failed","error":"the image could not be pulled","started_at":"2026-11-20T10:00:00Z","finished_at":"2026-11-20T10:00:05Z"}`)
+		default:
+			_, _ = io.WriteString(w, `{"id":"`+r.PathValue("id")+`","status":"succeeded","started_at":"2026-11-20T10:00:00Z","finished_at":"2026-11-20T10:01:08Z"}`)
+		}
+	})
+	mux.HandleFunc("GET /api/deployments/{id}/log/stream", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer dokyr_secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		send := func(text string) { _, _ = io.WriteString(w, text); w.(http.Flusher).Flush() }
+		send(": open\n\n")
+		switch r.PathValue("id") {
+		case "D3":
+			send("event: log\ndata: {\"text\":\"Pulling ghcr.io/org/api:2\"}\n\n")
+			send("event: end\ndata: {\"status\":\"failed\",\"error\":\"the image could not be pulled\"}\n\n")
+		case "D2":
+			send("id: 5\nevent: log\ndata: {\"text\":\"Checking health\"}\n\n")
+			send("event: end\ndata: {\"status\":\"succeeded\",\"error\":\"\"}\n\n")
+		default:
+			if r.Header.Get("Last-Event-ID") == "" { // the first connection breaks after two lines
+				send("id: 10\nevent: log\ndata: {\"time\":\"2026-11-20T10:00:00Z\",\"text\":\"Cloning org/api\"}\n\n")
+				send(": ping\n\n")
+				send("id: 20\nevent: log\ndata: {\"text\":\"  | Step 1/3\"}\n\n")
+				return
+			}
+			if r.Header.Get("Last-Event-ID") != "20" {
+				send("event: log\ndata: {\"text\":\"RESUMED AT THE WRONG PLACE\"}\n\n")
+			}
+			send("id: 30\nevent: log\ndata: {\"text\":\"Starting the container\"}\n\n")
+			send("event: end\ndata: {\"status\":\"succeeded\",\"error\":\"\"}\n\n")
+		}
+	})
+	mux.HandleFunc("GET /api/apps/{id}/deployments", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("per_page") != "3" && r.URL.Query().Get("per_page") != "10" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if r.PathValue("id") == "02A" {
+			_, _ = io.WriteString(w, `[]`)
+			return
+		}
+		_, _ = io.WriteString(w, `[{"id":"D9","status":"failed","trigger":"webhook","commit_sha":"abcdef1234567","commit_message":"Fix login\n\nlong body","created_at":"2026-11-20T09:00:00Z","started_at":"2026-11-20T09:00:00Z","finished_at":"2026-11-20T09:00:30Z"},`+
+			`{"id":"D8","status":"succeeded","trigger":"manual","image":"nginx:1.27","created_at":"2026-11-19T09:00:00Z","started_at":"2026-11-19T09:00:00Z","finished_at":"2026-11-19T09:02:05Z"},`+
+			`{"id":"D7","status":"rolled_back","trigger":"manual","rollback_of":"D5","image":"nginx:1.26","created_at":"2026-11-18T09:00:00Z"}]`)
 	})
 	mux.HandleFunc("GET /api/registry/settings", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"enabled":true,"domain":"registry.example.com","address":"registry.example.com","state":"running"}`)
@@ -300,6 +368,81 @@ func TestLoginThenProjects(t *testing.T) {
 		t.Fatalf("apps show --json = %v %s", err, out.String())
 	}
 
+	// Deploying: the log as it comes, across a dropped connection, and the outcome as the exit.
+	out.Reset()
+	if err := run(context.Background(), []string{"deploy", "api", "-p", "shop"}, plain(&out)); err != nil {
+		t.Fatalf("deploy = %v\n%s", err, out.String())
+	}
+	if got := out.String(); !strings.Contains(got, "Deploying api") || !strings.Contains(got, "Cloning org/api\n  | Step 1/3\nStarting the container\n") ||
+		strings.Contains(got, "WRONG PLACE") || !strings.Contains(got, "Deployed api in 1m 08s → https://api.example.com/") {
+		t.Fatalf("deploy printed:\n%s", got)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deploy", "api", "-p", "blog"}, plain(&out)); err == nil || !strings.Contains(err.Error(), "deployment failed: the image could not be pulled") || !strings.Contains(out.String(), "Pulling ghcr.io/org/api:2") {
+		t.Fatalf("a failed deploy = %v\n%s", err, out.String())
+	}
+	// An app already deploying: the one in progress is followed, none is started.
+	out.Reset()
+	var note bytes.Buffer
+	busy := plain(&out)
+	busy.errOut = &note
+	if err := run(context.Background(), []string{"deploy", "web"}, busy); err != nil || !strings.Contains(note.String(), "already in progress") || !strings.Contains(out.String(), "Checking health") {
+		t.Fatalf("deploy of a busy app = %v %q\n%s", err, note.String(), out.String())
+	}
+	if err := run(context.Background(), []string{"deploy", "web", "--no-wait"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("deploy --no-wait of a busy app = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deploy", "web", "--attach"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Checking health") {
+		t.Fatalf("deploy --attach = %v\n%s", err, out.String())
+	}
+	if err := run(context.Background(), []string{"deploy", "api", "-p", "shop", "--attach"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no deployment of api is in progress") {
+		t.Fatalf("deploy --attach with nothing in progress = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deploy", "api", "-p", "shop", "--no-wait"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Started deployment D1") {
+		t.Fatalf("deploy --no-wait = %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deploy", "01A", "--json"}, plain(&out)); err != nil {
+		t.Fatal(err)
+	}
+	var ended deployment
+	if err := json.Unmarshal(out.Bytes(), &ended); err != nil || ended.Status != "succeeded" || strings.Contains(out.String(), "Cloning") {
+		t.Fatalf("deploy --json = %s (%v)", out.String(), err)
+	}
+
+	// Deployments: what is in progress on the panel, and an app's history.
+	out.Reset()
+	if err := run(context.Background(), []string{"deployments"}, plain(&out)); err != nil {
+		t.Fatalf("deployments = %v", err)
+	}
+	for _, want := range []string{"APP", "web", "shop", "running", "health checking", "webhook", "D2"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("deployments lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deployments", "api", "-p", "shop"}, plain(&out)); err != nil {
+		t.Fatalf("deployments api = %v", err)
+	}
+	for _, want := range []string{"STATUS", "failed", "abcdef1 Fix login", "30s", "●  succeeded", "nginx:1.27", "2m 05s", "rolled back", "rollback: nginx:1.26", "D7"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("deployments api lacks %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "long body") {
+		t.Errorf("a commit's body is shown:\n%s", out.String())
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deployments", "api", "-p", "blog"}, plain(&out)); err != nil || !strings.Contains(out.String(), "never been deployed") {
+		t.Fatalf("deployments of an app never deployed = %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"deployments", "01A", "-n", "3", "--json"}, plain(&out)); err != nil || !strings.Contains(out.String(), `"id":"D9"`) {
+		t.Fatalf("deployments --json = %v %s", err, out.String())
+	}
+
 	// Creating an app: from an image, from Git, and what a script must say.
 	out.Reset()
 	if err := run(context.Background(), []string{"apps", "create", "cache", "-p", "shop", "--image", "redis:7", "--port", "6379",
@@ -484,7 +627,7 @@ func TestHelpAndCompletion(t *testing.T) {
 	if err := run(context.Background(), []string{"--help"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"login", "logout", "status", "projects", "apps", "registry", "completion", "version"} {
+	for _, want := range []string{"login", "logout", "status", "projects", "apps", "deploy", "deployments", "registry", "completion", "version"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("help does not name %q:\n%s", want, out.String())
 		}

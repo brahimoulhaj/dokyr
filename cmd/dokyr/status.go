@@ -15,7 +15,8 @@ import (
 	"panel/internal/brand"
 )
 
-// errStatusShown ends `status` with a failing exit code after it has said why itself.
+// errStatusShown ends a command with a failing exit code after it has said why itself:
+// `status` when signed out, `deploy` when the user stops following.
 var errStatusShown = errors.New("")
 
 // status is what `dokyr status` knows: the saved sign-in, and what the panel says of it now.

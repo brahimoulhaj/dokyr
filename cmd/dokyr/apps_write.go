@@ -38,7 +38,7 @@ func newAppsCreateCmd(s streams) *cobra.Command {
 		Short: "Create an app from an image or a Git repository",
 		Long: "Create an app in a project, from a ready image (--image) or built from a Git\n" +
 			"repository (--git). In a terminal, what is missing is asked for.\n\n" +
-			"Creating an app does not start it: it runs after its first deploy.",
+			"Creating an app does not start it: it runs after its first deploy (`" + brand.Slug + " deploy`).",
 		Example: "  " + brand.Slug + " apps create web --project Demo --image nginx:1.27 --port 80\n" +
 			"  " + brand.Slug + " apps create api -p Demo --git https://github.com/org/api.git --branch main --port 8080\n" +
 			"  " + brand.Slug + " apps create",
@@ -238,7 +238,7 @@ func runAppsCreate(ctx context.Context, s streams, appName string, in appCreate,
 		return fmt.Errorf("%s answered with something that is not an app", name)
 	}
 	s.done("Created app %s in project %s (%s).", s.accent(a.Name), target.Name, a.ID)
-	s.say("%s", s.muted("It is not running yet: deploy it from its page on "+pc.URL+"."))
+	s.say("%s", s.muted("It is not running yet: deploy it with `"+brand.Slug+" deploy "+a.Name+"`."))
 	return nil
 }
 

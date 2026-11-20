@@ -27,7 +27,7 @@ func main() {
 	err := run(ctx, os.Args[1:], s)
 	stop()
 	if err != nil {
-		if err != errStatusShown { // status has already said what is wrong
+		if err != errStatusShown { // the command has already said what is wrong
 			s.fail(brand.Slug, err)
 		}
 		os.Exit(1)
@@ -69,6 +69,8 @@ func newRootCmd(s streams) *cobra.Command {
 		newLogoutCmd(s),
 		newProjectsCmd(s),
 		newAppsCmd(s),
+		newDeployCmd(s),
+		newDeploymentsCmd(s),
 		newRegistryCmd(s),
 		&cobra.Command{
 			Use:   "version",
