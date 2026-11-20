@@ -332,6 +332,7 @@ func init() {
 		"this job is still running":                                                                                  "cette tâche est encore en cours d’exécution",
 		"this passkey could not be saved; it may already be registered":                                              "cette clé d’accès n’a pas pu être enregistrée ; elle l’est peut-être déjà",
 		"this passkey is no longer registered":                                                                       "cette clé d’accès n’est plus enregistrée",
+		"this endpoint ends an API token; a browser session signs out at /api/auth/logout":                           "ce point d’accès met fin à un jeton d’API ; une session de navigateur se déconnecte via /api/auth/logout",
 		"this project does not use that domain":                                                                      "ce projet n’utilise pas ce domaine",
 		"this sign-in code is not valid or has expired; run the login command again":                                 "ce code de connexion n’est pas valide ou a expiré ; relancez la commande de connexion",
 		"this sign-in request is not valid; run the login command again":                                             "cette demande de connexion n’est pas valide ; relancez la commande de connexion",

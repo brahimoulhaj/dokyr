@@ -179,3 +179,20 @@ func (s *Server) handleCLIToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"token": secret, "token_name": t.Name, "user": toUserJSON(u)})
 }
+
+// handleCLILogout revokes the token the request came with: `dokyr logout`. A token
+// cannot touch any other token (see sessionOnly), but ending itself harms nobody, and
+// a signed-out laptop should not leave a working credential behind.
+func (s *Server) handleCLILogout(w http.ResponseWriter, r *http.Request) {
+	t := tokenFrom(r.Context())
+	if t == nil {
+		writeError(w, http.StatusBadRequest, "token_required", "this endpoint ends an API token; a browser session signs out at /api/auth/logout")
+		return
+	}
+	gone, err := s.store.DeleteAPIToken(r.Context(), userFrom(r.Context()).ID, t.ID)
+	if s.storeError(w, "revoke own token", err, "") {
+		return
+	}
+	s.audit(r, "token.revoke", "token", gone.ID, gone.Name, "cli sign-out")
+	w.WriteHeader(http.StatusNoContent)
+}
