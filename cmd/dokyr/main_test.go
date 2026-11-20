@@ -171,6 +171,65 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string, created *[]ma
 			`{"id":"D8","status":"succeeded","trigger":"manual","image":"nginx:1.27","created_at":"2026-11-19T09:00:00Z","started_at":"2026-11-19T09:00:00Z","finished_at":"2026-11-19T09:02:05Z"},`+
 			`{"id":"D7","status":"rolled_back","trigger":"manual","rollback_of":"D5","image":"nginx:1.26","created_at":"2026-11-18T09:00:00Z"}]`)
 	})
+	// Databases: work on an instance is an operation the panel runs in the background.
+	mux.HandleFunc("GET /api/database-engines", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"postgres","name":"PostgreSQL","versions":["18","17"],"port":5432},{"id":"mariadb","name":"MariaDB","versions":["11.8"],"port":3306}]`)
+	})
+	mux.HandleFunc("GET /api/databases", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"DB1","project_id":"01P","name":"main","engine":"postgres","version":"17","database_name":"shop","username":"app","memory_mb":512,`+
+			`"desired_state":"running","status":"running","runtime":"running","host":"dokyr-db-db1","volume":"dokyr-db-db1-data","database_count":2,"user_count":3,`+
+			`"backup_policies":1,"last_backup_at":"2026-11-19T02:00:00Z","last_backup_status":"succeeded","created_at":"2026-11-01T10:00:00Z","extra":true},`+
+			`{"id":"DB2","project_id":"02P","name":"main","engine":"mariadb","version":"11.8","desired_state":"stopped","status":"stopped","runtime":"exited","host":"dokyr-db-db2","volume":"dokyr-db-db2-data"}]`)
+	})
+	mux.HandleFunc("GET /api/databases/{id}", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"`+r.PathValue("id")+`","name":"main","secret_free":true}`)
+	})
+	mux.HandleFunc("POST /api/databases", func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		*created = append(*created, in)
+		if in["name"] == "main" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"error":{"code":"conflict","message":"a database instance with this name already exists in the project"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		op := "OPOK"
+		if in["name"] == "doomed" {
+			op = "OPFAIL"
+		}
+		_, _ = io.WriteString(w, `{"id":"DBNEW","project_id":"01P","name":"`+in["name"].(string)+`","host":"dokyr-db-dbnew","operation":{"id":"`+op+`","action":"create","status":"queued"}}`)
+	})
+	polls := map[string]int{}
+	mux.HandleFunc("GET /api/database-operations/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		polls[id]++
+		switch {
+		case id == "OPFAIL":
+			_, _ = io.WriteString(w, `{"id":"OPFAIL","status":"failed","error":"the image could not be pulled"}`)
+		case polls[id] < 2:
+			_, _ = io.WriteString(w, `{"id":"`+id+`","status":"running"}`)
+		default:
+			_, _ = io.WriteString(w, `{"id":"`+id+`","status":"succeeded"}`)
+		}
+	})
+	mux.HandleFunc("POST /api/databases/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		*deleted = append(*deleted, r.PathValue("action")+" "+r.PathValue("id"))
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"id":"`+r.PathValue("id")+`","operation":{"id":"OP`+r.PathValue("action")+`","status":"queued"}}`)
+	})
+	mux.HandleFunc("DELETE /api/databases/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Name string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in.Name != "main" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = io.WriteString(w, `{"error":{"code":"invalid","message":"confirm deletion with the instance name"}}`)
+			return
+		}
+		*deleted = append(*deleted, "delete "+r.PathValue("id"))
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"operation":{"id":"OPDEL","status":"queued"}}`)
+	})
 	mux.HandleFunc("GET /api/registry/settings", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"enabled":true,"domain":"registry.example.com","address":"registry.example.com","state":"running"}`)
 	})
@@ -514,6 +573,82 @@ func TestLoginThenProjects(t *testing.T) {
 		t.Fatalf("deleted on the panel = %v", deleted)
 	}
 
+	// Databases.
+	out.Reset()
+	if err := run(context.Background(), []string{"databases", "list"}, plain(&out)); err != nil {
+		t.Fatalf("databases list = %v", err)
+	}
+	for _, want := range []string{"DATABASE", "postgres 17", "running", "mariadb 11.8", "stopped", "Blog", "DB2"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("databases list lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"db", "ls", "-p", "blog", "--json"}, plain(&out)); err != nil || strings.Contains(out.String(), "DB1") || !strings.Contains(out.String(), "DB2") {
+		t.Fatalf("db ls -p blog --json = %v %s", err, out.String())
+	}
+	if err := run(context.Background(), []string{"databases", "show", "main"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "Blog, shop") {
+		t.Fatalf("databases show of a name two projects have = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"databases", "show", "main", "-p", "shop"}, plain(&out)); err != nil {
+		t.Fatalf("databases show = %v", err)
+	}
+	for _, want := range []string{"postgres 17", "running", "dokyr-db-db1:5432", "shop", "app", "512 MB", "2026-11-19", "1 schedules", "dokyr-db-db1-data", "in the panel"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("databases show lacks %q:\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	if err := run(context.Background(), []string{"databases", "create", "orders-db", "-p", "shop", "--engine", "postgres"}, plain(&out)); err != nil ||
+		!strings.Contains(out.String(), "Created database instance orders-db in project shop") || !strings.Contains(out.String(), "postgres 18 · database orders_db · user app") {
+		t.Fatalf("databases create = %v\n%s", err, out.String())
+	}
+	got = created[len(created)-1]
+	if got["project_id"] != "01P" || got["engine"] != "postgres" || got["version"] != "18" || got["database_name"] != "orders_db" || got["username"] != "app" {
+		t.Fatalf("databases create sent %v", got)
+	}
+	if err := run(context.Background(), []string{"databases", "create", "doomed", "-p", "shop", "--engine", "mariadb", "--version", "11.8", "--database", "d", "--user", "u"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "the image could not be pulled") {
+		t.Fatalf("a failed creation = %v", err)
+	}
+	if err := run(context.Background(), []string{"databases", "create", "main", "-p", "shop", "--engine", "postgres"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("databases create of a taken name = %v", err)
+	}
+	sent = len(created)
+	for name, c := range map[string]struct {
+		args []string
+		want string
+	}{
+		"no project": {[]string{"databases", "create", "x", "--engine", "postgres"}, "which project"},
+		"no engine":  {[]string{"databases", "create", "x", "-p", "shop"}, "usage"},
+		"no name":    {[]string{"databases", "create", "-p", "shop", "--engine", "postgres"}, "usage"},
+		"bad user":   {[]string{"databases", "create", "x", "-p", "shop", "--engine", "postgres", "--user", "Bad-User"}, "--database and --user"},
+	} {
+		if err := run(context.Background(), c.args, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("databases create with %s = %v, want %q", name, err, c.want)
+		}
+	}
+	if len(created) != sent {
+		t.Fatalf("a refused creation reached the panel: %v", created[sent:])
+	}
+
+	before := len(deleted)
+	out.Reset()
+	if err := run(context.Background(), []string{"databases", "restart", "main", "-p", "shop"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Restarted database instance main") {
+		t.Fatalf("databases restart = %v %q", err, out.String())
+	}
+	if err := run(context.Background(), []string{"databases", "delete", "main", "-p", "shop"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("databases delete without --yes = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"db", "rm", "DB2", "--yes"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Removed database instance main from project Blog") || !strings.Contains(out.String(), "dokyr-db-db2-data") {
+		t.Fatalf("db rm = %v %q", err, out.String())
+	}
+	if got := strings.Join(deleted[before:], ","); got != "restart DB1,delete DB2" {
+		t.Fatalf("reached the panel: %s", got)
+	}
+
 	// Registry: one line per tag, named the way it is pulled.
 	out.Reset()
 	if err := run(context.Background(), []string{"registry", "list"}, plain(&out)); err != nil {
@@ -627,7 +762,7 @@ func TestHelpAndCompletion(t *testing.T) {
 	if err := run(context.Background(), []string{"--help"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"login", "logout", "status", "projects", "apps", "deploy", "deployments", "registry", "completion", "version"} {
+	for _, want := range []string{"login", "logout", "status", "projects", "apps", "deploy", "deployments", "databases", "registry", "completion", "version"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("help does not name %q:\n%s", want, out.String())
 		}

@@ -15,6 +15,36 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.35.0',
+    date: '2026-11-20',
+    changes: {
+      en: [
+        'Remote CLI: dokyr apps list, show, create and delete; dokyr deploy follows a deployment’s log live and fails when the deployment does; dokyr deployments shows what is in progress or an app’s history.',
+        'Remote CLI: dokyr databases (list, show, create, start, stop, restart, delete) and dokyr registry list for the images of the built-in registry.',
+        'These commands need no newer panel than v0.34.0: build the CLI again with make cli to get them.',
+        'Maintenance: the OpenTelemetry modules used by the Docker client are updated (a reported weakness that the panel was not exposed to).',
+      ],
+      fr: [
+        'CLI distante : dokyr apps list, show, create et delete ; dokyr deploy suit le journal d’un déploiement en direct et échoue si le déploiement échoue ; dokyr deployments montre ce qui est en cours ou l’historique d’une app.',
+        'CLI distante : dokyr databases (list, show, create, start, stop, restart, delete) et dokyr registry list pour les images du registre intégré.',
+        'Ces commandes ne demandent pas de panneau plus récent que v0.34.0 : recompilez la CLI avec make cli pour les obtenir.',
+        'Maintenance : les modules OpenTelemetry utilisés par le client Docker sont mis à jour (une faiblesse signalée à laquelle le panneau n’était pas exposé).',
+      ],
+      ar: [
+        'واجهة الأوامر عن بُعد: dokyr apps list و show و create و delete؛ و dokyr deploy يتابع سجل النشر مباشرة ويفشل إذا فشل النشر؛ و dokyr deployments يعرض ما يجري الآن أو سجل نشر تطبيق.',
+        'واجهة الأوامر عن بُعد: dokyr databases (list, show, create, start, stop, restart, delete) و dokyr registry list لصور السجل المدمج.',
+        'لا تحتاج هذه الأوامر إلى لوحة أحدث من v0.34.0: أعد بناء واجهة الأوامر بالأمر make cli للحصول عليها.',
+        'صيانة: تحديث وحدات OpenTelemetry التي يستخدمها عميل Docker (ثغرة مُبلَّغ عنها لم تكن اللوحة معرّضة لها).',
+      ],
+      es: [
+        'CLI remota: dokyr apps list, show, create y delete; dokyr deploy sigue el registro de un despliegue en directo y falla si el despliegue falla; dokyr deployments muestra lo que está en curso o el historial de una app.',
+        'CLI remota: dokyr databases (list, show, create, start, stop, restart, delete) y dokyr registry list para las imágenes del registro integrado.',
+        'Estos comandos no necesitan un panel más nuevo que v0.34.0: vuelve a compilar la CLI con make cli para tenerlos.',
+        'Mantenimiento: se actualizan los módulos de OpenTelemetry que usa el cliente de Docker (una debilidad notificada a la que el panel no estaba expuesto).',
+      ],
+    },
+  },
+  {
     version: '0.34.0',
     date: '2026-11-20',
     changes: {

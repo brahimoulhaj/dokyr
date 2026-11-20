@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show, create, delete), deploying them, and the images of the built-in registry. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show, create, delete), deploying them, database instances, and the images of the built-in registry. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -169,6 +169,36 @@ dokyr deployments api --limit 30
 For an app: the status, what was deployed (an image, or a commit with the first line of
 its message), what triggered it, when, how long it took, and a `●` on the deployment that
 runs now. Both forms take `--json`.
+
+## Databases
+
+```
+dokyr databases list                         # every instance: engine, state, last backup
+dokyr databases show main --project Demo     # one instance: where apps reach it, limits, backups
+dokyr databases create main -p Demo --engine postgres
+dokyr databases stop main                    # also: start, restart
+dokyr databases delete main
+```
+
+`db` is a shorter name for `databases`. An instance is named by its name or its id, with
+`--project` when two projects have one of that name.
+
+**Create** makes the instance's container and data volume, a first database and a user with
+a generated password, then waits until the instance is ready (`--no-wait` returns at once).
+`--engine` is `postgres` or `mariadb`; `--version` defaults to the newest the panel offers;
+`--database` defaults to the instance's name with underscores (`main-db` gives `main_db`)
+and `--user` to `app`; `--cpu` and `--memory` set limits. In a terminal, what is missing is
+asked for. The first creation of an engine downloads its image and can take minutes.
+
+**The password is never shown by the CLI.** Connection details need a signed-in browser:
+read them on the instance's page in the panel, or connect the instance to an app there.
+The same goes for creating databases and users inside an instance, backups and restores.
+
+**Delete** stops and removes the instance's container and takes the instance out of the
+panel with its databases, users and backup schedules. **Its data volume stays on the
+server**, and the command prints its name. Apps that use the instance's references fail
+their next deployment. In a terminal you type the instance's name to confirm; in a script
+`--yes` is required. A maintainer is refused by the panel.
 
 ## Registry
 
