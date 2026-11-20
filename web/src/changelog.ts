@@ -15,6 +15,32 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.34.0',
+    date: '2026-11-20',
+    changes: {
+      en: [
+        'Remote CLI: dokyr status (or whoami) shows which panel you are signed in to, as whom and with which role; dokyr logout revokes the CLI’s token on the panel and forgets it on your machine.',
+        'dokyr projects create makes a project from the terminal.',
+        'In a terminal the CLI now has colours, framed tables, a spinner while it waits for your approval, and asks for what is missing; in a script it stays plain text. Tab completion: dokyr completion.',
+      ],
+      fr: [
+        'CLI distante : dokyr status (ou whoami) indique sur quel panneau vous êtes connecté, sous quel compte et avec quel rôle ; dokyr logout révoque le jeton de la CLI sur le panneau et l’oublie sur votre machine.',
+        'dokyr projects create crée un projet depuis le terminal.',
+        'Dans un terminal, la CLI a désormais des couleurs, des tableaux encadrés, un indicateur pendant l’attente de votre approbation, et demande ce qui manque ; dans un script, elle reste en texte brut. Complétion : dokyr completion.',
+      ],
+      ar: [
+        'واجهة الأوامر عن بُعد: dokyr status (أو whoami) يعرض اللوحة التي سجّلت الدخول إليها، وبأي حساب وأي دور؛ و dokyr logout يُبطل رمز واجهة الأوامر في اللوحة وينساه على جهازك.',
+        'dokyr projects create ينشئ مشروعًا من الطرفية.',
+        'في الطرفية صار لواجهة الأوامر ألوان وجداول مؤطرة ومؤشر انتظار ريثما توافق، وتسأل عمّا ينقص؛ وفي السكربتات تبقى نصًا عاديًا. الإكمال التلقائي: dokyr completion.',
+      ],
+      es: [
+        'CLI remota: dokyr status (o whoami) muestra en qué panel has iniciado sesión, con qué cuenta y con qué rol; dokyr logout revoca el token de la CLI en el panel y lo olvida en tu máquina.',
+        'dokyr projects create crea un proyecto desde la terminal.',
+        'En una terminal la CLI ahora tiene colores, tablas enmarcadas, un indicador mientras espera tu aprobación, y pregunta lo que falta; en un script sigue siendo texto plano. Autocompletado: dokyr completion.',
+      ],
+    },
+  },
+  {
     version: '0.33.0',
     date: '2026-11-20',
     changes: {
