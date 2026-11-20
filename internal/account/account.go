@@ -239,7 +239,8 @@ func (s *Service) RemoveUser(ctx context.Context, userID string) (store.User, er
 	return u, s.store.DeleteUser(ctx, userID)
 }
 
-// ResetPassword sets a new password and signs the user out everywhere.
+// ResetPassword sets a new password, signs the user out everywhere and revokes their API
+// tokens: it is the recovery path, used when the account may be in other hands.
 // An empty email targets the first owner.
 func (s *Service) ResetPassword(ctx context.Context, email, password string) (store.User, error) {
 	if err := checkPassword(password); err != nil {
@@ -260,6 +261,9 @@ func (s *Service) ResetPassword(ctx context.Context, email, password string) (st
 		return store.User{}, err
 	}
 	if err := s.store.UpdateUserPassword(ctx, u.ID, hash); err != nil {
+		return store.User{}, err
+	}
+	if err := s.store.DeleteUserAPITokens(ctx, u.ID); err != nil {
 		return store.User{}, err
 	}
 	return u, s.store.DeleteUserSessions(ctx, u.ID)

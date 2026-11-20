@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -513,8 +514,57 @@ func proxySource(st *store.Store, registryUpstream, s3Upstream string) func(cont
 			}
 			cfg.Routes = append(cfg.Routes, route)
 		}
+		cfg.Sites = append(cfg.Sites, retiredPanelSites(ctx, st, cfg)...)
 		return cfg, nil
 	}
+}
+
+// retiredPanelSites answers 404 on the hostnames the panel used to have when a wildcard
+// route would otherwise serve them. Browsers that signed in on such a name still send its
+// session cookie there, and a "*" route made before the panel moved is not checked again
+// when it does. An exact hostname is matched ahead of a wildcard, so a site without paths
+// takes the name back; a route an admin made for that exact name is left alone,
+// and so is a name the panel or a built-in service has again.
+func retiredPanelSites(ctx context.Context, st *store.Store, cfg proxy.Config) []proxy.Site {
+	raw, _, err := st.GetSetting(ctx, store.SettingPanelRetired)
+	if err != nil || raw == "" {
+		return nil
+	}
+	var retired []string
+	if json.Unmarshal([]byte(raw), &retired) != nil {
+		return nil
+	}
+	return retiredSites(retired, cfg)
+}
+
+func retiredSites(retired []string, cfg proxy.Config) []proxy.Site {
+	byHost := map[string]proxy.Site{}
+	for _, s := range cfg.Sites {
+		byHost[strings.ToLower(s.Host)] = s
+	}
+	// The panel's own name and the built-in services' names are served already.
+	taken := map[string]bool{strings.ToLower(cfg.PanelDomain): true}
+	for _, r := range cfg.Routes {
+		for _, h := range r.Hosts {
+			taken[strings.ToLower(h)] = true
+		}
+	}
+	var out []proxy.Site
+	for _, host := range retired {
+		host = strings.ToLower(host)
+		_, parent, ok := strings.Cut(host, ".")
+		if !ok || taken[host] {
+			continue
+		}
+		if _, routed := byHost[host]; routed {
+			continue
+		}
+		if wild, covered := byHost["*."+parent]; covered {
+			out = append(out, proxy.Site{Host: host, HTTPOnly: wild.HTTPOnly})
+			byHost[host] = out[len(out)-1]
+		}
+	}
+	return out
 }
 
 // panelUpstream is the address Caddy uses to reach the panel. In its container the panel

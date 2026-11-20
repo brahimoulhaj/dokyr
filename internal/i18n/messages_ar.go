@@ -10,6 +10,7 @@ func init() {
 		"%s already routes %s":                                                     "%s يوجّه %s مسبقًا",
 		"%s failed for what looks like a temporary reason: %v":                     "فشل %s لسبب يبدو مؤقتًا: %v",
 		"%s is an address inside the server's own network; ask an admin to add it": "%s عنوان داخل شبكة الخادم نفسه؛ اطلب من مدير إضافته",
+		"this app mounts a host path, so only an admin can open its terminal":      "هذا التطبيق يركّب مسارًا من الخادم، لذلك لا يفتح طرفيته إلا مدير",
 		"%s is required": "%s مطلوب",
 		"%s is the panel's own account; choose another name":                        "%s هو حساب اللوحة نفسها؛ اختر اسمًا آخر",
 		"%s needs a %s database":                                                    "%s يحتاج إلى قاعدة بيانات %s",

@@ -303,7 +303,12 @@ func (d *Docker) CreateContainer(ctx context.Context, spec ContainerSpec) (strin
 			ExposedPorts: exposed,
 		},
 		HostConfig: &container.HostConfig{
-			NetworkMode:   container.NetworkMode(d.network),
+			NetworkMode: container.NetworkMode(d.network),
+			// Every container shares one bridge with the proxy and the panel. Raw sockets
+			// would let any of them forge ARP replies there and read the traffic between
+			// the two (session cookies, the proxy token). ping still works: Docker opens
+			// unprivileged ICMP sockets to containers.
+			CapDrop:       []string{"NET_RAW"},
 			PortBindings:  bindings,
 			Binds:         binds,
 			Mounts:        volumes,
