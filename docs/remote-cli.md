@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show, create, delete) and the images of the built-in registry. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show, create, delete), deploying them, and the images of the built-in registry. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -122,8 +122,7 @@ are set in the panel.
 In a script the name, `--project` (unless the panel has only one), a source and `--port`
 are required. The panel validates and its refusal is printed as it comes.
 
-Creating an app does not start it: it runs after its first deploy, which for now is done
-from the app's page on the panel.
+Creating an app does not start it: it runs after its first deploy (`dokyr deploy`).
 
 ### Delete an app
 
@@ -136,6 +135,40 @@ Deleting removes the app's containers, makes its addresses stop answering, and d
 settings, variables and deployment history. It cannot be undone. In a terminal the
 command shows what will go and asks you to type the app's name. In a script it refuses
 without `--yes`. A maintainer is refused by the panel: deleting takes an admin or the owner.
+
+## Deploy
+
+```
+dokyr deploy api                   # deploy, print the log as it is written, wait for the end
+dokyr deploy api --project Demo
+dokyr deploy api --no-wait         # start it and return
+dokyr deploy api --attach          # follow the deployment in progress; never starts one
+dokyr deploy api --json            # no log; the finished deployment as JSON
+```
+
+The panel does the work, as it does for the Deploy button: it pulls the image or builds
+the repository, starts the new container, checks it answers and switches traffic to it.
+The CLI prints the deployment's log while that happens and ends when the deployment
+does. The command succeeds only if the deployment succeeded, so `dokyr deploy api &&
+…` is safe in a script; a failure prints the panel's reason.
+
+- **Ctrl+C stops following, not the deployment.** It goes on on the server; `--attach`
+  follows it again. Cancelling a deployment is done in the panel.
+- When the app is already deploying, the command follows that deployment instead of
+  failing (with `--no-wait` it fails, since there is nothing to start).
+- A connection that drops is taken up where it stopped; no line is lost or repeated.
+
+### Deployments
+
+```
+dokyr deployments                  # what is queued or running now, on the whole panel
+dokyr deployments api              # the app's latest deployments, newest first
+dokyr deployments api --limit 30
+```
+
+For an app: the status, what was deployed (an image, or a commit with the first line of
+its message), what triggered it, when, how long it took, and a `●` on the deployment that
+runs now. Both forms take `--json`.
 
 ## Registry
 
