@@ -68,6 +68,7 @@ func newRootCmd(s streams) *cobra.Command {
 		newStatusCmd(s),
 		newLogoutCmd(s),
 		newProjectsCmd(s),
+		newRegistryCmd(s),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the version of this CLI",

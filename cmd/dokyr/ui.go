@@ -102,7 +102,7 @@ func (s streams) table(headers []string, rows [][]string, cellColor func(col int
 	p := s.palette()
 	header := lipgloss.NewStyle().Foreground(p.accent).Bold(true).Padding(0, 1)
 	cell := lipgloss.NewStyle().Padding(0, 1)
-	return table.New().
+	t := table.New().
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(p.line)).
 		BorderColumn(false).
@@ -118,8 +118,15 @@ func (s streams) table(headers []string, rows [][]string, cellColor func(col int
 				}
 			}
 			return cell
-		}).
-		String()
+		})
+	// Wider than the terminal, the frame would wrap into noise: the table is cut to
+	// the width instead, and long cells end in an ellipsis.
+	if f, ok := s.out.(*os.File); ok {
+		if width, _, err := term.GetSize(int(f.Fd())); err == nil && width > 20 && lipgloss.Width(t.String()) > width {
+			t = t.Width(width).Wrap(false)
+		}
+	}
+	return t.String()
 }
 
 // theme is the look of prompts and spinners: huh's base with the panel's accent.
