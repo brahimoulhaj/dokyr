@@ -132,6 +132,36 @@ func TestCLISignIn(t *testing.T) {
 		t.Fatalf("approve with a token = %d %s, want 403", status, body)
 	}
 
+	// Signing out: a token ends itself, and only itself. A browser session is not a token.
+	other := e.must(201, "POST", "/api/tokens", map[string]any{"name": "ci"})
+	if code, m := e.call("POST", "/api/cli/logout", nil); code != 400 {
+		t.Fatalf("cli logout with a session = %d %v, want 400", code, m)
+	}
+	if status, _ := e.bearer("", "POST", "/api/cli/logout", nil); status != 401 {
+		t.Fatalf("cli logout signed out = %d", status)
+	}
+	code = e.cliApprove(verifier, "second")
+	_, body = e.bearer("", "POST", "/api/cli/token", map[string]any{"code": code, "verifier": verifier})
+	var second struct{ Token string }
+	_ = json.Unmarshal(body, &second)
+	if status, body := e.bearer(second.Token, "POST", "/api/cli/logout", nil); status != 204 {
+		t.Fatalf("cli logout = %d %s", status, body)
+	}
+	if status, _ := e.bearer(second.Token, "GET", "/api/auth/me", nil); status != 401 {
+		t.Fatalf("token still works after its logout: %d", status)
+	}
+	if status, _ := e.bearer(other["token"].(string), "GET", "/api/auth/me", nil); status != 200 {
+		t.Fatalf("logout ended another token: %d", status)
+	}
+	if status, _ := e.bearer(out.Token, "GET", "/api/auth/me", nil); status != 200 {
+		t.Fatalf("logout ended the first CLI token: %d", status)
+	}
+	e.must(204, "DELETE", "/api/tokens/"+other["id"].(string), nil)
+	list = e.listTokens()
+	if len(list) != 1 || list[0]["name"] != "CLI on my laptop" {
+		t.Fatalf("tokens after the sign-out = %v", list)
+	}
+
 	e.must(204, "DELETE", "/api/tokens/"+list[0]["id"].(string), nil)
 	if status, _ := e.bearer(out.Token, "GET", "/api/projects", nil); status != 401 {
 		t.Fatalf("revoked CLI token still works: %d", status)
@@ -161,6 +191,14 @@ func TestCLISignInKeepsRole(t *testing.T) {
 	}
 	if status, _ := e.bearer(out.Token, "GET", "/api/projects", nil); status != 200 {
 		t.Fatalf("projects as maintainer = %d", status)
+	}
+	// A maintainer signs out too: ending its own token is not a deletion it is refused.
+	code = member.cliApprove(verifier, "ci-box-2")
+	_, body = e.bearer("", "POST", "/api/cli/token", map[string]any{"code": code, "verifier": verifier})
+	var second struct{ Token string }
+	_ = json.Unmarshal(body, &second)
+	if status, body := e.bearer(second.Token, "POST", "/api/cli/logout", nil); status != 204 {
+		t.Fatalf("maintainer cli logout = %d %s", status, body)
 	}
 	if status, _ := e.bearer(out.Token, "GET", "/api/settings/panel-backup/backups", nil); status != 403 {
 		t.Fatalf("admin route with a maintainer's CLI token = %d, want 403", status)

@@ -143,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.requireAuth(sessionOnly(s.handleDeleteToken)))
 	mux.HandleFunc("POST /api/cli/authorize", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleCLIAuthorize))))
 	mux.HandleFunc("POST /api/cli/token", s.limit(s.authRate, s.handleCLIToken))
+	mux.HandleFunc("POST /api/cli/logout", s.requireAuth(s.handleCLILogout))
 
 	mux.HandleFunc("GET /api/git-sources", s.requireAuth(s.withGit(s.handleListGitSources)))
 	mux.HandleFunc("POST /api/git-sources/gitlab", s.requireAuth(s.withGit(s.handleAddGitLab)))

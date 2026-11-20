@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and the project list. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, the project list and creating a project. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -16,6 +16,19 @@ There are no released binaries yet. From a checkout:
 ```
 make cli          # writes bin/cli/dokyr
 ```
+
+## In a terminal and in a script
+
+In a terminal the CLI shows frames, colours, a spinner while it waits, and asks for what
+is missing: `dokyr login` without a URL asks for the panel, `dokyr projects create`
+without a name asks for the name and the description.
+
+In a pipe or a script (no terminal on standard input and output) it never asks and prints
+plain text: columns separated by spaces, no frame, no colour. `--json` gives the API's own
+JSON. `NO_COLOR=1` turns colours off in a terminal.
+
+`dokyr help`, `dokyr COMMAND --help` and `dokyr completion bash|zsh|fish|powershell`
+(the script to load for tab completion) come with every command.
 
 ## Sign in
 
@@ -42,12 +55,40 @@ The sign-in is kept in `~/.config/dokyr/config.json` (`$XDG_CONFIG_HOME/dokyr` w
 the AppData folder on Windows), readable by your user only. Signing in to another panel
 adds it and makes it the current one.
 
+## Who am I, and signing out
+
+```
+dokyr status          # or: dokyr whoami
+dokyr status --json
+dokyr logout
+```
+
+`status` shows the panel, the user, the role, whether the sign-in still holds, and the
+versions of the panel and of the CLI. It asks the panel, so a token revoked there shows as
+no longer accepted, and a role changed there shows as it is now. It ends with a failing
+exit code when you are not signed in, which makes it usable as a check in a script. The
+token is never printed.
+
+`logout` revokes the token on the panel and forgets it on this machine. The token is
+forgotten here even when the panel cannot be reached; the command then says to revoke
+`CLI on <device>` under API tokens. A panel older than the one that brought this command
+cannot revoke for the CLI either, and gets the same message.
+
 ## Projects
 
 ```
 dokyr projects list           # a table: name, apps, running, databases, domains, last deploy, id
 dokyr projects list --json    # the list as the API returns it
 ```
+
+```
+dokyr projects create blog --description "The company blog"
+dokyr projects create "My wiki" --json     # the new project as the API returns it
+dokyr projects create                      # in a terminal: asks for the name and the description
+```
+
+A project's name is unique on the panel; the panel's refusal (a taken name, a name too
+long) is printed as it comes. Every role can create a project.
 
 ## How the sign-in works
 
@@ -62,3 +103,7 @@ An authorization code with PKCE, between three parties:
 3. The CLI checks the state, then exchanges the code and the verifier at
    `POST /api/cli/token` for the token. A code works once, and not without the verifier,
    so another program on the machine that sees the redirect gains nothing.
+
+Signing out is `POST /api/cli/logout` with the token: it revokes that token and no other.
+It is the one thing a token may do to a token; creating and revoking tokens otherwise
+needs the browser session.

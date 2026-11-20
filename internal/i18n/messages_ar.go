@@ -332,6 +332,7 @@ func init() {
 		"this job is still running":                                                                                  "هذه المهمة ما زالت تعمل",
 		"this passkey could not be saved; it may already be registered":                                              "تعذر حفظ مفتاح المرور هذا؛ ربما هو مسجل مسبقًا",
 		"this passkey is no longer registered":                                                                       "مفتاح المرور هذا لم يعد مسجلًا",
+		"this endpoint ends an API token; a browser session signs out at /api/auth/logout":                           "تُنهي هذه النقطة رمز API؛ جلسة المتصفح تسجّل الخروج عبر /api/auth/logout",
 		"this project does not use that domain":                                                                      "هذا المشروع لا يستخدم ذلك النطاق",
 		"this sign-in code is not valid or has expired; run the login command again":                                 "رمز تسجيل الدخول هذا غير صالح أو انتهت صلاحيته؛ أعد تشغيل أمر تسجيل الدخول",
 		"this sign-in request is not valid; run the login command again":                                             "طلب تسجيل الدخول هذا غير صالح؛ أعد تشغيل أمر تسجيل الدخول",
