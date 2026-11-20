@@ -56,7 +56,32 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string) *httptest.Ser
 			_, _ = io.WriteString(w, `{"error":{"code":"unauthorized","message":"invalid or revoked API token"}}`)
 			return
 		}
-		_, _ = io.WriteString(w, `[{"id":"01P","name":"shop","app_count":3,"apps_running":2,"databases":1,"domains":4,"last_deploy_at":"2026-11-19T10:00:00Z","last_deploy_status":"succeeded"}]`)
+		_, _ = io.WriteString(w, `[{"id":"01P","name":"shop","app_count":3,"apps_running":2,"databases":1,"domains":4,"last_deploy_at":"2026-11-19T10:00:00Z","last_deploy_status":"succeeded"},`+
+			`{"id":"02P","name":"Blog","app_count":1},{"id":"03P","name":"empty","app_count":0}]`)
+	})
+	mux.HandleFunc("GET /api/projects/{id}/apps", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("id") {
+		case "01P":
+			_, _ = io.WriteString(w, `[{"id":"01A","project_id":"01P","name":"api","source_type":"git","git_repository":"https://github.com/org/api.git","git_branch":"main","port":8080,"desired_state":"running","runtime_state":"running","extra":1},`+
+				`{"id":"01B","project_id":"01P","name":"web","source_type":"image","image":"nginx:1.27","port":80,"desired_state":"stopped","runtime_state":"exited"}]`)
+		case "02P":
+			_, _ = io.WriteString(w, `[{"id":"02A","project_id":"02P","name":"api","source_type":"image","image":"ghcr.io/org/api:2","port":0,"runtime_state":"none"}]`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	})
+	mux.HandleFunc("GET /api/apps/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") != "01A" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":"not_found","message":"not found"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id":"01A","project_id":"01P","name":"api","source_type":"git","git_repository":"org/api","git_branch":"main","builder":"dockerfile","port":8080,`+
+			`"cpu_limit":0.5,"memory_limit_mb":512,"runtime_state":"running","needs_redeploy":true,"environment":{"A":"1","B":"2"},`+
+			`"health":{"status":"healthy","reason":"","restarts":2},"process_states":[{"name":"worker","state":"running"}],"created_at":"2026-11-01T10:00:00Z"}`)
+	})
+	mux.HandleFunc("GET /api/apps/{id}/routes", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"url":"https://api.example.com/"},{"url":"https://example.com/api"}]`)
 	})
 	mux.HandleFunc("GET /api/registry/settings", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"enabled":true,"domain":"registry.example.com","address":"registry.example.com","state":"running"}`)
@@ -197,8 +222,61 @@ func TestLoginThenProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	var list []map[string]any
-	if err := json.Unmarshal(out.Bytes(), &list); err != nil || len(list) != 1 || list[0]["name"] != "shop" {
+	if err := json.Unmarshal(out.Bytes(), &list); err != nil || len(list) != 3 || list[0]["name"] != "shop" {
 		t.Fatalf("projects list --json = %s (%v)", out.String(), err)
+	}
+
+	// Apps: across the projects, or of one; an app by its name or its id.
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "list"}, plain(&out)); err != nil {
+		t.Fatalf("apps list = %v", err)
+	}
+	for _, want := range []string{"APP", " github.com/org/api (main)", "nginx:1.27", "stopped", "not deployed", "Blog", "01B", "02A"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("apps list lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "ls", "-p", "blog"}, plain(&out)); err != nil || strings.Contains(out.String(), "nginx") || !strings.Contains(out.String(), "ghcr.io/org/api:2") {
+		t.Fatalf("apps ls -p blog = %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "list", "--project", "empty"}, plain(&out)); err != nil || !strings.Contains(out.String(), "No apps on project empty") {
+		t.Fatalf("apps list of an empty project = %v %q", err, out.String())
+	}
+	if err := run(context.Background(), []string{"apps", "list", "--project", "nope"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no project") {
+		t.Fatalf("apps list of an unknown project = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "list", "--json"}, plain(&out)); err != nil {
+		t.Fatal(err)
+	}
+	var listed []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &listed); err != nil || len(listed) != 3 || listed[0]["extra"] != float64(1) {
+		t.Fatalf("apps list --json = %s (%v)", out.String(), err) // fields the CLI does not know are kept
+	}
+
+	if err := run(context.Background(), []string{"apps", "show", "api"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "Blog, shop") {
+		t.Fatalf("apps show of a name two projects have = %v", err)
+	}
+	if err := run(context.Background(), []string{"apps", "show", "nope"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no app") {
+		t.Fatalf("apps show of an unknown app = %v", err)
+	}
+	for _, args := range [][]string{{"apps", "show", "api", "--project", "shop"}, {"apps", "show", "01A"}} {
+		out.Reset()
+		if err := run(context.Background(), args, plain(&out)); err != nil {
+			t.Fatalf("%v = %v", args, err)
+		}
+		for _, want := range []string{"api", "shop", "running", "healthy (2 restarts)", "org/api (main)", "dockerfile", "8080", "https://api.example.com/", "https://example.com/api",
+			"0.5 CPU, 512 MB", "Process worker", "Variables:   2", "not deployed yet", "01A"} {
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("%v lacks %q:\n%s", args, want, out.String())
+			}
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "show", "01A", "--json"}, plain(&out)); err != nil || !strings.Contains(out.String(), `"needs_redeploy":true`) {
+		t.Fatalf("apps show --json = %v %s", err, out.String())
 	}
 
 	// Registry: one line per tag, named the way it is pulled.
@@ -314,7 +392,7 @@ func TestHelpAndCompletion(t *testing.T) {
 	if err := run(context.Background(), []string{"--help"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"login", "logout", "status", "projects", "registry", "completion", "version"} {
+	for _, want := range []string{"login", "logout", "status", "projects", "apps", "registry", "completion", "version"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("help does not name %q:\n%s", want, out.String())
 		}

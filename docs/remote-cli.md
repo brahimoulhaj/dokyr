@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and sign-out, who is signed in, projects (list, create) and the images of the built-in registry. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show) and the images of the built-in registry. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -89,6 +89,21 @@ dokyr projects create                      # in a terminal: asks for the name an
 
 A project's name is unique on the panel; the panel's refusal (a taken name, a name too
 long) is printed as it comes. Every role can create a project.
+
+## Apps
+
+```
+dokyr apps list                    # every app, with its project, state and source
+dokyr apps list --project Demo     # the apps of one project (name or id)
+dokyr apps show api                # one app: state, health, source, addresses, limits
+dokyr apps show api --project Demo # when two projects have an app of that name
+```
+
+An app is named by its name or its id. The state is the container's: `running`, `stopped`
+(you stopped it), `exited` (it stopped by itself), `not deployed`. `show` adds the health
+check's verdict, the addresses the app answers at, its extra processes, how many
+variables it has (their values are not shown) and whether changes wait for a deploy.
+Both take `--json`.
 
 ## Registry
 
