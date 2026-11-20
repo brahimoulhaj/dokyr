@@ -20,6 +20,11 @@ function apply(lang: Lang) {
   const root = document.documentElement
   root.lang = lang
   root.dir = byCode(lang)!.dir
+  // The server writes its own messages (API errors, deployment logs) in this language
+  // too. A cookie, since a log stream or a WebSocket cannot carry a header.
+  try {
+    document.cookie = `lang=${lang}; path=/; max-age=31536000; samesite=lax`
+  } catch { /* cookies blocked: the server answers in English */ }
 }
 
 // No stored choice: the browser's first language that is supported, else English.

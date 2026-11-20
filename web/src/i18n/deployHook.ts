@@ -17,6 +17,12 @@ export const en = {
   newUrlHint: 'The current URL stops working.',
   turnOff: 'Turn off',
   turnOffConfirm: 'Yes, turn off',
+  pushTitle: 'Deploy on push',
+  pushIntro: 'Which pushes deploy this app. The rules apply to the webhook above and to the GitHub App’s own webhook.',
+  appPush: (branch: string) => `Deploy when ${branch} is pushed (GitHub App)`,
+  appPushHint: 'This app’s Git connection is a GitHub App that tells the panel about pushes itself: no webhook to add to the repository. Saved at once.',
+  watchPaths: 'Only when these paths change',
+  watchPathsHint: 'One pattern per line, from the repository’s root: a folder (services/api/), a file, * inside a name, ** across folders; a line starting with ! leaves paths out. Empty: every push to the branch deploys. A push that does not list its files (forced, a new branch, a long one) always deploys.',
 }
 
 export const fr: typeof en = {
@@ -36,6 +42,12 @@ export const fr: typeof en = {
   newUrlHint: 'L’URL actuelle cesse de fonctionner.',
   turnOff: 'Désactiver',
   turnOffConfirm: 'Oui, désactiver',
+  pushTitle: 'Déploiement au push',
+  pushIntro: 'Quels pushs déploient cette app. Les règles valent pour le webhook ci-dessus et pour le webhook propre à la GitHub App.',
+  appPush: (branch) => `Déployer quand ${branch} est poussée (GitHub App)`,
+  appPushHint: 'La connexion Git de cette app est une GitHub App qui signale elle-même les pushs au panneau : aucun webhook à ajouter au dépôt. Enregistré aussitôt.',
+  watchPaths: 'Seulement quand ces chemins changent',
+  watchPathsHint: 'Un motif par ligne, depuis la racine du dépôt : un dossier (services/api/), un fichier, * dans un nom, ** à travers les dossiers ; une ligne commençant par ! exclut des chemins. Vide : chaque push sur la branche déploie. Un push qui ne liste pas ses fichiers (forcé, nouvelle branche, très long) déploie toujours.',
 }
 
 export const ar: typeof en = {
@@ -55,6 +67,12 @@ export const ar: typeof en = {
   newUrlHint: 'يتوقف الرابط الحالي عن العمل.',
   turnOff: 'تعطيل',
   turnOffConfirm: 'نعم، عطّله',
+  pushTitle: 'النشر عند الدفع',
+  pushIntro: 'أي عمليات الدفع تنشر هذا التطبيق. تسري القواعد على الـ webhook أعلاه وعلى webhook الخاص بـ GitHub App.',
+  appPush: (branch) => `النشر عند الدفع إلى ${branch} (GitHub App)`,
+  appPushHint: 'اتصال Git لهذا التطبيق هو GitHub App يُبلغ اللوحة بعمليات الدفع بنفسه: لا حاجة لإضافة webhook إلى المستودع. يُحفظ فورًا.',
+  watchPaths: 'فقط عند تغيّر هذه المسارات',
+  watchPathsHint: 'نمط واحد في كل سطر، من جذر المستودع: مجلد (services/api/)، ملف، * داخل اسم، ** عبر المجلدات؛ السطر الذي يبدأ بـ ! يستثني مسارات. فارغ: كل دفع إلى الفرع ينشر. الدفع الذي لا يسرد ملفاته (قسري، فرع جديد، طويل جدًا) ينشر دائمًا.',
 }
 
 export const es: typeof en = {
@@ -74,4 +92,10 @@ export const es: typeof en = {
   newUrlHint: 'La URL actual deja de funcionar.',
   turnOff: 'Desactivar',
   turnOffConfirm: 'Sí, desactivar',
+  pushTitle: 'Despliegue al hacer push',
+  pushIntro: 'Qué pushes despliegan esta app. Las reglas valen para el webhook de arriba y para el webhook propio de la GitHub App.',
+  appPush: (branch) => `Desplegar cuando se hace push a ${branch} (GitHub App)`,
+  appPushHint: 'La conexión Git de esta app es una GitHub App que avisa ella misma al panel de los pushes: no hay que añadir un webhook al repositorio. Se guarda al instante.',
+  watchPaths: 'Solo cuando cambian estas rutas',
+  watchPathsHint: 'Un patrón por línea, desde la raíz del repositorio: una carpeta (services/api/), un archivo, * dentro de un nombre, ** entre carpetas; una línea que empieza por ! excluye rutas. Vacío: cada push a la rama despliega. Un push que no lista sus archivos (forzado, rama nueva, muy largo) despliega siempre.',
 }

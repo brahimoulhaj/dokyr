@@ -1,0 +1,62 @@
+# golangci-lint v2. `make lint` runs it; CI runs the same version (see .github/workflows/ci.yml).
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - errcheck
+    - misspell
+    - unconvert
+    - bodyclose
+  settings:
+    errcheck:
+      # Writes to a response, a log stream or a hash, and closes of what was only read,
+      # have nobody to report an error to.
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (hash.Hash).Write
+        - (*strings.Builder).WriteString
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        # Deadlines and the closing frame of a connection that is going away anyway.
+        - (*github.com/gorilla/websocket.Conn).SetWriteDeadline
+        - (*github.com/gorilla/websocket.Conn).SetReadDeadline
+        - (*github.com/gorilla/websocket.Conn).WriteControl
+        - (net.Conn).SetWriteDeadline
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # package comments
+        - -ST1003 # initialisms in names the API already uses
+        - -ST1005 # error strings shown to people start with a capital
+        - -QF1001 # De Morgan rewrites
+        - -QF1003 # tagged switch suggestions
+        - -QF1008 # embedded field selectors
+        - -ST1020 # comment forms: a comment here often explains a group, not one name
+        - -ST1021
+        - -ST1022
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [errcheck, bodyclose]
+      # The translations are not English.
+      - path: internal/i18n/messages_
+        linters: [misspell]
+
+formatters:
+  enable:
+    - gofmt

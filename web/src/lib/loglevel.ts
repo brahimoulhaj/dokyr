@@ -17,6 +17,7 @@ const UPPER = new RegExp(`(?<![\\w-])(${WORDS})(?![\\w-])`)
 // Lower or mixed case counts only where it is plainly a tag: "[error]", "<warn>", "error: …", "npm warn …".
 const TAGGED = new RegExp(`(?:[\\[<(](${WORDS})[\\]>)]|^\\s*(?:npm )?(${WORDS})(?::|\\s|$))`, 'i')
 
+// eslint-disable-next-line no-control-regex -- the escape character is what a colour code starts with
 const ANSI = /\x1b\[[0-9;]*m/g
 /** Levels sit at the front of a line; a level word deep in a message is prose. */
 const HEAD = 160

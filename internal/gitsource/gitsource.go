@@ -44,6 +44,7 @@ type Connection struct {
 	BaseURL    string
 	AppURL     string // GitHub: the app's settings page
 	InstallURL string // GitHub: where the app is installed on accounts and repositories
+	PushEvents bool   // GitHub: the app's webhook reports pushes, so its apps can deploy on push
 	PublicKey  string // deploy key: the line to add to a repository
 	CreatedAt  time.Time
 }
@@ -151,6 +152,7 @@ func (s *Service) public(row store.GitConnection, c creds) Connection {
 	case store.GitTypeGitHubApp:
 		out.AppURL = c.HTMLURL
 		out.InstallURL = s.installURL(c.Slug)
+		out.PushEvents = c.WebhookSecret != ""
 	case store.GitTypeDeployKey:
 		out.PublicKey = c.PublicKey
 	}

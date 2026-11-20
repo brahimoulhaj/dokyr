@@ -390,7 +390,8 @@ func (s *Service) DeleteBucket(ctx context.Context, name string) error {
 	if len(keys) > 0 {
 		return fmt.Errorf("%w: the access key %q uses it; delete its keys first", store.ErrConflict, keys[0].Name)
 	}
-	for o := range cl.ListObjects(ctx, name, minio.ListObjectsOptions{Recursive: true, MaxKeys: 1}) {
+	// One object is enough to refuse.
+	if o, ok := <-cl.ListObjects(ctx, name, minio.ListObjectsOptions{Recursive: true, MaxKeys: 1}); ok {
 		if o.Err != nil {
 			return o.Err
 		}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"panel/internal/executor"
+	"panel/internal/i18n"
 	"panel/internal/store"
 )
 
@@ -136,6 +137,7 @@ func (s *Server) handleDeploymentLogStream(w http.ResponseWriter, r *http.Reques
 		offset = n
 	}
 	path := s.deployer.LogPath(dep)
+	lang := i18n.FromRequest(r)
 
 	stream, err := startSSE(w)
 	if err != nil {
@@ -156,7 +158,7 @@ func (s *Server) handleDeploymentLogStream(w http.ResponseWriter, r *http.Reques
 		chunk, err := readFrom(path, offset)
 		if err != nil {
 			s.log.Error("deployment log stream", "error", err)
-			_ = stream.event("", "end", map[string]string{"status": dep.Status, "error": "the log could not be read"})
+			_ = stream.event("", "end", map[string]string{"status": dep.Status, "error": tr(lang, "the log could not be read")})
 			return
 		}
 		for {
@@ -173,12 +175,13 @@ func (s *Server) handleDeploymentLogStream(w http.ResponseWriter, r *http.Reques
 					ev.Time, ev.Text = ts, rest
 				}
 			}
+			ev.Text = logLine(lang, ev.Text)
 			if stream.event(strconv.FormatInt(offset, 10), "log", ev) != nil {
 				return
 			}
 		}
 		if finished {
-			_ = stream.event("", "end", map[string]string{"status": dep.Status, "error": dep.Error})
+			_ = stream.event("", "end", map[string]string{"status": dep.Status, "error": tr(lang, dep.Error)})
 			return
 		}
 		select {
@@ -195,7 +198,7 @@ func (s *Server) handleDeploymentLogStream(w http.ResponseWriter, r *http.Reques
 			if !errors.Is(err, store.ErrNotFound) && ctx.Err() == nil {
 				s.log.Error("deployment log stream", "error", err)
 			}
-			_ = stream.event("", "end", map[string]string{"status": "", "error": "the deployment no longer exists"})
+			_ = stream.event("", "end", map[string]string{"status": "", "error": tr(lang, "the deployment no longer exists")})
 			return
 		}
 	}

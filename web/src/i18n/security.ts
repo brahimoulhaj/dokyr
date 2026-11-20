@@ -45,6 +45,9 @@ export const en = {
   hostTerminalOnHint: 'When off, nobody can open a shell on the server from this panel. Opening one always asks for your password.',
   hostTerminalUser: 'Open as user',
   hostTerminalUserHint: 'A user that exists on this server. Leave empty to open as root.',
+  hostTerminalIdle: 'Close after minutes without input',
+  hostTerminalIdleHint: 'A shell nobody types in is closed after this many minutes. Output alone does not keep it open. 0 never closes it; at most 480.',
+  confirmWithPasskey: 'Use a passkey instead',
 }
 
 export const fr: typeof en = {
@@ -94,6 +97,9 @@ export const fr: typeof en = {
   hostTerminalOnHint: 'Désactivé, personne ne peut ouvrir un shell sur le serveur depuis ce panneau. L’ouverture demande toujours votre mot de passe.',
   hostTerminalUser: 'Ouvrir en tant que',
   hostTerminalUserHint: 'Un utilisateur qui existe sur ce serveur. Laissez vide pour ouvrir en tant que root.',
+  hostTerminalIdle: 'Fermer après des minutes sans saisie',
+  hostTerminalIdleHint: 'Un shell où personne ne tape est fermé après ce nombre de minutes. La sortie seule ne le garde pas ouvert. 0 ne le ferme jamais ; 480 au plus.',
+  confirmWithPasskey: 'Utiliser une clé d’accès',
 }
 
 export const ar: typeof en = {
@@ -143,6 +149,9 @@ export const ar: typeof en = {
   hostTerminalOnHint: 'عند الإيقاف، لا يمكن لأحد فتح صدفة على الخادم من هذه اللوحة. الفتح يطلب كلمة مرورك دائمًا.',
   hostTerminalUser: 'الفتح باسم المستخدم',
   hostTerminalUserHint: 'مستخدم موجود على هذا الخادم. اتركه فارغًا للفتح باسم root.',
+  hostTerminalIdle: 'الإغلاق بعد دقائق بلا إدخال',
+  hostTerminalIdleHint: 'تُغلق الصدفة التي لا يكتب فيها أحد بعد هذا العدد من الدقائق. المخرجات وحدها لا تبقيها مفتوحة. 0 لا يغلقها أبدًا؛ 480 على الأكثر.',
+  confirmWithPasskey: 'استخدام مفتاح مرور بدلًا من ذلك',
 }
 
 export const es: typeof en = {
@@ -192,4 +201,7 @@ export const es: typeof en = {
   hostTerminalOnHint: 'Desactivado, nadie puede abrir un shell en el servidor desde este panel. Abrirlo siempre pide tu contraseña.',
   hostTerminalUser: 'Abrir como usuario',
   hostTerminalUserHint: 'Un usuario que existe en este servidor. Déjalo vacío para abrir como root.',
+  hostTerminalIdle: 'Cerrar tras minutos sin entrada',
+  hostTerminalIdleHint: 'Un shell en el que nadie escribe se cierra tras estos minutos. La salida por sí sola no lo mantiene abierto. 0 no lo cierra nunca; 480 como máximo.',
+  confirmWithPasskey: 'Usar una llave de acceso',
 }

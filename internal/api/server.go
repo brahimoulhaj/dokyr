@@ -32,6 +32,7 @@ type Server struct {
 	updater        Updater
 	hostTerminal   HostTerminal
 	hostUnlocks    hostUnlocks
+	pushes         recentPushes
 	proxyToken     string // what the proxy proves itself with; see clientIP
 	cronJobs       CronJobs
 	git            *gitsource.Service
@@ -101,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/passkeys/register/finish", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleFinishPasskeyRegistration))))
 	mux.HandleFunc("POST /api/auth/passkeys/login/begin", s.limit(s.authRate, s.handleBeginPasskeyLogin))
 	mux.HandleFunc("POST /api/auth/passkeys/login/finish", s.limit(s.authRate, s.handleFinishPasskeyLogin))
+	mux.HandleFunc("POST /api/auth/passkeys/host-unlock/begin", s.requireAuth(sessionOnly(adminOnly(s.limit(s.authRate, s.handleBeginHostUnlockPasskey)))))
+	mux.HandleFunc("POST /api/auth/passkeys/host-unlock/finish", s.requireAuth(sessionOnly(adminOnly(s.limit(s.authRate, s.handleFinishHostUnlockPasskey)))))
 	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleDeletePasskey))))
 
 	mux.HandleFunc("GET /api/users", s.requireAuth(sessionOnly(ownerOnly(s.handleListUsers))))
@@ -179,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/search", s.requireAuth(s.handleSearch))
 	mux.HandleFunc("GET /api/changes", s.requireAuth(s.handleChanges))
 	mux.HandleFunc("GET /api/metrics/stream", s.requireAuth(s.handleMetricsStream))
+	mux.HandleFunc("GET /api/metrics/host/history", s.requireAuth(s.handleResourceMetrics(store.MetricHost)))
 	mux.HandleFunc("GET /api/database-engines", s.requireAuth(s.handleDatabaseEngines))
 	mux.HandleFunc("GET /api/database-operations/active", s.requireAuth(s.handleActiveDatabaseOperations))
 	mux.HandleFunc("GET /api/database-operations/{id}", s.requireAuth(s.handleGetDatabaseOperation))
@@ -207,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/databases/{id}/users", s.requireAuth(sessionOnly(s.handleDatabaseManage("user_create"))))
 	mux.HandleFunc("DELETE /api/databases/{id}/databases/{database}", s.requireAuth(sessionOnly(s.handleDatabaseManage("database_delete"))))
 	mux.HandleFunc("DELETE /api/databases/{id}/users/{user}", s.requireAuth(sessionOnly(s.handleDatabaseManage("user_delete"))))
+	mux.HandleFunc("POST /api/databases/{id}/catalog/sync", s.requireAuth(sessionOnly(s.handleDatabaseManage("catalog_sync"))))
 	mux.HandleFunc("POST /api/databases/{id}/users/{user}/password", s.requireAuth(sessionOnly(s.handleDatabaseManage("password_rotate"))))
 	mux.HandleFunc("PUT /api/databases/{id}/grants", s.requireAuth(sessionOnly(s.handleDatabaseManage("grant_update"))))
 	mux.HandleFunc("GET /api/databases/{id}/users/{user}/connection", s.requireAuth(sessionOnly(s.handleDatabaseUserConnection)))
@@ -278,6 +283,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/apps/{id}/deploy-hook", s.requireAuth(s.handleNewDeployHook))
 	mux.HandleFunc("DELETE /api/apps/{id}/deploy-hook", s.requireAuth(s.handleDeleteDeployHook))
 	mux.HandleFunc("POST /api/hooks/deploy/{token}", s.limit(s.hookRate, s.handleDeployHook))
+	mux.HandleFunc("POST "+gitsource.WebhookPath, s.limit(s.hookRate, s.handleGitHubAppHook))
 
 	mux.HandleFunc("GET /api/deployments/active", s.requireAuth(s.handleActiveDeployments))
 	mux.HandleFunc("GET /api/deployments/{id}", s.requireAuth(s.handleGetDeployment))

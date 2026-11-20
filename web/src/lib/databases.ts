@@ -14,14 +14,15 @@ export type DatabaseInstance = {
 }
 export type DatabaseOperation = {
   id: string; instance_id: string; project_id: string; instance_name: string; engine: string; version: string
-  action: 'create' | 'start' | 'stop' | 'restart' | 'delete' | 'database_create' | 'user_create' | 'grant_update' | 'backup' | 'restore' | 'database_delete' | 'user_delete' | 'password_rotate'
+  action: 'create' | 'start' | 'stop' | 'restart' | 'delete' | 'database_create' | 'user_create' | 'grant_update' | 'backup' | 'restore' | 'database_delete' | 'user_delete' | 'password_rotate' | 'catalog_sync'
   detail: string
   status: 'queued' | 'running' | 'succeeded' | 'failed'; error: string
   started_at: string | null; finished_at: string | null; created_at: string; updated_at: string
 }
 export type DatabaseAccessLevel = 'none' | 'read_only' | 'read_write' | 'full'
 export type ManagedDatabase = { id: string; name: string }
-export type DatabaseUser = { id: string; name: string; initial: boolean }
+/** external: found on the server by a sync, not made by the panel, which has no password for it until one is rotated. */
+export type DatabaseUser = { id: string; name: string; initial: boolean; external: boolean }
 export type DatabaseGrant = { user_id: string; database_id: string; access: DatabaseAccessLevel }
 export type DatabaseCatalog = { databases: ManagedDatabase[]; users: DatabaseUser[]; grants: DatabaseGrant[] }
 export const databaseCatalogQuery = (id: string) => ({

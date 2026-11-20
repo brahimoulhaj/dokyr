@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-quer
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { TerminalWindow } from '@phosphor-icons/react'
+import { passkeysSupported, unlockHostWithPasskey } from '../lib/passkeys'
 import { api, hostTerminalQuery, meQuery, metaQuery, updatesQuery, type User } from '../lib/api'
 import { PasswordConfirmDialog } from './password-confirm-dialog'
 import { useLogout } from '../lib/logout'
@@ -39,12 +40,12 @@ export function Shell() {
   const hostTerminal = useQuery({ ...hostTerminalQuery, enabled: mayOpen })
   const canTerminal = mayOpen && hostTerminal.data?.enabled !== false
   // What waits for the password: the host terminal asks for it again before a shell opens.
-  const [unlock, setUnlock] = useState<{ run: () => void; user: string } | null>(null)
+  const [unlock, setUnlock] = useState<{ run: () => void; user: string; passkey: boolean } | null>(null)
   async function guard(run: () => void) {
     try {
       const now = await qc.fetchQuery({ ...hostTerminalQuery, staleTime: 0 })
       if (!now.enabled) return
-      if (!now.unlocked) { setUnlock({ run, user: now.user || 'root' }); return }
+      if (!now.unlocked) { setUnlock({ run, user: now.user || 'root', passkey: now.passkey && passkeysSupported() }); return }
     } catch { /* the terminal reports what is wrong */ }
     run()
   }
@@ -135,6 +136,7 @@ export function Shell() {
             confirm: t.shell.openTerminal,
             detail: t.shell.hostTerminalAs(unlock.user),
             onConfirm: (password) => api('/host/terminal/unlock', { method: 'POST', body: { password } }),
+            onPasskey: unlock.passkey ? unlockHostWithPasskey : undefined,
           }}
           onClose={() => setUnlock(null)}
           onComplete={() => { unlock.run(); setUnlock(null) }}

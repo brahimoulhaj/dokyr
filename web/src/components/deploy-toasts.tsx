@@ -45,7 +45,7 @@ export function DeployToasts({ databaseOperations, onDismissDatabase }: { databa
   useEffect(() => {
     const v = takeUpdated()
     if (v) toast.success(t.settingsUpdates.updatedToast(v))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
+    // Once, on load.
   }, [])
 
   const dismiss = (id: string) => setEnded((list) => list.filter((e) => e.d.id !== id))

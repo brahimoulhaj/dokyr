@@ -693,7 +693,7 @@ func run(ctx context.Context, line LineFunc, env []string, name string, args ...
 				line(t)
 			}
 		}
-		io.Copy(io.Discard, pr) // a line over the limit: keep draining so the process never blocks
+		_, _ = io.Copy(io.Discard, pr) // a line over the limit: keep draining so the process never blocks
 	}()
 	err := cmd.Wait()
 	pw.Close()

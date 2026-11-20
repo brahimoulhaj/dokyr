@@ -17,6 +17,7 @@ import (
 	"panel/internal/account"
 	"panel/internal/auth"
 	"panel/internal/brand"
+	"panel/internal/i18n"
 	"panel/internal/proxy"
 	"panel/internal/store"
 )
@@ -45,7 +46,11 @@ func tokenFrom(ctx context.Context) *store.APIToken {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	lang   string // what the request asked for; errors are written in it
 }
+
+// Language is the language of the request this response answers.
+func (w *statusWriter) Language() string { return w.lang }
 
 func (w *statusWriter) WriteHeader(code int) {
 	w.status = code
@@ -64,7 +69,7 @@ func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK, lang: i18n.FromRequest(r)}
 		next.ServeHTTP(sw, r)
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/health" {
 			path := r.URL.Path

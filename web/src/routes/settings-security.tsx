@@ -102,10 +102,12 @@ function HostTerminalSettingsPanel() {
   const text = t.security
   const qc = useQueryClient()
   const q = useQuery(hostTerminalQuery)
-  const [draft, setDraft] = useState<{ enabled: boolean; user: string } | null>(null)
-  const value = draft ?? { enabled: q.data?.enabled ?? true, user: q.data?.user ?? '' }
+  const [draft, setDraft] = useState<{ enabled: boolean; user: string; idle: string } | null>(null)
+  const value = draft ?? { enabled: q.data?.enabled ?? true, user: q.data?.user ?? '', idle: String(q.data?.idle_minutes ?? 30) }
+  const idle = Number(value.idle)
+  const idleOK = value.idle.trim() !== '' && Number.isInteger(idle) && idle >= 0 && idle <= 480
   const save = useMutation({
-    mutationFn: () => api<HostTerminalSettings>('/host/terminal/settings', { method: 'PUT', body: { enabled: value.enabled, user: value.user.trim() } }),
+    mutationFn: () => api<HostTerminalSettings>('/host/terminal/settings', { method: 'PUT', body: { enabled: value.enabled, user: value.user.trim(), idle_minutes: idle } }),
     onSuccess: (saved) => { qc.setQueryData(hostTerminalQuery.queryKey, saved); setDraft(null) },
   })
   if (!q.data) return null
@@ -117,8 +119,12 @@ function HostTerminalSettingsPanel() {
           autoCapitalize="none" autoComplete="off" spellCheck={false} disabled={!value.enabled}
           value={value.user} onChange={(e) => setDraft({ ...value, user: e.target.value })} />
       </div>
+      <div className="max-w-xs">
+        <Field label={text.hostTerminalIdle} hint={text.hostTerminalIdleHint} hintTooltip name="host-terminal-idle" dir="ltr" type="number" inputMode="numeric" min={0} max={480} step={1}
+          disabled={!value.enabled} value={value.idle} onChange={(e) => setDraft({ ...value, idle: e.target.value })} />
+      </div>
       {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-      <Button type="submit" disabled={!draft || save.isPending}>{save.isPending ? t.common.working : t.common.save}</Button>
+      <Button type="submit" disabled={!draft || !idleOK || save.isPending}>{save.isPending ? t.common.working : t.common.save}</Button>
     </form>
   </Panel>
 }

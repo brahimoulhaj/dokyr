@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -183,5 +184,96 @@ func TestHostTerminal(t *testing.T) {
 	go process.Write([]byte("root@host:~# "))
 	if _, output, err := ws.ReadMessage(); err != nil || string(output) != "root@host:~# " {
 		t.Fatalf("output: %q %v", output, err)
+	}
+}
+
+func TestHostTerminalIdle(t *testing.T) {
+	hostIdleUnit = 200 * time.Millisecond
+	defer func() { hostIdleUnit = time.Minute }()
+	e := newEnv(t)
+	e.signIn()
+	if got := e.must(200, "GET", "/api/host/terminal/settings", nil); got["idle_minutes"] != float64(30) {
+		t.Fatalf("default idle time = %v", got["idle_minutes"])
+	}
+	for _, bad := range []int{-1, 481} {
+		e.must(422, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": "", "idle_minutes": bad})
+	}
+	// A client that does not send the field keeps what is saved.
+	e.must(200, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": "", "idle_minutes": 2})
+	if got := e.must(200, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": ""}); got["idle_minutes"] != float64(2) {
+		t.Fatalf("idle time after a save without it = %v", got["idle_minutes"])
+	}
+	e.must(204, "POST", "/api/host/terminal/unlock", map[string]any{"password": "s3cret-pass"})
+
+	open := func() (*websocket.Conn, net.Conn) {
+		t.Helper()
+		server, process := net.Pipe()
+		t.Cleanup(func() { process.Close(); server.Close() })
+		e.srv.SetHostTerminal(func(context.Context, string, uint, uint) (executor.Terminal, error) {
+			return &testPTY{Conn: server, sizes: make(chan [2]uint, 1)}, nil
+		})
+		ws, _, err := (&websocket.Dialer{Jar: e.client.Jar}).Dial("ws"+strings.TrimPrefix(e.url, "http")+"/api/host/terminal?cols=80&rows=24", http.Header{"Origin": []string{e.url}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { ws.Close() })
+		ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if _, ready, err := ws.ReadMessage(); err != nil || !strings.Contains(string(ready), "ready") {
+			t.Fatalf("ready: %s %v", ready, err)
+		}
+		return ws, process
+	}
+
+	// Two "minutes" (400 ms here) without input close the shell, whatever it prints.
+	ws, process := open()
+	go func() {
+		for range 20 {
+			if _, err := process.Write([]byte(".")); err != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+	start := time.Now()
+	for {
+		_, _, err := ws.ReadMessage()
+		if err == nil {
+			ws.WriteJSON(map[string]string{"type": "ack"})
+			continue
+		}
+		if !websocket.IsCloseError(err, terminalIdleClose) {
+			t.Fatalf("idle shell ended with %v, want close code %d", err, terminalIdleClose)
+		}
+		break
+	}
+	if d := time.Since(start); d < 350*time.Millisecond {
+		t.Fatalf("closed after %v, before the idle time", d)
+	}
+	process.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := process.Read(make([]byte, 1)); err == nil {
+		t.Fatal("PTY not closed with the idle shell")
+	}
+
+	// Typing keeps it open past the idle time.
+	ws, process = open()
+	go io.Copy(io.Discard, process)
+	for range 8 {
+		if err := ws.WriteMessage(websocket.BinaryMessage, []byte("x")); err != nil {
+			t.Fatalf("shell closed while typing: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 0 never closes it.
+	e.must(200, "PUT", "/api/host/terminal/settings", map[string]any{"enabled": true, "user": "", "idle_minutes": 0})
+	ws, process = open()
+	go io.Copy(io.Discard, process)
+	time.Sleep(600 * time.Millisecond)
+	if err := ws.WriteJSON(map[string]string{"type": "ping"}); err != nil {
+		t.Fatalf("shell with no idle time closed: %v", err)
+	}
+	ws.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if _, _, err := ws.ReadMessage(); websocket.IsCloseError(err, terminalIdleClose) {
+		t.Fatal("shell with no idle time closed as idle")
 	}
 }

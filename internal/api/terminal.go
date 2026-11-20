@@ -3,14 +3,18 @@ package api
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gorilla/websocket"
 	"panel/internal/brand"
 	"panel/internal/executor"
@@ -93,9 +97,26 @@ func (u *hostUnlocks) ok(session string) bool {
 	return session != "" && time.Now().Before(u.until[session])
 }
 
+// Idle minutes of a host shell: the default, and the longest that can be set.
+const (
+	hostIdleDefault = 30
+	hostIdleMax     = 480
+)
+
 type hostTerminalSettings struct {
-	Enabled bool   `json:"enabled"`
-	User    string `json:"user"` // empty: root
+	Enabled     bool   `json:"enabled"`
+	User        string `json:"user"`         // empty: root
+	IdleMinutes *int   `json:"idle_minutes"` // without input before a shell is closed; 0: never
+}
+
+// hostIdleUnit is a minute; a test shortens it.
+var hostIdleUnit = time.Minute
+
+func (c hostTerminalSettings) idle() time.Duration {
+	if c.IdleMinutes == nil {
+		return hostIdleDefault * hostIdleUnit
+	}
+	return time.Duration(*c.IdleMinutes) * hostIdleUnit
 }
 
 func (s *Server) hostTerminalSettings(ctx context.Context) (hostTerminalSettings, error) {
@@ -104,7 +125,18 @@ func (s *Server) hostTerminalSettings(ctx context.Context) (hostTerminalSettings
 		return hostTerminalSettings{}, err
 	}
 	user, _, err := s.store.GetSetting(ctx, store.SettingHostTermUsr)
-	return hostTerminalSettings{Enabled: off != "true", User: user}, err
+	if err != nil {
+		return hostTerminalSettings{}, err
+	}
+	idle := hostIdleDefault
+	if v, ok, err := s.store.GetSetting(ctx, store.SettingHostTermIdle); err != nil {
+		return hostTerminalSettings{}, err
+	} else if ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= hostIdleMax {
+			idle = n
+		}
+	}
+	return hostTerminalSettings{Enabled: off != "true", User: user, IdleMinutes: &idle}, nil
 }
 
 func (s *Server) handleGetHostTerminalSettings(w http.ResponseWriter, r *http.Request) {
@@ -114,8 +146,9 @@ func (s *Server) handleGetHostTerminalSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled": cfg.Enabled, "user": cfg.User,
+		"enabled": cfg.Enabled, "user": cfg.User, "idle_minutes": *cfg.IdleMinutes,
 		"available": s.hostTerminal != nil, "unlocked": s.hostUnlocks.ok(sessionHash(r)),
+		"passkey": s.hasPasskey(r),
 	})
 }
 
@@ -132,6 +165,18 @@ func (s *Server) handlePutHostTerminalSettings(w http.ResponseWriter, r *http.Re
 		invalid(w, "user must be a user name of this server: lowercase letters, digits, - and _")
 		return
 	}
+	if in.IdleMinutes == nil { // a client from before the setting keeps what is saved
+		current, err := s.hostTerminalSettings(r.Context())
+		if err != nil {
+			s.internal(w, "host terminal settings", err)
+			return
+		}
+		in.IdleMinutes = current.IdleMinutes
+	}
+	if *in.IdleMinutes < 0 || *in.IdleMinutes > hostIdleMax {
+		invalid(w, "idle time must be between 0 (never) and "+strconv.Itoa(hostIdleMax)+" minutes")
+		return
+	}
 	off := "false"
 	if !in.Enabled {
 		off = "true"
@@ -144,9 +189,16 @@ func (s *Server) handlePutHostTerminalSettings(w http.ResponseWriter, r *http.Re
 		s.internal(w, "host terminal settings", err)
 		return
 	}
+	if err := s.store.SetSetting(r.Context(), store.SettingHostTermIdle, strconv.Itoa(*in.IdleMinutes)); err != nil {
+		s.internal(w, "host terminal settings", err)
+		return
+	}
 	detail := "off"
 	if in.Enabled {
 		detail = "on, as " + cmp.Or(in.User, "root")
+		if *in.IdleMinutes > 0 {
+			detail += ", closed after " + strconv.Itoa(*in.IdleMinutes) + " min idle"
+		}
 	}
 	s.audit(r, "settings.host_terminal", "settings", "host_terminal", "", detail)
 	s.handleGetHostTerminalSettings(w, r)
@@ -200,6 +252,7 @@ func (s *Server) handleHostTerminal(w http.ResponseWriter, r *http.Request) {
 			return s.hostTerminal(ctx, cfg.User, uint(cols), uint(rows))
 		},
 		failed: "Cannot open a shell on the host.",
+		idle:   cfg.idle(),
 		audit: func(action string) {
 			s.audit(r, "host.terminal."+action, "host", "", "host", "as "+cmp.Or(cfg.User, "root"))
 		},
@@ -210,7 +263,11 @@ type terminalSession struct {
 	open   func(context.Context) (executor.Terminal, error)
 	failed string              // shown in the browser when open fails
 	audit  func(action string) // "open" and "close"
+	idle   time.Duration       // closed after this long without input; 0: never
 }
+
+// terminalIdleClose is the WebSocket close code of a shell closed for being idle.
+const terminalIdleClose = 4001
 
 // serveTerminal upgrades to a WebSocket and bridges it to the session's PTY.
 func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session terminalSession) {
@@ -254,7 +311,7 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session t
 	if err != nil {
 		s.log.Warn("open terminal", "error", err)
 		ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		ws.WriteJSON(map[string]string{"type": "error", "message": session.failed})
+		_ = ws.WriteJSON(map[string]string{"type": "error", "message": session.failed})
 		return
 	}
 	defer pty.Close()
@@ -263,6 +320,27 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session t
 	go func() { <-ctx.Done(); pty.Close() }()
 	if err := ws.WriteJSON(map[string]string{"type": "ready"}); err != nil {
 		return
+	}
+	// What the user types counts as activity; output (a `tail -f` left open) does not.
+	var lastInput atomic.Int64
+	lastInput.Store(time.Now().UnixNano())
+	if session.idle > 0 {
+		go func() {
+			ticker := time.NewTicker(min(session.idle/4, 15*time.Second))
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if time.Since(time.Unix(0, lastInput.Load())) >= session.idle {
+						ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(terminalIdleClose, "idle"), time.Now().Add(time.Second))
+						cancel()
+						return
+					}
+				}
+			}
+		}()
 	}
 	// Limit unrendered browser output to eight frames (128 KiB).
 	credits := make(chan struct{}, 8)
@@ -299,6 +377,7 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session t
 			return
 		}
 		if kind == websocket.BinaryMessage {
+			lastInput.Store(time.Now().UnixNano())
 			if _, err := pty.Write(payload); err != nil {
 				return
 			}
@@ -333,4 +412,92 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session t
 			return
 		}
 	}
+}
+
+// hasPasskey says whether the signed-in user can confirm with a passkey from this origin.
+func (s *Server) hasPasskey(r *http.Request) bool {
+	origin, err := s.loginOrigin(r)
+	if err != nil {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	keys, err := s.store.Passkeys(r.Context(), userFrom(r.Context()).ID, u.Hostname())
+	return err == nil && len(keys) > 0
+}
+
+// handleBeginHostUnlockPasskey starts a passkey confirmation in place of the password:
+// a challenge for the signed-in user's own passkeys, user verification required.
+func (s *Server) handleBeginHostUnlockPasskey(w http.ResponseWriter, r *http.Request) {
+	origin, err := s.loginOrigin(r)
+	if err != nil {
+		writeError(w, 422, "origin", err.Error())
+		return
+	}
+	rp, err := passkeyRP(origin)
+	if err != nil {
+		s.internal(w, "passkey RP", err)
+		return
+	}
+	u, err := s.passkeyUser(r.Context(), userFrom(r.Context()), rp.Config.RPID)
+	if err != nil {
+		s.internal(w, "passkey user", err)
+		return
+	}
+	if len(u.Credentials) == 0 {
+		writeError(w, 422, "no_passkey", "no passkey is registered for this account; confirm with your password")
+		return
+	}
+	options, session, err := rp.BeginLogin(u, webauthn.WithUserVerification(protocol.VerificationRequired))
+	if err != nil {
+		s.internal(w, "passkey confirmation", err)
+		return
+	}
+	if _, err = s.beginLoginFlow(w, loginFlow{Kind: "passkey-host-unlock", Origin: origin, UserID: u.ID, SessionHash: sessionHash(r), Session: *session}); err != nil {
+		writeError(w, 429, "busy", err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, options)
+}
+
+// handleFinishHostUnlockPasskey checks the assertion against the challenge of this user
+// and this browser session, then unlocks the host terminal as the password does.
+func (s *Server) handleFinishHostUnlockPasskey(w http.ResponseWriter, r *http.Request) {
+	f, err := s.takeLoginFlow(w, r, "passkey-host-unlock")
+	if err != nil {
+		writeError(w, 400, "challenge", err.Error())
+		return
+	}
+	s.loginFlows.passkeyMu.Lock()
+	defer s.loginFlows.passkeyMu.Unlock()
+	rp, err := passkeyRP(f.Origin)
+	if err != nil {
+		s.internal(w, "passkey RP", err)
+		return
+	}
+	u, err := s.passkeyUser(r.Context(), userFrom(r.Context()), rp.Config.RPID)
+	if err != nil {
+		s.internal(w, "passkey user", err)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	cred, err := rp.FinishLogin(u, f.Session, r)
+	if err != nil || cred.Authenticator.CloneWarning {
+		writeError(w, 401, "invalid_credentials", "could not verify this passkey; use your password or try another passkey")
+		return
+	}
+	data, err := json.Marshal(cred)
+	if err != nil {
+		s.internal(w, "passkey credential", err)
+		return
+	}
+	if err = s.store.UsePasskey(r.Context(), u.ID, rp.Config.RPID, base64.RawURLEncoding.EncodeToString(cred.ID), data); err != nil {
+		writeError(w, 401, "invalid_credentials", "this passkey is no longer registered")
+		return
+	}
+	s.hostUnlocks.grant(sessionHash(r))
+	w.WriteHeader(http.StatusNoContent)
 }

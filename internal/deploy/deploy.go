@@ -702,7 +702,15 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		return
 	}
 	// What this deployment was made from, to tell later that the settings moved on.
-	configHash := app.ConfigHash(check)
+	// A variable the build added to the app (addPHPExtensions) is one the next deployment
+	// resolves as well: without it here, the app would say at once that it changed.
+	values := maps.Clone(resolved)
+	for k, v := range app.Environment {
+		if _, ok := values[k]; !ok {
+			values[k] = v
+		}
+	}
+	configHash := app.DeployedFingerprint(check, values)
 	if !saved {
 		check = store.HealthCheck{Type: store.HealthRunning, Drain: store.DefaultDrain}
 	}
@@ -1061,33 +1069,43 @@ func (s *Service) build(ctx, final context.Context, app *store.App, dep store.De
 	return tag, nil
 }
 
-// environment is the app's variables with the project's: inherited when the project says
-// so, and every ${project.NAME} replaced.
-func (s *Service) environment(ctx context.Context, app store.App, logw *logWriter) (map[string]string, error) {
+// resolveEnvironment is the app's variables with the project's: inherited when the project
+// says so (inherited counts them), and every ${project.NAME}, ${app.NAME.FIELD} and
+// ${db.NAME.FIELD} replaced. database.ErrStarting when a database is not up yet.
+func (s *Service) resolveEnvironment(ctx context.Context, app store.App) (env map[string]string, inherited int, err error) {
 	project, inherit, err := s.opts.Store.ProjectEnvironment(ctx, app.ProjectID)
 	if err != nil {
-		return nil, fmt.Errorf("project variables: %w", err)
+		return nil, 0, fmt.Errorf("project variables: %w", err)
 	}
-	if inherit && len(project) > 0 {
-		logw.printf("Inheriting %d project variables (the app's own values win)", len(project))
+	if inherit {
+		inherited = len(project)
 	}
-	env, err := resolveEnvironment(app.Environment, project, inherit)
+	env, err = resolveEnvironment(app.Environment, project, inherit)
 	if err != nil {
-		return nil, err
+		return nil, inherited, err
 	}
 	if slices.ContainsFunc(slices.Collect(maps.Values(env)), func(v string) bool { return strings.Contains(v, "${app.") }) {
 		apps, err := s.opts.Store.ListApps(ctx, app.ProjectID)
 		if err != nil {
-			return nil, fmt.Errorf("project apps: %w", err)
+			return nil, inherited, fmt.Errorf("project apps: %w", err)
 		}
 		if env, err = resolveAppRefs(env, apps); err != nil {
-			return nil, err
+			return nil, inherited, err
 		}
 	}
+	env, err = database.ResolveEnvironment(ctx, s.opts.Store, app.ProjectID, env)
+	return env, inherited, err
+}
+
+// environment resolves the app's variables for a deployment, and says so in its log.
+func (s *Service) environment(ctx context.Context, app store.App, logw *logWriter) (map[string]string, error) {
 	// A database created a moment ago (with the app, from a template) is given time to start.
 	deadline := time.Now().Add(s.opts.DatabaseWait)
-	for waiting := false; ; {
-		out, err := database.ResolveEnvironment(ctx, s.opts.Store, app.ProjectID, env)
+	for first, waiting := true, false; ; first = false {
+		out, inherited, err := s.resolveEnvironment(ctx, app)
+		if first && inherited > 0 {
+			logw.printf("Inheriting %d project variables (the app's own values win)", inherited)
+		}
 		if !errors.Is(err, database.ErrStarting) || time.Now().After(deadline) {
 			return out, err
 		}
@@ -1101,6 +1119,29 @@ func (s *Service) environment(ctx context.Context, app store.App, logw *logWrite
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// NeedsRedeploy tells whether the running deployment no longer matches what a new one
+// would be made from: the app's own settings, or a value its variables take from the
+// project, a database or another app. When those values cannot be resolved right now (a
+// database is stopped), only the settings are compared.
+func (s *Service) NeedsRedeploy(ctx context.Context, app store.App) bool {
+	if app.CurrentDeploymentID == "" || app.DeployedConfig == "" {
+		return false
+	}
+	check, _, err := s.opts.Store.AppHealthCheck(ctx, app.ID)
+	if err != nil {
+		return false
+	}
+	changed, hasValues := app.SettingsChanged(check)
+	if changed || !hasValues {
+		return changed
+	}
+	resolved, _, err := s.resolveEnvironment(ctx, app)
+	if err != nil {
+		return false
+	}
+	return app.ValuesChanged(resolved)
 }
 
 // containerEnv is the app's environment, plus PORT set to port (the deployment's) for a

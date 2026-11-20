@@ -15,6 +15,13 @@ setups. On Docker Desktop these are the Linux VM's metrics. Unavailable readings
 shown explicitly, and loopback, container bridges and tunnels are excluded from network
 totals. Metrics are available only through the authenticated `/api/host/metrics` endpoint.
 
+The ten minutes in memory feed the card's sparklines. Beside them, a sample of the host is
+stored every 10 seconds with the containers' and rolled up like theirs: 24 hours at 10 s,
+7 days per minute, 30 days per hour, across panel restarts. **Host history** under the card
+(closed until opened, so an idle Overview sends no requests) charts CPU in cores used, RAM,
+network, and how full the data disk is; `GET /api/metrics/host/history?range=1h|6h|24h|7d|30d`
+returns the same series.
+
 ## Docker metrics
 
 The Docker dashboard card uses the connected daemon's read-only API to show container

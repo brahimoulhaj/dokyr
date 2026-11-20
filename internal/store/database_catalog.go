@@ -16,6 +16,9 @@ type DatabaseUser struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Initial bool   `json:"initial"`
+	// External: found on the server, not created by the panel; its password is not known
+	// here until it is rotated.
+	External bool `json:"external"`
 }
 type DatabaseGrant struct {
 	UserID     string `json:"user_id"`
@@ -50,9 +53,23 @@ func (s *Store) AddDatabaseUser(ctx context.Context, instanceID, name, password 
 	return s.GetDatabaseUser(ctx, instanceID, name)
 }
 
+// AddExternalDatabaseUser records a user found on the server: no password is known for it.
+// A user already listed is left as it is.
+func (s *Store) AddExternalDatabaseUser(ctx context.Context, instanceID, name string) (DatabaseUser, error) {
+	sealed, err := s.sealEnvironment(map[string]string{"password": ""})
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO db_users (id, instance_id, name, credentials, is_initial, external, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 1, ?, ?) ON CONFLICT(instance_id, name) DO NOTHING`, id.New(), instanceID, name, sealed, now(), now())
+	if err != nil {
+		return DatabaseUser{}, err
+	}
+	return s.GetDatabaseUser(ctx, instanceID, name)
+}
+
 func (s *Store) GetDatabaseUser(ctx context.Context, instanceID, name string) (DatabaseUser, error) {
 	var u DatabaseUser
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, is_initial FROM db_users WHERE instance_id = ? AND name = ?`, instanceID, name).Scan(&u.ID, &u.Name, &u.Initial)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, is_initial, external FROM db_users WHERE instance_id = ? AND name = ?`, instanceID, name).Scan(&u.ID, &u.Name, &u.Initial, &u.External)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -104,13 +121,13 @@ func (s *Store) DatabaseCatalog(ctx context.Context, instanceID string) (Databas
 	if err != nil {
 		return out, err
 	}
-	rows, err = s.db.QueryContext(ctx, `SELECT id, name, is_initial FROM db_users WHERE instance_id = ? ORDER BY name`, instanceID)
+	rows, err = s.db.QueryContext(ctx, `SELECT id, name, is_initial, external FROM db_users WHERE instance_id = ? ORDER BY name`, instanceID)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var u DatabaseUser
-		if err := rows.Scan(&u.ID, &u.Name, &u.Initial); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Initial, &u.External); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -182,5 +199,5 @@ func (s *Store) SetDatabaseUserPassword(ctx context.Context, instanceID, name, p
 	if err != nil {
 		return err
 	}
-	return affected(s.db.ExecContext(ctx, `UPDATE db_users SET credentials = ?, updated_at = ? WHERE id = ?`, sealed, now(), u.ID))
+	return affected(s.db.ExecContext(ctx, `UPDATE db_users SET credentials = ?, external = 0, updated_at = ? WHERE id = ?`, sealed, now(), u.ID))
 }

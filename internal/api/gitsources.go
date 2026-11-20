@@ -23,11 +23,12 @@ type gitSourceJSON struct {
 	AppURL     string    `json:"app_url,omitempty"`     // GitHub: the app's page
 	InstallURL string    `json:"install_url,omitempty"` // GitHub: choose accounts and repositories
 	PublicKey  string    `json:"public_key,omitempty"`  // deploy key: add it to the repository
+	PushEvents bool      `json:"push_events"`           // GitHub: the app's webhook reports pushes
 	CreatedAt  time.Time `json:"created_at"`
 }
 
 func toGitSourceJSON(c gitsource.Connection) gitSourceJSON {
-	return gitSourceJSON{c.ID, c.Type, c.Name, c.BaseURL, c.AppURL, c.InstallURL, c.PublicKey, c.CreatedAt}
+	return gitSourceJSON{c.ID, c.Type, c.Name, c.BaseURL, c.AppURL, c.InstallURL, c.PublicKey, c.PushEvents, c.CreatedAt}
 }
 
 // withGit answers 503 when Git connections are not available.

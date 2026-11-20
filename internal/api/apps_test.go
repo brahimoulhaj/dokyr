@@ -757,4 +757,64 @@ func TestNeedsRedeploy(t *testing.T) {
 	if needs() {
 		t.Fatal("back to the deployed settings: nothing to deploy")
 	}
+
+	// Values the variables take from elsewhere count too: a project variable the app
+	// refers to, one it inherits, another app's port.
+	pid := p["id"].(string)
+	projectEnv := func(env map[string]string, inherit bool) {
+		t.Helper()
+		e.must(200, "PUT", "/api/projects/"+pid+"/environment", map[string]any{"environment": env, "inherit": inherit})
+	}
+	_, other := e.call("POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "api", "image": "nginx:1.27", "port": 3000})
+	projectEnv(map[string]string{"REGION": "eu", "UNUSED": "x"}, false)
+	e.call("PATCH", path, map[string]any{"environment": map[string]string{"A": "1", "WHERE": "${project.REGION}", "API": "http://${app.api.HOST}:${app.api.PORT}"}})
+	deploy()
+	if needs() {
+		t.Fatal("deployed with references: up to date")
+	}
+	projectEnv(map[string]string{"REGION": "eu", "UNUSED": "y"}, false)
+	if needs() {
+		t.Fatal("a project variable the app does not use needs no deploy")
+	}
+	projectEnv(map[string]string{"REGION": "us", "UNUSED": "y"}, false)
+	if !needs() {
+		t.Fatal("a referenced project variable changed: needs a deploy")
+	}
+	projectEnv(map[string]string{"REGION": "eu", "UNUSED": "y"}, false)
+	if needs() {
+		t.Fatal("the project variable is back: nothing to deploy")
+	}
+	projectEnv(map[string]string{"REGION": "eu", "UNUSED": "y"}, true)
+	if !needs() {
+		t.Fatal("the app now inherits the project's variables: needs a deploy")
+	}
+	deploy()
+	e.call("PATCH", "/api/apps/"+other["id"].(string), map[string]any{"port": 4000})
+	if !needs() {
+		t.Fatal("the port of an app it refers to changed: needs a deploy")
+	}
+	deploy()
+	// A reference that no longer resolves is not a change by itself; the settings still are.
+	projectEnv(map[string]string{"UNUSED": "y"}, true)
+	if needs() {
+		t.Fatal("an unresolvable reference alone must not mark the app")
+	}
+
+	// A fingerprint from before the values were recorded keeps comparing the settings only.
+	app, err := e.srv.store.GetApp(context.Background(), a["id"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, _, _ := e.srv.store.AppHealthCheck(context.Background(), app.ID)
+	if err := e.srv.store.SetAppDeployedConfig(context.Background(), app.ID, app.ConfigHash(check)); err != nil {
+		t.Fatal(err)
+	}
+	projectEnv(map[string]string{"REGION": "ap"}, true)
+	if needs() {
+		t.Fatal("an old fingerprint knows nothing of the values")
+	}
+	e.call("PATCH", path, map[string]any{"port": 81})
+	if !needs() {
+		t.Fatal("an old fingerprint still sees a changed setting")
+	}
 }

@@ -150,12 +150,13 @@ type App struct {
 	Name                string
 	SourceType          string
 	Image               string
-	DeployHook          bool   // the deploy webhook is on (its token is read with AppDeployHook)
-	PushDeploy          bool   // an image on the built-in registry deploys when its tag is pushed
-	RegistryID          string // registry an image app is pulled from with credentials; "" = public
-	StartCommand        string // replaces the image's entrypoint and command, run by /bin/sh -c; "" = the image's own
-	Template            string // id of the template the app was created from; "" = none
-	DeployedConfig      string // ConfigHash at the running deployment; "" = unknown
+	DeployHook          bool     // the deploy webhook is on (its token is read with AppDeployHook)
+	PushDeploy          bool     // an image on the built-in registry deploys when its tag is pushed; a Git app on a GitHub App connection, when its branch is
+	WatchPaths          []string // Git apps: a push deploys only when it touches one of these patterns; empty = every push
+	RegistryID          string   // registry an image app is pulled from with credentials; "" = public
+	StartCommand        string   // replaces the image's entrypoint and command, run by /bin/sh -c; "" = the image's own
+	Template            string   // id of the template the app was created from; "" = none
+	DeployedConfig      string   // ConfigHash at the running deployment; "" = unknown
 	Port                int
 	CPULimit            float64
 	MemoryMB            int64
@@ -168,15 +169,15 @@ type App struct {
 
 const appCols = `id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb,
 	desired_state, COALESCE(current_deployment_id, ''),
-	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order, template, deployed_config, build_options`
+	git_repository, git_branch, builder, build_context, dockerfile_path, COALESCE(git_source_id, ''), environment, created_at, updated_at, mounts, start_command, COALESCE(registry_id, ''), deploy_hook_hash IS NOT NULL, push_deploy, processes, environment_meta, environment_order, template, deployed_config, build_options, watch_paths`
 
 func (s *Store) scanApp(row scanner) (App, error) {
 	var a App
-	var environment, mounts, processes, envMeta, envOrder, buildOptions string
+	var environment, mounts, processes, envMeta, envOrder, buildOptions, watchPaths string
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.Name, &a.SourceType, &a.Image, &a.Port, &a.CPULimit, &a.MemoryMB,
 		&a.DesiredState, &a.CurrentDeploymentID,
-		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder, &a.Template, &a.DeployedConfig, &buildOptions)
+		&a.Git.Repository, &a.Git.Branch, &a.Git.Builder, &a.Git.BuildContext, &a.Git.Dockerfile, &a.Git.ConnectionID, &environment, &created, &updated, &mounts, &a.StartCommand, &a.RegistryID, &a.DeployHook, &a.PushDeploy, &processes, &envMeta, &envOrder, &a.Template, &a.DeployedConfig, &buildOptions, &watchPaths)
 	if errors.Is(err, sql.ErrNoRows) {
 		return App{}, ErrNotFound
 	}
@@ -205,6 +206,12 @@ func (s *Store) scanApp(row scanner) (App, error) {
 	a.EnvOrder = s.openEnvOrder(envOrder, a.Environment)
 	if err := json.Unmarshal([]byte(buildOptions), &a.Git.Options); err != nil {
 		return a, fmt.Errorf("app %s build options: %w", a.ID, err)
+	}
+	if err := json.Unmarshal([]byte(watchPaths), &a.WatchPaths); err != nil {
+		return a, fmt.Errorf("app %s watch paths: %w", a.ID, err)
+	}
+	if a.WatchPaths == nil {
+		a.WatchPaths = []string{}
 	}
 	a.CreatedAt, a.UpdatedAt = parseTime(created), parseTime(updated)
 	return a, err
@@ -295,11 +302,24 @@ type AppInput struct {
 	Image        string
 	RegistryID   string // image apps: private registry to pull from; "" = public
 	Git          GitSource
+	WatchPaths   []string // Git apps: patterns a push must touch to deploy; empty = every push
 	StartCommand string
 	Template     string // set at creation only; an update leaves it
 	Port         int
 	CPULimit     float64
 	MemoryMB     int64
+}
+
+// watchPathsJSON is the stored form of the watch paths: a JSON list, empty for an image app.
+func watchPathsJSON(in AppInput) string {
+	if in.SourceType != SourceGit || len(in.WatchPaths) == 0 {
+		return "[]"
+	}
+	raw, err := json.Marshal(in.WatchPaths)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
 }
 
 // normalized empties the fields the source type does not use.
@@ -337,10 +357,10 @@ func (s *Store) CreateApp(ctx context.Context, projectID string, in AppInput) (A
 	aid, ts := id.New(), now()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO apps (id, project_id, name, source_type, image, port, cpu_limit, memory_limit_mb, desired_state,
-			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order, template, build_options)
-		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ? FROM projects WHERE id = ?`,
+			git_repository, git_branch, builder, build_context, dockerfile_path, git_source_id, environment, created_at, updated_at, mounts, start_command, registry_id, processes, environment_meta, environment_order, template, build_options, watch_paths)
+		SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ? FROM projects WHERE id = ?`,
 		aid, in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB, StateStopped,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), in.Template, string(buildOptions), projectID)
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, environment, ts, ts, string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), in.Template, string(buildOptions), watchPathsJSON(in), projectID)
 	if err != nil {
 		return App{}, conflict(err)
 	}
@@ -400,10 +420,10 @@ func (s *Store) UpdateApp(ctx context.Context, appID string, in AppInput) (App, 
 		UPDATE apps SET name = ?, source_type = ?, image = ?, port = ?, cpu_limit = ?, memory_limit_mb = ?,
 			git_repository = ?, git_branch = ?, builder = ?, build_context = ?, dockerfile_path = ?,
 			git_source_id = NULLIF(?, ''), environment = ?, updated_at = ?, mounts = ?, start_command = ?,
-			registry_id = NULLIF(?, ''), processes = ?, environment_meta = ?, environment_order = ?, build_options = ?
+			registry_id = NULLIF(?, ''), processes = ?, environment_meta = ?, environment_order = ?, build_options = ?, watch_paths = ?
 		WHERE id = ?`,
 		in.Name, in.SourceType, in.Image, in.Port, in.CPULimit, in.MemoryMB,
-		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, string(environment), now(), string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), string(buildOptions), appID))
+		in.Git.Repository, in.Git.Branch, in.Git.Builder, in.Git.BuildContext, in.Git.Dockerfile, in.Git.ConnectionID, environment, now(), string(mounts), in.StartCommand, in.RegistryID, string(processes), string(envMeta), sealEnvOrder(in.EnvOrder, in.Environment), string(buildOptions), watchPathsJSON(in), appID))
 	if err != nil {
 		return App{}, err
 	}
@@ -438,6 +458,49 @@ func (a App) ConfigHash(check HealthCheck) string {
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// deployedV2 marks a deployed fingerprint that also covers the resolved variables.
+const deployedV2 = "2:"
+
+// DeployedFingerprint is what a deployment records of what it was made from: the app's own
+// settings (ConfigHash) and, apart, the variables as the container got them, so a project
+// variable, a database's address or another app's port that changed since shows too.
+// Fingerprints recorded before this had the settings only; they keep being read.
+func (a App) DeployedFingerprint(check HealthCheck, resolved map[string]string) string {
+	return deployedV2 + a.ConfigHash(check) + ":" + envHash(resolved)
+}
+
+func envHash(env map[string]string) string {
+	raw, err := json.Marshal(env) // keys sorted
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// SettingsChanged tells whether the app's own settings differ from those of the running
+// deployment, and whether the deployment also recorded its resolved variables (then
+// ValuesChanged can compare them).
+func (a App) SettingsChanged(check HealthCheck) (changed, hasValues bool) {
+	rest, ok := strings.CutPrefix(a.DeployedConfig, deployedV2)
+	if !ok {
+		return a.ConfigHash(check) != a.DeployedConfig, false
+	}
+	config, _, _ := strings.Cut(rest, ":")
+	return a.ConfigHash(check) != config, true
+}
+
+// ValuesChanged tells whether the variables, resolved now, differ from the ones the
+// running deployment was given.
+func (a App) ValuesChanged(resolved map[string]string) bool {
+	rest, ok := strings.CutPrefix(a.DeployedConfig, deployedV2)
+	if !ok {
+		return false
+	}
+	_, values, _ := strings.Cut(rest, ":")
+	return envHash(resolved) != values
 }
 
 // SetAppDeployedConfig records the settings fingerprint of the deployment now running.

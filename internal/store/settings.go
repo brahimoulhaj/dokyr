@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"panel/internal/id"
+	"panel/internal/store/sqlcgen"
 )
 
 // Setting keys.
@@ -26,6 +27,7 @@ const (
 	SettingRegistryS3   = "registry_s3"           // id of the S3 connection the registry stores in; absent = a Docker volume
 	SettingHostTermOff  = "host_terminal_off"     // "true": nobody can open the host terminal
 	SettingHostTermUsr  = "host_terminal_user"    // user the host terminal opens as; absent = root
+	SettingHostTermIdle = "host_terminal_idle"    // minutes without input before a host shell is closed; "0" = never; absent = 30
 )
 
 // BuildLimits caps the CPU and memory that Git builds share. Zero leaves a resource uncapped.
@@ -61,8 +63,7 @@ func (s *Store) SetBuildLimits(ctx context.Context, l BuildLimits) error {
 
 // GetSetting returns the value and whether the key exists.
 func (s *Store) GetSetting(ctx context.Context, key string) (string, bool, error) {
-	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	v, err := s.q.GetSetting(ctx, key)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -71,14 +72,9 @@ func (s *Store) GetSetting(ctx context.Context, key string) (string, bool, error
 
 func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 	ts := now()
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO settings (id, key, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		id.New(), key, value, ts, ts)
-	return err
+	return s.q.SetSetting(ctx, sqlcgen.SetSettingParams{ID: id.New(), Key: key, Value: value, CreatedAt: ts, UpdatedAt: ts})
 }
 
 func (s *Store) DeleteSetting(ctx context.Context, key string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key)
-	return err
+	return s.q.DeleteSetting(ctx, key)
 }

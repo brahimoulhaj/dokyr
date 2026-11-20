@@ -67,6 +67,9 @@ export const en = {
   rotateInitialHint: 'Rotating the initial user’s password changes ${db.<name>.URL}: redeploy the apps that use it, or their new connections will fail.',
   grantSave: 'Save permissions',
   requiresRunning: 'Start the instance to manage databases and users.',
+  sync: 'Sync with server',
+  syncHint: 'Databases, users and permissions made outside the panel (in Adminer or over SQL) are not listed until a sync reads them from the server. A sync changes nothing on the server.',
+  externalUser: 'Made outside the panel',
   grantCaution: 'PostgreSQL users that own objects must transfer ownership before reducing access.',
   credentialsFor: 'Connection details',
 
@@ -80,6 +83,7 @@ export const en = {
     database_delete: (name: string) => `Deleting database · ${name}`,
     user_delete: (name: string) => `Deleting database user · ${name}`,
     password_rotate: (name: string) => `Rotating password · ${name}`,
+    catalog_sync: (name: string) => `Reading the server · ${name}`,
 
     create: (name: string) => `Creating database · ${name}`,
     start: (name: string) => `Starting database · ${name}`,
@@ -96,6 +100,7 @@ export const en = {
     database_delete: (name: string) => `Database deleted · ${name}`,
     user_delete: (name: string) => `Database user deleted · ${name}`,
     password_rotate: (name: string) => `Password rotated · ${name}`,
+    catalog_sync: (name: string) => `Synced with the server · ${name}`,
 
     create: (name: string) => `Database created · ${name}`,
     start: (name: string) => `Database started · ${name}`,
@@ -193,6 +198,9 @@ export const fr: typeof en = {
   rotateInitialHint: 'Renouveler le mot de passe de l’utilisateur initial modifie ${db.<name>.URL} : redéployez les applications qui l’utilisent, sinon leurs nouvelles connexions échoueront.',
   grantSave: 'Enregistrer les droits',
   requiresRunning: 'Démarrez l’instance pour gérer les bases et utilisateurs.',
+  sync: 'Synchroniser avec le serveur',
+  syncHint: 'Les bases, utilisateurs et permissions créés hors du panneau (dans Adminer ou en SQL) ne sont listés qu’après une synchronisation qui les lit sur le serveur. Une synchronisation ne modifie rien sur le serveur.',
+  externalUser: 'Créé hors du panneau',
   grantCaution: 'PostgreSQL : transférez les objets appartenant à l’utilisateur avant de réduire ses droits.',
   credentialsFor: 'Détails de connexion',
 
@@ -206,6 +214,7 @@ export const fr: typeof en = {
     database_delete: (name: string) => `Suppression de la base · ${name}`,
     user_delete: (name: string) => `Suppression de l’utilisateur · ${name}`,
     password_rotate: (name: string) => `Rotation du mot de passe · ${name}`,
+    catalog_sync: (name: string) => `Lecture du serveur · ${name}`,
 
     create: (name: string) => `Création de la base · ${name}`,
     start: (name: string) => `Démarrage de la base · ${name}`,
@@ -222,6 +231,7 @@ export const fr: typeof en = {
     database_delete: (name: string) => `Base supprimée · ${name}`,
     user_delete: (name: string) => `Utilisateur supprimé · ${name}`,
     password_rotate: (name: string) => `Mot de passe renouvelé · ${name}`,
+    catalog_sync: (name: string) => `Synchronisé avec le serveur · ${name}`,
 
     create: (name: string) => `Base créée · ${name}`,
     start: (name: string) => `Base démarrée · ${name}`,
@@ -319,6 +329,9 @@ export const ar: typeof en = {
   rotateInitialHint: 'تغيير كلمة مرور المستخدم الأولي يغيّر ${db.<name>.URL}: أعد نشر التطبيقات التي تستخدمه وإلا ستفشل اتصالاتها الجديدة.',
   grantSave: 'حفظ الصلاحيات',
   requiresRunning: 'شغّل النسخة لإدارة قواعد البيانات والمستخدمين.',
+  sync: 'المزامنة مع الخادم',
+  syncHint: 'قواعد البيانات والمستخدمون والصلاحيات المنشأة خارج اللوحة (في Adminer أو عبر SQL) لا تظهر إلا بعد مزامنة تقرؤها من الخادم. المزامنة لا تغيّر شيئًا على الخادم.',
+  externalUser: 'أُنشئ خارج اللوحة',
   grantCaution: 'في PostgreSQL يجب نقل ملكية كائنات المستخدم قبل تقليل صلاحياته.',
   credentialsFor: 'تفاصيل الاتصال',
 
@@ -332,6 +345,7 @@ export const ar: typeof en = {
     database_delete: (name: string) => `جارٍ حذف قاعدة البيانات · ${name}`,
     user_delete: (name: string) => `جارٍ حذف المستخدم · ${name}`,
     password_rotate: (name: string) => `جارٍ تغيير كلمة المرور · ${name}`,
+    catalog_sync: (name: string) => `جارٍ قراءة الخادم · ${name}`,
 
     create: (name: string) => `جارٍ إنشاء قاعدة البيانات · ${name}`,
     start: (name: string) => `جارٍ تشغيل قاعدة البيانات · ${name}`,
@@ -348,6 +362,7 @@ export const ar: typeof en = {
     database_delete: (name: string) => `تم حذف قاعدة البيانات · ${name}`,
     user_delete: (name: string) => `تم حذف المستخدم · ${name}`,
     password_rotate: (name: string) => `تم تغيير كلمة المرور · ${name}`,
+    catalog_sync: (name: string) => `تمت المزامنة مع الخادم · ${name}`,
 
     create: (name: string) => `تم إنشاء قاعدة البيانات · ${name}`,
     start: (name: string) => `تم تشغيل قاعدة البيانات · ${name}`,
@@ -445,6 +460,9 @@ export const es: typeof en = {
   rotateInitialHint: 'Rotar la contraseña del usuario inicial cambia ${db.<name>.URL}: vuelve a desplegar las apps que lo usan o sus nuevas conexiones fallarán.',
   grantSave: 'Guardar permisos',
   requiresRunning: 'Inicia la instancia para gestionar bases y usuarios.',
+  sync: 'Sincronizar con el servidor',
+  syncHint: 'Las bases, usuarios y permisos creados fuera del panel (en Adminer o por SQL) no aparecen hasta que una sincronización los lee del servidor. Una sincronización no cambia nada en el servidor.',
+  externalUser: 'Creado fuera del panel',
   grantCaution: 'PostgreSQL: transfiere los objetos del usuario antes de reducir sus permisos.',
   credentialsFor: 'Detalles de conexión',
 
@@ -458,6 +476,7 @@ export const es: typeof en = {
     database_delete: (name: string) => `Eliminando base de datos · ${name}`,
     user_delete: (name: string) => `Eliminando usuario · ${name}`,
     password_rotate: (name: string) => `Rotando contraseña · ${name}`,
+    catalog_sync: (name: string) => `Leyendo el servidor · ${name}`,
 
     create: (name: string) => `Creando base de datos · ${name}`,
     start: (name: string) => `Iniciando base de datos · ${name}`,
@@ -474,6 +493,7 @@ export const es: typeof en = {
     database_delete: (name: string) => `Base de datos eliminada · ${name}`,
     user_delete: (name: string) => `Usuario eliminado · ${name}`,
     password_rotate: (name: string) => `Contraseña rotada · ${name}`,
+    catalog_sync: (name: string) => `Sincronizado con el servidor · ${name}`,
 
     create: (name: string) => `Base de datos creada · ${name}`,
     start: (name: string) => `Base de datos iniciada · ${name}`,

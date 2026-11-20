@@ -5,6 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
+
+	"panel/internal/i18n"
 )
 
 type errorBody struct {
@@ -21,9 +24,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeError sends {"error": {"code": ..., "message": ...}}.
+// writeError sends {"error": {"code": ..., "message": ...}}. The message is written in
+// English and sent in the language of the request when the catalog has it (internal/i18n);
+// the code never changes.
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	var body errorBody
+	if l, ok := w.(interface{ Language() string }); ok {
+		message = i18n.Translate(l.Language(), message)
+	}
 	body.Error.Code, body.Error.Message = code, message
 	writeJSON(w, status, body)
 }
@@ -42,4 +50,16 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
+}
+
+// tr is message in lang (internal/i18n), for text sent outside an error body.
+func tr(lang, message string) string { return i18n.Translate(lang, message) }
+
+// logLine is one line of a deployment log in lang. The panel's own lines are translated;
+// what a build or a container printed (the "  | " lines) is left as it came.
+func logLine(lang, text string) string {
+	if lang == i18n.Default || strings.HasPrefix(text, "  | ") {
+		return text
+	}
+	return i18n.Translate(lang, text)
 }

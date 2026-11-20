@@ -115,14 +115,16 @@ func TestPasskeyRegistrationAndLogin(t *testing.T) {
 		t.Fatalf("keys %v %v", keys, err)
 	}
 	mustStatus(t, e, "POST", "/api/auth/logout", nil, 204)
+	counter := byte(0) // a real authenticator counts its signatures; a repeated count reads as a clone
 	assertion := func(options map[string]any, origin string, uv bool) map[string]any {
+		counter++
 		client := clientData("webauthn.get", options["challenge"].(string), origin)
 		flags := byte(0x05)
 		if !uv {
 			flags = 0x01
 		}
 		data := append([]byte{}, rpHash[:]...)
-		data = append(data, flags, 0, 0, 0, 1)
+		data = append(data, flags, 0, 0, 0, counter)
 		ch := sha256.Sum256(client)
 		signed := append(append([]byte{}, data...), ch[:]...)
 		hash := sha256.Sum256(signed)
@@ -145,6 +147,30 @@ func TestPasskeyRegistrationAndLogin(t *testing.T) {
 	mustStatus(t, e, "POST", "/api/auth/passkeys/login/finish", signed, 200)
 	mustStatus(t, e, "GET", "/api/auth/me", nil, 200)
 	mustStatus(t, e, "POST", "/api/auth/passkeys/login/finish", signed, 400)
+	// The same passkey confirms host access in place of the password, for this session only.
+	if got := mustStatus(t, e, "GET", "/api/host/terminal/settings", nil, 200); got["unlocked"] != false || got["passkey"] != true {
+		t.Fatalf("host settings before the confirmation = %v", got)
+	}
+	for _, test := range []struct {
+		origin string
+		uv     bool
+	}{{"https://evil.example", true}, {e.url, false}} {
+		opts = mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/begin", map[string]any{}, 200)["publicKey"].(map[string]any)
+		mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/finish", assertion(opts, test.origin, test.uv), 401)
+	}
+	opts = mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/begin", map[string]any{}, 200)["publicKey"].(map[string]any)
+	if allowed, _ := opts["allowCredentials"].([]any); len(allowed) != 1 {
+		t.Fatalf("the challenge must name the user's own passkeys: %v", opts["allowCredentials"])
+	}
+	if opts["userVerification"] != "required" {
+		t.Fatal("a host confirmation must require user verification")
+	}
+	confirmed := assertion(opts, e.url, true)
+	mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/finish", confirmed, 204)
+	mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/finish", confirmed, 400) // consumed challenge
+	if got := mustStatus(t, e, "GET", "/api/host/terminal/settings", nil, 200); got["unlocked"] != true {
+		t.Fatalf("host settings after the confirmation = %v", got)
+	}
 	keys, err = e.srv.store.Passkeys(context.Background(), u.ID, rpID)
 	if err != nil || keys[0].LastUsedAt == nil {
 		t.Fatal("last-used timestamp not persisted", err)

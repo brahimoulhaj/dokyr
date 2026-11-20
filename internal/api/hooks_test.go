@@ -1,12 +1,26 @@
 package api
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"panel/internal/gitsource"
+	"panel/internal/secret"
+	"panel/internal/store"
 )
 
 // hook calls a deploy webhook the way a Git host or CI does: no cookie, maybe event
@@ -154,5 +168,190 @@ func TestWithTag(t *testing.T) {
 		if got := withTag(in, "2"); got != want {
 			t.Errorf("withTag(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A Git app with watch paths deploys only on pushes that touch them; when the host does
+// not say what changed, it deploys.
+func TestDeployHookWatchPaths(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Mono"})["id"].(string)
+	git := map[string]any{"name": "api", "source_type": "git", "git_repository": "https://github.com/org/mono.git", "git_branch": "main", "port": 80}
+	git["watch_paths"] = []string{"../outside"}
+	e.must(422, "POST", "/api/projects/"+pid+"/apps", git)
+	git["watch_paths"] = []string{" ./services/api/ ", "packages/shared", "!**/*.md", ""}
+	app := e.must(201, "POST", "/api/projects/"+pid+"/apps", git)
+	id := app["id"].(string)
+	if got := app["watch_paths"].([]any); len(got) != 3 || got[0] != "services/api/" || got[2] != "!**/*.md" {
+		t.Fatalf("watch_paths = %v", got)
+	}
+	token := e.must(200, "POST", "/api/apps/"+id+"/deploy-hook", nil)["token"].(string)
+	push := map[string]string{"X-GitHub-Event": "push"}
+	for i, c := range []struct {
+		body   string
+		status string
+	}{
+		{`{"ref":"refs/heads/main","after":"a1","commits":[{"modified":["services/web/index.ts"]}]}`, "ignored"},
+		{`{"ref":"refs/heads/main","after":"a2","commits":[{"added":["services/api/README.md"]}]}`, "ignored"},
+		{`{"ref":"refs/heads/main","after":"a3","commits":[{"added":["x"]},{"removed":["services/api/old.go"]}]}`, "deploying"},
+		{`{"ref":"refs/heads/main","after":"a3","commits":[{"removed":["services/api/old.go"]}]}`, "ignored"}, // the same commit again
+		{`{"ref":"refs/heads/main","after":"a4","commits":[{"modified":["packages/shared/log.go"]}]}`, "deploying"},
+		// Nothing can be said about these: no commit list, a forced push, a new branch, a cut list.
+		{`{"ref":"refs/heads/main","after":"a5"}`, "deploying"},
+		{`{"ref":"refs/heads/main","after":"a6","forced":true,"commits":[{"modified":["docs/a"]}]}`, "deploying"},
+		{`{"ref":"refs/heads/main","after":"a7","created":true,"commits":[{"modified":["docs/a"]}]}`, "deploying"},
+		{`{"ref":"refs/heads/main","after":"a8","total_commits_count":30,"commits":[{"modified":["docs/a"]}]}`, "deploying"},
+	} {
+		_, m := e.hook(token, push, c.body)
+		if m["status"] != c.status {
+			t.Errorf("push %d = %v, want %s", i, m, c.status)
+		}
+		e.deployer.Wait()
+	}
+	// Watch paths are not a setting a deployment applies.
+	e.must(200, "PATCH", "/api/apps/"+id, map[string]any{"watch_paths": []string{}})
+	if a := e.must(200, "GET", "/api/apps/"+id, nil); len(a["watch_paths"].([]any)) != 0 || a["needs_redeploy"] == true {
+		t.Errorf("after clearing: %v %v", a["watch_paths"], a["needs_redeploy"])
+	}
+}
+
+// The webhook of a GitHub App connection: signed deliveries only, and a push deploys the
+// connection's apps on that repository and branch that have deploy on push turned on.
+func TestGitHubAppHook(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	post := func(appID, secret, event, body string) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", e.url+"/api/hooks/github", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-GitHub-Event", event)
+		if appID != "" {
+			req.Header.Set("X-GitHub-Hook-Installation-Target-ID", appID)
+		}
+		if secret != "" {
+			mac := hmac.New(sha256.New, []byte(secret))
+			mac.Write([]byte(body))
+			req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&m)
+		return res.StatusCode, m
+	}
+	if code, _ := post("42", "hook-secret", "ping", `{}`); code != 503 {
+		t.Fatalf("without Git connections = %d", code)
+	}
+
+	// A GitHub that answers the manifest exchange with an app whose webhook has a secret.
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key, _ := rsa.GenerateKey(rand.Reader, 2048)
+		pemKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+		json.NewEncoder(w).Encode(map[string]any{"id": 42, "slug": "panel-app", "name": "Panel app", "html_url": "https://github.com/apps/panel-app",
+			"client_id": "Iv1", "client_secret": "cs", "webhook_secret": "hook-secret", "pem": string(pemKey)})
+	}))
+	defer github.Close()
+	box, err := secret.LoadOrCreate(filepath.Join(t.TempDir(), "secret.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := gitsource.New(e.srv.store, box)
+	svc.GitHubAPI = github.URL
+	e.srv.SetGitSources(svc)
+	m, err := svc.StartGitHub("https://panel.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(m.Manifest, `"hook_attributes":{"active":true,"url":"https://panel.example/api/hooks/github"}`) || !strings.Contains(m.Manifest, `"default_events":["push"]`) {
+		t.Fatalf("the manifest does not ask for the app's push webhook: %s", m.Manifest)
+	}
+	conn, err := svc.FinishGitHub(context.Background(), "code123", m.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.list("/api/git-sources"); len(got) != 1 || got[0]["push_events"] != true {
+		t.Fatalf("connection = %v", got)
+	}
+
+	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Mono"})["id"].(string)
+	ids := map[string]string{}
+	for name, cfg := range map[string]struct {
+		repo, branch string
+		watch        []string
+	}{
+		"api":   {"https://github.com/Org/Mono.git", "main", []string{"services/api"}},
+		"web":   {"https://github.com/org/mono", "main", nil},
+		"next":  {"https://github.com/org/mono.git", "next", nil},
+		"other": {"https://github.com/org/other.git", "main", nil},
+	} {
+		a := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": name, "source_type": "git", "git_repository": cfg.repo, "git_branch": cfg.branch, "port": 80, "watch_paths": cfg.watch})
+		ids[name] = a["id"].(string)
+		// Attached to the connection in the store: the API would ask GitHub about the repository.
+		app, err := e.srv.store.GetApp(context.Background(), ids[name])
+		if err != nil {
+			t.Fatal(err)
+		}
+		app.Git.ConnectionID = conn.ID
+		if _, err := e.srv.store.UpdateApp(context.Background(), app.ID, store.AppInput{Name: app.Name, SourceType: app.SourceType, Git: app.Git, WatchPaths: app.WatchPaths, Port: app.Port,
+			Environment: app.Environment, EnvMeta: app.EnvMeta, Mounts: app.Mounts, Processes: app.Processes}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"ref":"refs/heads/main","after":"c0ffee","repository":{"full_name":"org/mono"},"commits":[{"modified":["services/web/app.ts"]}]}`
+
+	// Nothing happens for a delivery that is unsigned, signed with another secret, or of another app.
+	for name, c := range map[string][2]string{"unsigned": {"42", ""}, "wrong secret": {"42", "guess"}, "no app id": {"", "hook-secret"}} {
+		if code, _ := post(c[0], c[1], "push", body); code != 401 {
+			t.Errorf("%s = %d, want 401", name, code)
+		}
+	}
+	if code, _ := post("43", "hook-secret", "push", body); code != 404 {
+		t.Errorf("another app = %d, want 404", code)
+	}
+	if code, m := post("42", "hook-secret", "ping", `{"zen":"hi"}`); code != 200 || m["status"] != "ok" {
+		t.Errorf("ping = %d %v", code, m)
+	}
+	if code, m := post("42", "hook-secret", "installation", `{}`); code != 200 || m["status"] != "ignored" {
+		t.Errorf("installation event = %d %v", code, m)
+	}
+
+	// Deploy on push is on for a new app, and can be turned off.
+	for _, id := range ids {
+		if a := e.must(200, "PUT", "/api/apps/"+id+"/push-deploy", map[string]any{"on": false}); a["push_deploy"] != false {
+			t.Fatalf("push_deploy = %v", a["push_deploy"])
+		}
+	}
+	code, got := post("42", "hook-secret", "push", body)
+	if code != 202 || len(got["deployed"].([]any)) != 0 || got["ignored"].(map[string]any)["web"] != "deploy on push is off" {
+		t.Fatalf("push with deploy on push off = %d %v", code, got)
+	}
+	for _, name := range []string{"api", "web", "next", "other"} {
+		e.must(200, "PUT", "/api/apps/"+ids[name]+"/push-deploy", map[string]any{"on": true})
+	}
+	code, got = post("42", "hook-secret", "push", body)
+	e.deployer.Wait()
+	deployed, ignored := got["deployed"].([]any), got["ignored"].(map[string]any)
+	if code != 202 || len(deployed) != 1 || deployed[0] != "web" || len(ignored) != 1 || !strings.Contains(ignored["api"].(string), "watch paths") {
+		t.Fatalf("push = %d %v", code, got)
+	}
+	if deps := e.list("/api/apps/" + ids["web"] + "/deployments"); len(deps) != 1 || deps[0]["trigger"] != "push" {
+		t.Errorf("web deployments = %v", deps)
+	}
+	for _, name := range []string{"api", "next", "other"} {
+		if deps := e.list("/api/apps/" + ids[name] + "/deployments"); len(deps) != 0 {
+			t.Errorf("%s deployed on a push that is not its own: %v", name, deps)
+		}
+	}
+	// GitHub redelivers, or the repository also has the app's deploy webhook: once is enough.
+	if _, got = post("42", "hook-secret", "push", body); len(got["deployed"].([]any)) != 0 || !strings.Contains(got["ignored"].(map[string]any)["web"].(string), "already") {
+		t.Errorf("the same commit again = %v", got)
+	}
+	token := e.must(200, "POST", "/api/apps/"+ids["web"]+"/deploy-hook", nil)["token"].(string)
+	if _, m := e.hook(token, map[string]string{"X-GitHub-Event": "push"}, body); m["status"] != "ignored" {
+		t.Errorf("the repository webhook for the same commit = %v", m)
 	}
 }

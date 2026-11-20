@@ -350,7 +350,7 @@ func (s *Store) AddAppBuildVariable(ctx context.Context, appID, name, value stri
 		return App{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE apps SET environment = ?, environment_meta = ?, environment_order = ?, updated_at = ? WHERE id = ?`,
-		string(environment), string(meta), sealEnvOrder(a.EnvOrder, a.Environment), now(), appID); err != nil {
+		environment, string(meta), sealEnvOrder(a.EnvOrder, a.Environment), now(), appID); err != nil {
 		return App{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

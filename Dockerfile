@@ -27,7 +27,16 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 FROM alpine:3.22
 # git fetches Git apps (ssh for deploy keys); the docker CLI with buildx builds them on the mounted daemon.
-RUN apk add --no-cache ca-certificates tzdata git openssh-client docker-cli docker-cli-buildx
+# Pinned to a release each: Alpine replaces a package's revision (-r5) in place when it
+# patches it, so the pin is on the version and takes those fixes, not on the revision,
+# which would stop the build the day it is replaced. Keep both images on the same Alpine
+# and the same four versions (TestBuilderPinsMatchImages).
+ARG GIT_VERSION=2.49.1
+ARG OPENSSH_VERSION=10.0_p1
+ARG DOCKER_CLI_VERSION=28.3.3
+ARG BUILDX_VERSION=0.24.0
+RUN apk add --no-cache ca-certificates tzdata "git~${GIT_VERSION}" "openssh-client-default~${OPENSSH_VERSION}" "docker-cli~${DOCKER_CLI_VERSION}" "docker-cli-buildx~${BUILDX_VERSION}" \
+    && git --version && ssh -V && docker --version && docker buildx version
 # Railpack builds Git apps that have no Dockerfile. Pinned and checksummed; keep the
 # version equal to builder.RailpackVersion (its BuildKit frontend must match).
 ARG RAILPACK_VERSION=0.43.0

@@ -356,6 +356,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	sampler.Include = func(c executor.Container) bool {
 		return c.Kind != executor.KindDatabase || c.Name == database.ContainerName(c.ResourceID)
 	}
+	sampler.HostSample = containermetrics.FromHost(metrics.Snapshot)
 	go sampler.Run(ctx)
 	apiSrv.SetProxy(px)
 	apiSrv.SetDeployer(deployer)

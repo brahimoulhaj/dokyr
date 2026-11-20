@@ -1,7 +1,11 @@
 package api
 
 import (
+	"cmp"
+	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -9,7 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"panel/internal/store"
 )
@@ -80,19 +87,49 @@ type hookEvent struct {
 	branch string // push: the branch pushed; "" for a tag push
 	delete bool   // push: the branch was deleted
 	tag    string // call: deploy this image tag
+	after  string // push: the commit the branch now points at, when the host says
+	repo   string // push: owner/name of the repository, when the host says
+	// push: the paths the pushed commits added, changed or removed. filesKnown is false
+	// when the host did not list them all (a forced push, a new branch, more commits than
+	// the payload carries): then nothing can be said about what changed.
+	files      []string
+	filesKnown bool
 }
 
+// maxHookBody is what GitHub caps a push payload at.
+const maxHookBody = 25 << 20
+
 func readHookEvent(r *http.Request) (hookEvent, error) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxHookBody))
+	if err != nil {
+		return hookEvent{}, err
+	}
+	return parseHookEvent(r, raw)
+}
+
+func parseHookEvent(r *http.Request, raw []byte) (hookEvent, error) {
 	event := strings.ToLower(firstHeader(r, "X-GitHub-Event", "X-Gitea-Event", "X-Forgejo-Event", "X-Gogs-Event", "X-Gitlab-Event"))
 	var body struct {
 		Ref     string `json:"ref"`
 		Deleted bool   `json:"deleted"`
+		Created bool   `json:"created"`
+		Forced  bool   `json:"forced"`
 		After   string `json:"after"`
 		Tag     string `json:"tag"`
-	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 25<<20)) // GitHub caps push payloads at 25 MB
-	if err != nil {
-		return hookEvent{}, err
+		Commits []struct {
+			Added    []string `json:"added"`
+			Modified []string `json:"modified"`
+			Removed  []string `json:"removed"`
+		} `json:"commits"`
+		TotalCommits      int `json:"total_commits"`       // Gitea, Forgejo
+		TotalCommitsCount int `json:"total_commits_count"` // GitLab, which lists 20 at most
+		Repository        struct {
+			FullName          string `json:"full_name"`           // GitHub, Gitea
+			PathWithNamespace string `json:"path_with_namespace"` // GitLab
+		} `json:"repository"`
+		Project struct {
+			PathWithNamespace string `json:"path_with_namespace"` // GitLab
+		} `json:"project"`
 	}
 	// GitHub's default content type sends the JSON form-encoded, in a payload field.
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
@@ -116,6 +153,16 @@ func readHookEvent(r *http.Request) (hookEvent, error) {
 		if b, ok := strings.CutPrefix(body.Ref, "refs/heads/"); ok {
 			e.branch = b
 		}
+		if !e.delete {
+			e.after = body.After
+		}
+		e.repo = cmp.Or(body.Repository.FullName, body.Repository.PathWithNamespace, body.Project.PathWithNamespace)
+		for _, c := range body.Commits {
+			e.files = append(append(append(e.files, c.Added...), c.Modified...), c.Removed...)
+		}
+		// GitHub lists 2048 commits at most and says nothing of the rest.
+		total := max(body.TotalCommits, body.TotalCommitsCount)
+		e.filesKnown = len(body.Commits) > 0 && len(body.Commits) < 2048 && total <= len(body.Commits) && !body.Forced && !body.Created
 		return e
 	}
 	switch event {
@@ -186,6 +233,12 @@ func (s *Server) handleDeployHook(w http.ResponseWriter, r *http.Request) {
 		case ev.branch != a.Git.Branch:
 			ignore("push to " + ev.branch + "; the app deploys " + a.Git.Branch)
 			return
+		case ev.filesKnown && !watchMatch(a.WatchPaths, ev.files):
+			ignore("the push changed nothing under the app's watch paths")
+			return
+		case s.pushes.seen(a.ID, ev.after):
+			ignore("this commit is already being deployed")
+			return
 		}
 		trigger = "push"
 	case "call":
@@ -228,6 +281,143 @@ func (s *Server) handleDeployHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "deploying", "deployment": toDeploymentJSON(dep)})
+}
+
+// recentPushes remembers which commit each app was last told to deploy by a push, for a
+// short while: an app with both a repository webhook and the GitHub App's hears of one
+// push twice, and deploys it once.
+type recentPushes struct {
+	mu sync.Mutex
+	at map[string]time.Time // app id and commit → when
+}
+
+const pushMemory = 2 * time.Minute
+
+// seen reports whether this commit was already announced for the app, and remembers it.
+// A push that names no commit is never a repeat.
+func (p *recentPushes) seen(appID, commit string) bool {
+	if commit == "" {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	for k, t := range p.at {
+		if now.Sub(t) > pushMemory {
+			delete(p.at, k)
+		}
+	}
+	if p.at == nil {
+		p.at = map[string]time.Time{}
+	}
+	key := appID + "\x00" + commit
+	if _, ok := p.at[key]; ok {
+		return true
+	}
+	p.at[key] = now
+	return false
+}
+
+// repoName is owner/name of a repository URL, lower case: "https://github.com/Org/App.git"
+// and "git@github.com:Org/App.git" are both "org/app".
+func repoName(repository string) string {
+	name := repository
+	if u, err := url.Parse(repository); err == nil && u.Host != "" {
+		name = u.Path
+	} else if i := strings.Index(repository, ":"); i >= 0 {
+		name = repository[i+1:]
+	}
+	return strings.ToLower(strings.TrimSuffix(strings.Trim(name, "/"), ".git"))
+}
+
+// handleGitHubAppHook is POST /api/hooks/github: the webhook of a GitHub App connection.
+// GitHub signs every delivery with the app's webhook secret; nothing is done before the
+// signature is checked. A push deploys the apps of that connection that build the pushed
+// repository and branch and have deploy on push turned on.
+func (s *Server) handleGitHubAppHook(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDeployer(w) {
+		return
+	}
+	if s.git == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "Git connections are not available on this panel")
+		return
+	}
+	appID, err := strconv.ParseInt(r.Header.Get("X-GitHub-Hook-Installation-Target-ID"), 10, 64)
+	signature, signed := strings.CutPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+	if err != nil || appID <= 0 || !signed {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not a signed delivery of a GitHub App")
+		return
+	}
+	connID, secret, err := s.git.GitHubWebhook(r.Context(), appID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "no Git connection is this GitHub App")
+		return
+	}
+	if err != nil {
+		s.internal(w, "github hook", err)
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxHookBody))
+	if err != nil {
+		invalid(w, "the body could not be read")
+		return
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(raw)
+	if want, err := hex.DecodeString(signature); err != nil || !hmac.Equal(want, mac.Sum(nil)) {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "the signature does not match this app's webhook secret")
+		return
+	}
+	ev, err := parseHookEvent(r, raw)
+	if err != nil {
+		invalid(w, err.Error())
+		return
+	}
+	switch {
+	case ev.kind == "ping":
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		return
+	case ev.kind != "push":
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ignored", "reason": ev.kind + " events do not deploy"})
+		return
+	case ev.branch == "" || ev.delete || ev.repo == "":
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ignored", "reason": "not a push of commits to a branch"})
+		return
+	}
+	apps, err := s.store.AppsByGitConnection(r.Context(), connID)
+	if err != nil {
+		s.internal(w, "github hook", err)
+		return
+	}
+	// GitHub waits ten seconds for an answer; the deploys start behind it.
+	ctx := context.WithoutCancel(r.Context())
+	deployed, ignored := []string{}, map[string]string{}
+	for _, a := range apps {
+		if repoName(a.Git.Repository) != strings.ToLower(ev.repo) || a.Git.Branch != ev.branch {
+			continue
+		}
+		switch {
+		case !a.PushDeploy:
+			ignored[a.Name] = "deploy on push is off"
+			continue
+		case ev.filesKnown && !watchMatch(a.WatchPaths, ev.files):
+			ignored[a.Name] = "the push changed nothing under the app's watch paths"
+			continue
+		case s.pushes.seen(a.ID, ev.after):
+			ignored[a.Name] = "this commit is already being deployed"
+			continue
+		}
+		if _, _, err := s.deployer.DeployOrQueue(ctx, a.ID, "push"); err != nil {
+			s.log.Warn("github hook: deploy", "app", a.Name, "error", err)
+			ignored[a.Name] = "the deployment could not start"
+			continue
+		}
+		deployed = append(deployed, a.Name)
+		if err := s.store.AddEvent(ctx, store.Event{Actor: "webhook", Action: "app.deploy", TargetType: "app", TargetID: a.ID, TargetName: a.Name, Detail: "push (GitHub App)"}); err != nil {
+			s.log.Error("record event", "error", err)
+		}
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "ok", "deployed": deployed, "ignored": ignored})
 }
 
 // withTag replaces the tag (or digest) of an image reference: "ghcr.io/org/app:1" with

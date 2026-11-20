@@ -177,15 +177,32 @@ type HostCommandExecutor interface {
 }
 
 // hostCommand runs after nsenter, so on the host: the command as a bash script (sh on a
-// host without bash), as root from its home, or as HOST_USER from that user's.
+// host without bash), as root from its home, or as HOST_USER from that user's. A script
+// that starts with "#!" runs with the interpreter it names instead: it is written to a
+// private temporary file, handed to that interpreter and removed afterwards (the file is
+// not executed itself, so a /tmp mounted noexec is no obstacle).
 const hostCommand = `c=$HOST_CMD; unset HOST_CMD
+u=$HOST_USER; unset HOST_USER
 b=$(command -v bash || command -v sh)
-if [ -n "$HOST_USER" ]; then u=$HOST_USER; unset HOST_USER
+if [ -n "$u" ]; then
 id -u "$u" >/dev/null 2>&1 || { echo "User $u does not exist on this server." >&2; exit 127; }
-exec su - "$u" -s "$b" -c "$c"; fi
+fi
+case $c in '#!'*)
+nl='
+'
+cr=$(printf '\r')
+i=${c%%"$nl"*}; i=${i#'#!'}; i=${i%"$cr"}
+f=$(mktemp "${TMPDIR:-/tmp}/.host-job.XXXXXX") || { echo "Cannot write the script to a temporary file." >&2; exit 126; }
+trap 'rm -f "$f"' EXIT; trap 'exit 143' TERM INT HUP
+printf '%s\n' "$c" > "$f"
+if [ -n "$u" ]; then chown "$u" "$f"; su - "$u" -s "$b" -c "$i $f"
+else cd "$HOME" 2>/dev/null || cd /; "$b" -c "$i $f"; fi
+exit $?;;
+esac
+if [ -n "$u" ]; then exec su - "$u" -s "$b" -c "$c"; fi
 cd "$HOME" 2>/dev/null || cd /; exec "$b" -c "$c"`
 
-// RunHostCommand runs command, a bash script, on the host the way OpenHostTerminal opens a shell there,
+// RunHostCommand runs command, a bash script or one with its own shebang, on the host the way OpenHostTerminal opens a shell there,
 // as user (empty or "root": root), and waits for it. What the command prints, stdout and
 // stderr together, goes to out; the result is its exit code. Ending ctx kills it.
 func (d *Docker) RunHostCommand(ctx context.Context, image, user, command string, out io.Writer) (int, error) {

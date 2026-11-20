@@ -71,7 +71,7 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
   }
 
   // What the form says so far, for the summary card. Variable values stay out of it.
-  let variables: string[] | null = []
+  let variables: string[] | null
   try { variables = Object.keys(environmentMap(parseEnvironment(envText))) } catch { variables = null }
   const registries = useQuery(registriesQuery)
   const gitSources = useQuery(gitSourcesQuery)

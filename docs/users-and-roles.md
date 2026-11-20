@@ -20,5 +20,9 @@ still open an app's container terminal or mount a host path into an app.
 ## Host terminal confirmation
 
 The host terminal asks for the password again before a shell opens (valid 15 minutes for
-that browser session). Settings → Security chooses the user it opens as (root by default)
-or switches it off for everyone.
+that browser session). An account with a passkey registered on the panel's domain can
+confirm with it instead: the dialog offers **Use a passkey instead**, and the challenge is
+for that user's own passkeys, with user verification. Settings → Security chooses the user
+the terminal opens as (root by default), switches it off for everyone, and sets after how
+many minutes without input a shell is closed (30 by default, 0 for never, 480 at most);
+what a shell prints does not count as activity, so a `tail -f` left open still closes.

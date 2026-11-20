@@ -17,7 +17,7 @@ const readers: Record<string, QueryKey[]> = {
   domains: [['domains'], ['projects'], ['apps'], ['command-search']],
   domain_routes: [['domains'], ['projects'], ['apps']],
   events: [['events'], ['apps']],
-  db_instances: [['databases'], ['projects'], ['command-search']],
+  db_instances: [['databases'], ['projects'], ['apps'], ['command-search']],
   db_operations: [['database-operations'], ['databases'], ['database-catalog'], ['database-backups']],
   db_backups: [['database-backups'], ['databases']],
   backup_policies: [['backup-policies']],
