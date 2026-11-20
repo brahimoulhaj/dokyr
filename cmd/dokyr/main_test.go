@@ -46,6 +46,22 @@ func fakePanel(t *testing.T, challenge *string) *httptest.Server {
 		}
 		_, _ = io.WriteString(w, `[{"id":"01P","name":"shop","app_count":3,"apps_running":2,"databases":1,"domains":4,"last_deploy_at":"2026-11-19T10:00:00Z","last_deploy_status":"succeeded"}]`)
 	})
+	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Name, Description string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if r.Header.Get("Authorization") != "Bearer dokyr_secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"code":"unauthorized","message":"invalid or revoked API token"}}`)
+			return
+		}
+		if in.Name == "shop" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"error":{"code":"conflict","message":"a project with this name already exists"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "01NEW", "name": in.Name, "description": in.Description, "app_count": 0})
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -145,6 +161,31 @@ func TestLoginThenProjects(t *testing.T) {
 		t.Fatalf("projects list --json = %s (%v)", out.String(), err)
 	}
 
+	// Create: the name before or after the flags, the panel's refusal as it comes.
+	out.Reset()
+	if err := run(context.Background(), []string{"projects", "create", "blog", "--description", "the company blog"}, &out, io.Discard); err != nil {
+		t.Fatalf("projects create = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "Created project blog") || !strings.Contains(got, "01NEW") {
+		t.Fatalf("projects create = %s", got)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"projects", "create", "--json", "--description", "notes", "my wiki"}, &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var made map[string]any
+	if err := json.Unmarshal(out.Bytes(), &made); err != nil || made["name"] != "my wiki" || made["description"] != "notes" {
+		t.Fatalf("projects create --json = %s (%v)", out.String(), err)
+	}
+	if err := run(context.Background(), []string{"projects", "create", "shop"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("projects create of a taken name = %v", err)
+	}
+	for _, bad := range [][]string{{"projects", "create"}, {"projects", "create", "  "}, {"projects", "create", "a", "b"}, {"projects", "delete", "a"}} {
+		if err := run(context.Background(), bad, io.Discard, io.Discard); err == nil {
+			t.Errorf("%v = no error", bad)
+		}
+	}
+
 	// A revoked token: the command says to sign in again.
 	cfg.Contexts[host] = panelContext{URL: panel.URL, Token: "dokyr_revoked"}
 	if err := saveConfig(cfg); err != nil {
@@ -152,6 +193,9 @@ func TestLoginThenProjects(t *testing.T) {
 	}
 	if err := run(context.Background(), []string{"projects", "list"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
 		t.Fatalf("projects with a revoked token = %v", err)
+	}
+	if err := run(context.Background(), []string{"projects", "create", "blog"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
+		t.Fatalf("create with a revoked token = %v", err)
 	}
 }
 

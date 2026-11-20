@@ -22,6 +22,8 @@ const usage = `Manage a ` + brand.Name + ` panel from this machine.
 Usage:
   ` + brand.Slug + ` login URL [--insecure] [--no-open]   sign in through the browser
   ` + brand.Slug + ` projects list [--json]               list the projects of the panel
+  ` + brand.Slug + ` projects create NAME [--description TEXT] [--json]
+                                             create a project
   ` + brand.Slug + ` version
 
 Sign-in is kept in %s.

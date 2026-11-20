@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and the project list. The rest (deploy, logs, contexts,
+It is a first slice: sign-in, the project list and creating a project. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -48,6 +48,14 @@ adds it and makes it the current one.
 dokyr projects list           # a table: name, apps, running, databases, domains, last deploy, id
 dokyr projects list --json    # the list as the API returns it
 ```
+
+```
+dokyr projects create blog --description "The company blog"
+dokyr projects create "My wiki" --json     # the new project as the API returns it
+```
+
+A project's name is unique on the panel; the panel's refusal (a taken name, a name too
+long) is printed as it comes. Every role can create a project.
 
 ## How the sign-in works
 
