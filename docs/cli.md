@@ -12,6 +12,9 @@ dokyr restore [--passphrase-file F] FILE           stage a panel backup; applied
 dokyr version
 ```
 
+These commands run on the server and work on the data directory. To manage a panel from your
+own machine through its API, see the [Remote CLI](remote-cli.md).
+
 On a server, the installer adds a `dokyr` host command that runs the CLI inside the panel container (see [Install](install.md)).
 Because it runs inside the container, a file given to `dokyr restore` must be inside it too
 (`docker cp FILE dokyr:/tmp/`).

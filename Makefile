@@ -8,7 +8,7 @@ IMAGE   ?= ghcr.io/brahimoulhaj/paas
 GOLANGCI_LINT ?= v2.15.0
 SQLC          ?= v1.31.1
 
-.PHONY: help deps web build test lint sqlc installer-e2e dev dev-down dev-import-data dev-api dev-web image installer clean
+.PHONY: help deps web build cli test lint sqlc installer-e2e dev dev-down dev-import-data dev-api dev-web image installer clean
 
 help:
 	@echo "make deps     - download Go modules and pnpm packages"
@@ -19,6 +19,7 @@ help:
 	@echo "make dev-web  - run the Vite dev server (proxies /api to :10000)"
 	@echo "make web      - build the web app into internal/webui/dist"
 	@echo "make build    - build bin/$(SLUG) with the web app embedded"
+	@echo "make cli      - build bin/cli/$(SLUG), the remote CLI for a personal machine"
 	@echo "make test     - Go tests and web typecheck"
 	@echo "make lint     - golangci-lint (Go) and eslint (web)"
 	@echo "make sqlc     - regenerate the typed queries (internal/store/sqlcgen) from internal/store/queries"
@@ -35,6 +36,11 @@ web:
 
 build: web
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/$(SLUG) ./cmd/panel
+
+# The remote CLI: an API client only, so no web app to build first. It lives in bin/cli
+# because bin/$(SLUG) is the panel.
+cli:
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/cli/$(SLUG) ./cmd/dokyr
 
 test:
 	go vet ./...

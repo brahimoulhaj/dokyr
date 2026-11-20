@@ -21,6 +21,7 @@ import { DatabasePage, databaseTabs, type DatabaseTab } from './routes/database'
 import { StoragePage, storageTabs, type StorageTab } from './routes/storage'
 import { BackupsPage, GitPage, TokensPage } from './routes/system-pages'
 import { CronJobsPage } from './routes/cron-jobs'
+import { CliAuthorizePage, holdCliRequest, parseCliRequest, takeCliRequest } from './routes/cli-authorize'
 
 type Ctx = { queryClient: QueryClient }
 
@@ -81,6 +82,23 @@ async function requireUser(queryClient: QueryClient) {
   if (!(await queryClient.ensureQueryData(meQuery))) throw redirect({ to: '/login' })
 }
 
+// Where `dokyr login` sends the browser, outside the shell. Signed out, the request waits
+// while the user signs in and the app route brings them back.
+const cliAuthorizeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cli/authorize',
+  validateSearch: parseCliRequest,
+  beforeLoad: async ({ context, search }) => {
+    const meta = await context.queryClient.ensureQueryData(metaQuery)
+    if (meta.setup_required) throw redirect({ to: '/setup', search: { token: '' } })
+    if (!(await context.queryClient.ensureQueryData(meQuery))) {
+      holdCliRequest(search)
+      throw redirect({ to: '/login' })
+    }
+  },
+  component: CliAuthorizePage,
+})
+
 // Optional first-run steps, outside the shell. Reachable again from Settings.
 const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -98,6 +116,8 @@ const appRoute = createRoute({
   id: 'app',
   beforeLoad: async ({ context }) => {
     await requireUser(context.queryClient)
+    const cli = takeCliRequest() // a CLI sign-in that waited for this one
+    if (cli) throw redirect({ to: '/cli/authorize', search: cli })
     const onboarding = await context.queryClient.ensureQueryData(onboardingQuery)
     if (!onboarding.completed) throw redirect({ to: '/onboarding', search: { step: 0 } })
   },
@@ -194,6 +214,7 @@ const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
   inviteRoute,
+  cliAuthorizeRoute,
   onboardingRoute,
   appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
     builtinRegistryRoute, settingsRoute, gitRoute, backupsRoute, cronRoute, tokensRoute, databasesRoute, databaseRoute]),

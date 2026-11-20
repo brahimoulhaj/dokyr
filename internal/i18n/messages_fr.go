@@ -333,6 +333,8 @@ func init() {
 		"this passkey could not be saved; it may already be registered":                                              "cette clé d’accès n’a pas pu être enregistrée ; elle l’est peut-être déjà",
 		"this passkey is no longer registered":                                                                       "cette clé d’accès n’est plus enregistrée",
 		"this project does not use that domain":                                                                      "ce projet n’utilise pas ce domaine",
+		"this sign-in code is not valid or has expired; run the login command again":                                 "ce code de connexion n’est pas valide ou a expiré ; relancez la commande de connexion",
+		"this sign-in request is not valid; run the login command again":                                             "cette demande de connexion n’est pas valide ; relancez la commande de connexion",
 		"this rule already exists":                                                                                   "cette règle existe déjà",
 		"tls_mode must be \"auto\" or \"http_only\"":                                                                 "tls_mode doit être \"auto\" ou \"http_only\"",
 		"token must be a GitLab access token":                                                                        "token doit être un jeton d’accès GitLab",
