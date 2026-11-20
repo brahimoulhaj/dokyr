@@ -179,3 +179,40 @@ func TestSamplerHost(t *testing.T) {
 		t.Fatalf("asked for by kind: %+v %v", w, err)
 	}
 }
+
+func TestHostHistory(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if _, err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	ts := now - now%10 - 60
+	for i, m := range []store.MetricSample{
+		{CPU: 1, Memory: 250, MemoryLimit: 1000, NetRx: 5, NetTx: 3},
+		{CPU: 9}, // more than the cores, and no memory reading
+	} {
+		m.Kind, m.ResourceID = store.MetricHost, store.MetricHost
+		if err := st.AddMetricSamples(ctx, ts+int64(i)*10, []store.MetricSample{m}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.AddMetricSamples(ctx, ts-3600, []store.MetricSample{{Kind: store.MetricHost, ResourceID: store.MetricHost, CPU: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	points := HostHistory(st)(ctx, 4, time.Unix(ts-600, 0))
+	if len(points) != 2 {
+		t.Fatalf("points = %+v", points)
+	}
+	a, b := points[0], points[1]
+	if a.At.Unix() != ts || *a.CPU != 25 || *a.Memory != 25 || *a.ReceiveRate != 5 || *a.SendRate != 3 {
+		t.Fatalf("first point = %v cpu %v memory %v", a.At, *a.CPU, *a.Memory)
+	}
+	if b.At.Unix() != ts+10 || *b.CPU != 100 || b.Memory != nil {
+		t.Fatalf("second point = %+v", b)
+	}
+}

@@ -13,7 +13,7 @@ import (
 )
 
 const Interval = 5 * time.Second
-const historySize = 120 // ten minutes, kept in memory only
+const historySize = 120 // ten minutes, kept in memory (see Options.History for restarts)
 
 type CPU struct {
 	Cores   int       `json:"cores"`
@@ -80,6 +80,11 @@ type Options struct {
 	DataDir string
 	// ProcRoot defaults to /host/proc when mounted, otherwise /proc on Linux.
 	ProcRoot string
+	// History, when set, is asked once, at the first reading, for the points of the last
+	// ten minutes that an earlier run of the panel stored, oldest first; cores is the
+	// host's CPU count. The live history then continues from them instead of starting
+	// empty after a restart or an update.
+	History func(ctx context.Context, cores int, since time.Time) []Point
 }
 
 type reading struct {
@@ -94,6 +99,7 @@ type Collector struct {
 	read     func(context.Context, Options) reading
 	previous reading
 	latest   Snapshot
+	seeded   bool
 }
 
 func New(options Options) *Collector {
@@ -141,8 +147,21 @@ func (c *Collector) collect(ctx context.Context) {
 	if r.Unavailable == nil {
 		r.Unavailable = []string{}
 	}
+	var stored []Point
+	if !c.seeded && c.options.History != nil {
+		since := r.CollectedAt.Add(-historySize * Interval)
+		for _, p := range c.options.History(ctx, r.CPU.Cores, since) {
+			if p.At.After(since) && p.At.Before(r.CollectedAt) {
+				stored = append(stored, p)
+			}
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.seeded {
+		c.seeded = true
+		c.latest.History = stored
+	}
 	prev := c.previous
 	if r.cpuValid && prev.cpuValid && r.totalCPU > prev.totalCPU && r.idleCPU >= prev.idleCPU {
 		total, idle := r.totalCPU-prev.totalCPU, r.idleCPU-prev.idleCPU

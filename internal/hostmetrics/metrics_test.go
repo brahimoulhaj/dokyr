@@ -130,3 +130,31 @@ func TestCollectorStops(t *testing.T) {
 		t.Fatal("collector did not stop")
 	}
 }
+
+func TestStoredHistoryContinuesAfterRestart(t *testing.T) {
+	now := time.Now().UTC()
+	asked := 0
+	c := New(Options{History: func(_ context.Context, cores int, since time.Time) []Point {
+		asked++
+		if cores != 2 || !since.Equal(now.Add(-historySize*Interval)) {
+			t.Fatalf("asked for cores %d since %v", cores, since)
+		}
+		return []Point{
+			{At: now.Add(-time.Hour), CPU: pointer(1)}, // older than the live window
+			{At: now.Add(-20 * time.Second), CPU: pointer(30)},
+			{At: now.Add(-10 * time.Second), CPU: pointer(40)},
+			{At: now.Add(time.Second), CPU: pointer(99)}, // not before the first reading
+		}
+	}})
+	step := 0
+	c.read = func(context.Context, Options) reading {
+		step++
+		return reading{Snapshot: Snapshot{CollectedAt: now.Add(time.Duration(step-1) * Interval), CPU: CPU{Cores: 2}}}
+	}
+	c.collect(context.Background())
+	c.collect(context.Background())
+	s := c.Snapshot()
+	if asked != 1 || len(s.History) != 4 || *s.History[0].CPU != 30 || *s.History[1].CPU != 40 || !s.History[2].At.Equal(now) {
+		t.Fatalf("asked %d times, history = %+v", asked, s.History)
+	}
+}
