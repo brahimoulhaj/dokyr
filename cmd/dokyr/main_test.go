@@ -20,7 +20,7 @@ import (
 
 // fakePanel answers what the CLI calls. The exchange checks the verifier against the
 // challenge the browser was given, as the panel does.
-func fakePanel(t *testing.T, challenge *string) *httptest.Server {
+func fakePanel(t *testing.T, challenge *string, revoked *[]string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/meta", func(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +37,18 @@ func fakePanel(t *testing.T, challenge *string) *httptest.Server {
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"token":"dokyr_secret","token_name":"CLI on test","user":{"email":"a@b.co","role":"owner"}}`)
+	})
+	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer dokyr_secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"code":"unauthorized","message":"invalid or revoked API token"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id":"01U","email":"a@b.co","role":"admin"}`)
+	})
+	mux.HandleFunc("POST /api/cli/logout", func(w http.ResponseWriter, r *http.Request) {
+		*revoked = append(*revoked, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer dokyr_secret" {
@@ -67,21 +79,35 @@ func fakePanel(t *testing.T, challenge *string) *httptest.Server {
 	return srv
 }
 
+// plain is a command's streams when nobody is at a terminal: a pipe, a script, a test.
+func plain(out io.Writer) streams {
+	return streams{in: strings.NewReader(""), out: out, errOut: io.Discard}
+}
+
 func TestLoginThenProjects(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	var challenge string
-	panel := fakePanel(t, &challenge)
+	var revoked []string
+	panel := fakePanel(t, &challenge, &revoked)
 
+	// Signed out: status says so and fails, logout has nothing to do.
+	var first bytes.Buffer
+	if err := run(context.Background(), []string{"status"}, plain(&first)); err != errStatusShown || !strings.Contains(first.String(), "Not signed in") {
+		t.Fatalf("status signed out = %v %q", err, first.String())
+	}
+	if err := run(context.Background(), []string{"logout"}, plain(&first)); err != nil {
+		t.Fatalf("logout signed out = %v", err)
+	}
 	// Signed out, a command says how to sign in.
-	if err := run(context.Background(), []string{"projects", "list"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "not signed in") {
+	if err := run(context.Background(), []string{"projects", "list"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "not signed in") {
 		t.Fatalf("projects signed out = %v", err)
 	}
 
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := run(context.Background(), []string{"login", "--no-open", panel.URL}, pw, io.Discard)
+		err := run(context.Background(), []string{"login", "--no-open", panel.URL}, plain(pw))
 		pw.Close()
 		done <- err
 	}()
@@ -146,14 +172,14 @@ func TestLoginThenProjects(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := run(context.Background(), []string{"projects", "list"}, &out, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"projects", "list"}, plain(&out)); err != nil {
 		t.Fatalf("projects list = %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "NAME") || !strings.Contains(got, "shop") || !strings.Contains(got, "succeeded") || !strings.Contains(got, "01P") {
 		t.Fatalf("projects list =\n%s", got)
 	}
 	out.Reset()
-	if err := run(context.Background(), []string{"projects", "list", "--json"}, &out, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"projects", "list", "--json"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
 	var list []map[string]any
@@ -163,27 +189,50 @@ func TestLoginThenProjects(t *testing.T) {
 
 	// Create: the name before or after the flags, the panel's refusal as it comes.
 	out.Reset()
-	if err := run(context.Background(), []string{"projects", "create", "blog", "--description", "the company blog"}, &out, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"projects", "create", "blog", "--description", "the company blog"}, plain(&out)); err != nil {
 		t.Fatalf("projects create = %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "Created project blog") || !strings.Contains(got, "01NEW") {
 		t.Fatalf("projects create = %s", got)
 	}
 	out.Reset()
-	if err := run(context.Background(), []string{"projects", "create", "--json", "--description", "notes", "my wiki"}, &out, io.Discard); err != nil {
+	if err := run(context.Background(), []string{"projects", "create", "--json", "--description", "notes", "my wiki"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
 	var made map[string]any
 	if err := json.Unmarshal(out.Bytes(), &made); err != nil || made["name"] != "my wiki" || made["description"] != "notes" {
 		t.Fatalf("projects create --json = %s (%v)", out.String(), err)
 	}
-	if err := run(context.Background(), []string{"projects", "create", "shop"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if err := run(context.Background(), []string{"projects", "create", "shop"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("projects create of a taken name = %v", err)
 	}
-	for _, bad := range [][]string{{"projects", "create"}, {"projects", "create", "  "}, {"projects", "create", "a", "b"}, {"projects", "delete", "a"}} {
-		if err := run(context.Background(), bad, io.Discard, io.Discard); err == nil {
+	for _, bad := range [][]string{{"projects", "create"}, {"projects", "create", "  "}, {"projects", "create", "a", "b"},
+		{"projects", "delete", "a"}, {"projects", "list", "extra"}, {"projects", "list", "--nope"}, {"nope"}, {"login"}} {
+		if err := run(context.Background(), bad, plain(io.Discard)); err == nil {
 			t.Errorf("%v = no error", bad)
 		}
+	}
+
+	// Status asks the panel: the role changed there since the sign-in, and it shows.
+	out.Reset()
+	if err := run(context.Background(), []string{"whoami"}, plain(&out)); err != nil {
+		t.Fatalf("whoami = %v", err)
+	}
+	for _, want := range []string{panel.URL, "a@b.co", "admin", "signed in", "Panel version:  test"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("status lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"status", "--json"}, plain(&out)); err != nil {
+		t.Fatal(err)
+	}
+	var st status
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil || !st.SignedIn || st.User != "a@b.co" || st.Role != "admin" || st.Panel != host {
+		t.Fatalf("status --json = %s (%v)", out.String(), err)
+	}
+	if strings.Contains(out.String(), "dokyr_secret") {
+		t.Fatal("status prints the token")
 	}
 
 	// A revoked token: the command says to sign in again.
@@ -191,11 +240,55 @@ func TestLoginThenProjects(t *testing.T) {
 	if err := saveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(context.Background(), []string{"projects", "list"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
+	if err := run(context.Background(), []string{"projects", "list"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
 		t.Fatalf("projects with a revoked token = %v", err)
 	}
-	if err := run(context.Background(), []string{"projects", "create", "blog"}, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
+	if err := run(context.Background(), []string{"projects", "create", "blog"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no longer accepts") {
 		t.Fatalf("create with a revoked token = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"status"}, plain(&out)); err != errStatusShown || !strings.Contains(out.String(), "no longer accepts") {
+		t.Fatalf("status with a revoked token = %v\n%s", err, out.String())
+	}
+
+	// Logout revokes the token on the panel and forgets it here.
+	out.Reset()
+	if err := run(context.Background(), []string{"logout"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Signed out of "+host) {
+		t.Fatalf("logout = %v %q", err, out.String())
+	}
+	if len(revoked) != 1 || revoked[0] != "Bearer dokyr_revoked" {
+		t.Fatalf("revoked on the panel = %v", revoked)
+	}
+	if cfg, _ := loadConfig(); len(cfg.Contexts) != 0 || cfg.Current != "" {
+		t.Fatalf("config after logout = %+v", cfg)
+	}
+	if err := run(context.Background(), []string{"projects", "list"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "not signed in") {
+		t.Fatalf("projects after logout = %v", err)
+	}
+}
+
+// Help and completion come from cobra; they must name the commands there are.
+func TestHelpAndCompletion(t *testing.T) {
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"--help"}, plain(&out)); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"login", "logout", "status", "projects", "completion", "version"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("help does not name %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"projects", "create", "--help"}, plain(&out)); err != nil || !strings.Contains(out.String(), "--description") {
+		t.Fatalf("projects create --help = %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"completion", "zsh"}, plain(&out)); err != nil || !strings.Contains(out.String(), "compdef") {
+		t.Fatalf("completion zsh = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"version"}, plain(&out)); err != nil || strings.TrimSpace(out.String()) != version {
+		t.Fatalf("version = %v %q", err, out.String())
 	}
 }
 

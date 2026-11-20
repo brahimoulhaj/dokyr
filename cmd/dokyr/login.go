@@ -7,10 +7,8 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"flag"
 	"fmt"
 	"html"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,42 +19,71 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/huh/v2"
+	"charm.land/huh/v2/spinner"
+	"charm.land/lipgloss/v2"
+	"github.com/spf13/cobra"
+
 	"panel/internal/brand"
 )
 
 // loginWait is how long the CLI waits for the approval; the panel's code lives 5 minutes.
 const loginWait = 5 * time.Minute
 
-// runLogin signs in through the browser: the user signs in on the panel as usual and
+// newLoginCmd signs in through the browser: the user signs in on the panel as usual and
 // approves this device there, and the CLI never sees a password. See internal/api/cli_login.go.
-func runLogin(ctx context.Context, args []string, out, errOut io.Writer) error {
-	fs := flag.NewFlagSet("login", flag.ContinueOnError)
-	fs.SetOutput(errOut)
-	insecure := fs.Bool("insecure", false, "sign in to a panel served over plain HTTP")
-	noOpen := fs.Bool("no-open", false, "print the link instead of opening the browser")
-	// Flags may come before or after the URL.
-	var target string
-	for len(args) > 0 {
-		if err := fs.Parse(args); err != nil {
+func newLoginCmd(s streams) *cobra.Command {
+	var insecure, noOpen bool
+	cmd := &cobra.Command{
+		Use:   "login [URL]",
+		Short: "Sign in to a panel through the browser",
+		Long: "Sign in to a panel through the browser.\n\n" +
+			"The command prints a short code and opens the panel. Sign in there as usual, check\n" +
+			"that the page shows the same code, and approve. The CLI never sees your password.\n" +
+			"Without a URL, in a terminal, it asks for one.",
+		Example: "  " + brand.Slug + " login https://panel.example.com\n  " + brand.Slug + " login http://203.0.113.5 --insecure",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := ""
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return runLogin(cmd.Context(), s, target, insecure, noOpen)
+		},
+	}
+	cmd.Flags().BoolVar(&insecure, "insecure", false, "sign in to a panel served over plain HTTP")
+	cmd.Flags().BoolVar(&noOpen, "no-open", false, "print the link instead of opening the browser")
+	return cmd
+}
+
+func runLogin(ctx context.Context, s streams, target string, insecure, noOpen bool) error {
+	if target == "" {
+		if !s.interactive {
+			return fmt.Errorf("usage: %s login https://your-panel [--insecure] [--no-open]", brand.Slug)
+		}
+		// The panel signed in to last is the likely answer.
+		if cfg, err := loadConfig(); err == nil {
+			target = cfg.Contexts[cfg.Current].URL
+		}
+		err := s.ask(huh.NewInput().
+			Title("Panel URL").
+			Description("The address you open the panel at.").
+			Placeholder("https://panel.example.com").
+			Value(&target).
+			Validate(func(v string) error {
+				_, err := panelURL(v, insecure)
+				return err
+			}))
+		if err != nil {
 			return err
 		}
-		args = fs.Args()
-		if len(args) > 0 {
-			if target != "" {
-				return errors.New("login takes one panel URL")
-			}
-			target, args = args[0], args[1:]
-		}
 	}
-	if target == "" {
-		return fmt.Errorf("usage: %s login https://your-panel [--insecure] [--no-open]", brand.Slug)
-	}
-	base, err := panelURL(target, *insecure)
+	base, err := panelURL(target, insecure)
 	if err != nil {
 		return err
 	}
 	if base.Scheme == "http" && !isLoopback(base.Hostname()) {
-		fmt.Fprintln(errOut, "warning: this panel is served over plain HTTP; the token travels unencrypted")
+		fmt.Fprintln(s.errOut, "warning: this panel is served over plain HTTP; the token travels unencrypted")
 	}
 
 	client := newClient(base.String(), "")
@@ -103,21 +130,12 @@ func runLogin(ctx context.Context, args []string, out, errOut io.Writer) error {
 		"code":      {shortCode},
 	}.Encode()
 
-	fmt.Fprintf(out, "Code: %s\n\n", shortCode)
-	if *noOpen || openBrowser(link.String()) != nil {
-		fmt.Fprintf(out, "Open this link in a browser on this machine, check the code and approve:\n\n  %s\n\n", link.String())
-	} else {
-		fmt.Fprintf(out, "Your browser opens %s. Check the code there and approve.\nIf nothing opened, use this link:\n\n  %s\n\n", base.Host, link.String())
-	}
-	fmt.Fprintln(out, "Waiting for the approval (Ctrl+C to give up)…")
+	opened := !noOpen && openBrowser(link.String()) == nil
+	announceLogin(s, base.Host, shortCode, link.String(), opened)
 
-	var cb callback
-	select {
-	case cb = <-result:
-	case <-ctx.Done():
-		return errors.New("sign-in cancelled")
-	case <-time.After(loginWait):
-		return errors.New("no approval within 5 minutes; run the command again")
+	cb, err := awaitApproval(ctx, s, result)
+	if err != nil {
+		return err
 	}
 	if cb.err != "" {
 		if cb.err == "access_denied" {
@@ -149,8 +167,78 @@ func runLogin(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("signed in, but the sign-in could not be saved: %w", err)
 	}
-	fmt.Fprintf(out, "Signed in to %s as %s (%s).\n", base.Host, granted.User.Email, granted.User.Role)
+	s.done("Signed in to %s as %s (%s).", s.accent(base.Host), s.accent(granted.User.Email), granted.User.Role)
 	return nil
+}
+
+// announceLogin tells the user what to do in the browser. The link is always printed
+// whole on a line of its own, so it can be copied when no browser opened.
+func announceLogin(s streams, host, code, link string, opened bool) {
+	if !s.interactive {
+		fmt.Fprintf(s.out, "Code: %s\n\n", code)
+		if opened {
+			fmt.Fprintf(s.out, "Your browser opens %s. Check the code there and approve.\nIf nothing opened, use this link:\n\n  %s\n\n", host, link)
+		} else {
+			fmt.Fprintf(s.out, "Open this link in a browser on this machine, check the code and approve:\n\n  %s\n\n", link)
+		}
+		fmt.Fprintln(s.out, "Waiting for the approval (Ctrl+C to give up)…")
+		return
+	}
+	what := "Your browser opens " + s.accent(host) + "."
+	if !opened {
+		what = "Open the link below in a browser on this machine."
+	}
+	s.say("%s", s.card(
+		s.muted("Sign-in code"),
+		lipgloss.NewStyle().Bold(true).Foreground(s.palette().accent).Render(code),
+		"",
+		what,
+		"Check that the page shows this code, then approve.",
+	))
+	if opened {
+		s.say("%s", s.muted("If nothing opened, use this link:"))
+	}
+	fmt.Fprintf(s.out, "\n  %s\n\n", link)
+}
+
+// awaitApproval waits for the browser to come back, with a spinner in a terminal.
+func awaitApproval(ctx context.Context, s streams, result <-chan callback) (callback, error) {
+	wait := func(ctx context.Context) (callback, error) {
+		select {
+		case cb := <-result:
+			return cb, nil
+		case <-ctx.Done():
+			return callback{}, errors.New("sign-in cancelled")
+		case <-time.After(loginWait):
+			return callback{}, errors.New("no approval within 5 minutes; run the command again")
+		}
+	}
+	if !s.interactive {
+		return wait(ctx)
+	}
+	var cb callback
+	var waitErr error
+	got := false
+	err := spinner.New().
+		Title(" Waiting for the approval in the browser (Ctrl+C to give up)").
+		WithTheme(spinner.ThemeFunc(func(isDark bool) *spinner.Styles {
+			return &spinner.Styles{Spinner: lipgloss.NewStyle().Foreground(streams{dark: isDark}.palette().accent), Title: lipgloss.NewStyle()}
+		})).
+		Context(ctx).
+		ActionWithErr(func(ctx context.Context) error {
+			cb, waitErr = wait(ctx)
+			got = waitErr == nil
+			return waitErr
+		}).
+		Run()
+	if got {
+		return cb, nil
+	}
+	if waitErr != nil {
+		return callback{}, waitErr
+	}
+	_ = err // Ctrl+C reaches the spinner as a key press, not as a signal
+	return callback{}, errors.New("sign-in cancelled")
 }
 
 // panelURL is the panel's origin from what the user typed. https is assumed; plain HTTP
