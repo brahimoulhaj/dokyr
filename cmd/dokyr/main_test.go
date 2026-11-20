@@ -58,6 +58,20 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string) *httptest.Ser
 		}
 		_, _ = io.WriteString(w, `[{"id":"01P","name":"shop","app_count":3,"apps_running":2,"databases":1,"domains":4,"last_deploy_at":"2026-11-19T10:00:00Z","last_deploy_status":"succeeded"}]`)
 	})
+	mux.HandleFunc("GET /api/registry/settings", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"enabled":true,"domain":"registry.example.com","address":"registry.example.com","state":"running"}`)
+	})
+	mux.HandleFunc("GET /api/registry/repositories", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer dokyr_secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"error":{"code":"unauthorized","message":"invalid or revoked API token"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `[{"name":"shop/api","size":52428800,"tags":[`+
+			`{"name":"latest","digest":"sha256:0123456789abcdef0123456789abcdef","size":41943040,"platforms":["linux/amd64","linux/arm64"]},`+
+			`{"name":"broken","size":0,"platforms":[]}]},`+
+			`{"name":"blog","size":999,"tags":[{"name":"v1","digest":"sha256:fedcba9876543210fedcba9876543210","size":999,"platforms":["linux/amd64"]}]}]`)
+	})
 	mux.HandleFunc("POST /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Name, Description string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
@@ -187,6 +201,33 @@ func TestLoginThenProjects(t *testing.T) {
 		t.Fatalf("projects list --json = %s (%v)", out.String(), err)
 	}
 
+	// Registry: one line per tag, named the way it is pulled.
+	out.Reset()
+	if err := run(context.Background(), []string{"registry", "list"}, plain(&out)); err != nil {
+		t.Fatalf("registry list = %v", err)
+	}
+	for _, want := range []string{"IMAGE", "registry.example.com/shop/api:latest", "41.9 MB", "linux/amd64, linux/arm64", "sha256:0123456789ab\n",
+		"registry.example.com/shop/api:broken", "registry.example.com/blog:v1", "999 B"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("registry list lacks %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"registry", "ls", "blog"}, plain(&out)); err != nil || strings.Contains(out.String(), "shop/api") || !strings.Contains(out.String(), "blog:v1") {
+		t.Fatalf("registry ls blog = %v\n%s", err, out.String())
+	}
+	if err := run(context.Background(), []string{"registry", "list", "nope"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no repository") {
+		t.Fatalf("registry list of an unknown repository = %v", err)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"registry", "images", "--json"}, plain(&out)); err != nil {
+		t.Fatal(err)
+	}
+	var repos []repository
+	if err := json.Unmarshal(out.Bytes(), &repos); err != nil || len(repos) != 2 || repos[0].Name != "shop/api" || len(repos[0].Tags) != 2 {
+		t.Fatalf("registry list --json = %s (%v)", out.String(), err)
+	}
+
 	// Create: the name before or after the flags, the panel's refusal as it comes.
 	out.Reset()
 	if err := run(context.Background(), []string{"projects", "create", "blog", "--description", "the company blog"}, plain(&out)); err != nil {
@@ -273,7 +314,7 @@ func TestHelpAndCompletion(t *testing.T) {
 	if err := run(context.Background(), []string{"--help"}, plain(&out)); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"login", "logout", "status", "projects", "completion", "version"} {
+	for _, want := range []string{"login", "logout", "status", "projects", "registry", "completion", "version"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("help does not name %q:\n%s", want, out.String())
 		}
@@ -289,6 +330,17 @@ func TestHelpAndCompletion(t *testing.T) {
 	out.Reset()
 	if err := run(context.Background(), []string{"version"}, plain(&out)); err != nil || strings.TrimSpace(out.String()) != version {
 		t.Fatalf("version = %v %q", err, out.String())
+	}
+}
+
+func TestHumanSize(t *testing.T) {
+	for n, want := range map[int64]string{0: "0 B", 999: "999 B", 1000: "1.0 kB", 1500: "1.5 kB", 41943040: "41.9 MB", 240_000_000: "240 MB", 3_200_000_000: "3.2 GB"} {
+		if got := humanSize(n); got != want {
+			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+	if got := shortDigest("sha256:0123456789abcdef"); got != "sha256:0123456789ab" {
+		t.Errorf("shortDigest = %q", got)
 	}
 }
 

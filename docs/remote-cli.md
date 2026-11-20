@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and sign-out, who is signed in, the project list and creating a project. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, projects (list, create) and the images of the built-in registry. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -89,6 +89,21 @@ dokyr projects create                      # in a terminal: asks for the name an
 
 A project's name is unique on the panel; the panel's refusal (a taken name, a name too
 long) is printed as it comes. Every role can create a project.
+
+## Registry
+
+```
+dokyr registry list             # every image in the built-in registry, one line per tag
+dokyr registry list shop/api    # the tags of one repository
+dokyr registry list --json      # the repositories as the API returns them
+```
+
+Each line is one tag: its size, its platforms and the start of its digest. In a script the
+first column is the whole name to pull (`registry.example.com/shop/api:latest`). In a
+terminal the repository and the tag are two columns, the registry's address is given once
+below the table, and a table wider than the terminal is cut to fit, long cells ending in `…`
+(use `--json` or a pipe for the full values). `ls` and `images` are other names for `list`.
+When the built-in registry is off, the command says so.
 
 ## How the sign-in works
 
