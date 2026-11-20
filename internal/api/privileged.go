@@ -7,31 +7,53 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
 
 	"panel/internal/account"
+	"panel/internal/brand"
 	"panel/internal/store"
 )
 
 // isAdmin is true for the owner and admins: the roles that may reach the host.
 func isAdmin(u store.User) bool { return u.Role == account.RoleOwner || u.Role == account.RoleAdmin }
 
+// reservedVolume reports whether name is a Docker volume the panel or its builders own:
+// the data volume, the built-in storage and registry, database instances (all named after
+// the product) and BuildKit's state. Mounting one into an app reads what the roles keep
+// from a maintainer: other projects' database files, backups, and with a data volume the
+// panel's own database and key.
+func reservedVolume(name string) bool {
+	n := strings.ToLower(name)
+	return n == brand.Slug || strings.HasPrefix(n, brand.Slug+"-") || strings.HasPrefix(n, brand.Slug+"_") ||
+		strings.HasPrefix(n, "buildx_") || strings.HasPrefix(n, "buildkit")
+}
+
+func hasBind(in store.AppInput) bool {
+	return slices.ContainsFunc(in.Mounts, func(m store.AppMount) bool { return m.Type == "bind" })
+}
+
 // hostAccessProblem says why saving next over prev needs an admin; "" when it does not.
-// Two app settings hand out the host: a bind mount exposes any host path (the Docker
-// socket included), and a Buildpacks builder image runs as root with the Docker socket.
-// A maintainer may keep what an admin set, but not add or change either.
+// Three app settings hand out the host: a bind mount exposes any host path (the Docker
+// socket included), a volume the panel owns holds its own data, and a Buildpacks builder
+// image runs as root with the Docker socket. A maintainer may keep what an admin set, but
+// not add or change any of them. An app that already has a host path is the admin's as a
+// whole: whoever picks what runs in it reaches that path.
 func hostAccessProblem(prev, next store.AppInput) string {
 	for _, m := range next.Mounts {
-		if m.Type != "bind" {
+		kept := slices.ContainsFunc(prev.Mounts, func(p store.AppMount) bool {
+			return p.Type == m.Type && p.Source == m.Source && p.Target == m.Target && p.ReadOnly == m.ReadOnly
+		})
+		if kept {
 			continue
 		}
-		kept := slices.ContainsFunc(prev.Mounts, func(p store.AppMount) bool {
-			return p.Type == "bind" && p.Source == m.Source && p.Target == m.Target && p.ReadOnly == m.ReadOnly
-		})
-		if !kept {
+		switch {
+		case m.Type == "bind":
 			return "your role cannot mount host paths; use a volume, or ask an admin"
+		case m.Type == "volume" && reservedVolume(m.Source):
+			return "the volume " + m.Source + " belongs to the panel; pick another name, or ask an admin"
 		}
 	}
 	builderImage := func(in store.AppInput) string {
@@ -43,7 +65,15 @@ func hostAccessProblem(prev, next store.AppInput) string {
 	if image := builderImage(next); image != "" && image != builderImage(prev) {
 		return "your role cannot choose the Buildpacks builder image; ask an admin"
 	}
+	if hasBind(prev) && (prev.SourceType != next.SourceType || prev.Image != next.Image || prev.RegistryID != next.RegistryID ||
+		prev.StartCommand != next.StartCommand || !reflect.DeepEqual(prev.Git, next.Git) || !sameProcesses(prev.Processes, next.Processes)) {
+		return "this app mounts a host path, so only an admin can change its source, image, start command or processes"
+	}
 	return ""
+}
+
+func sameProcesses(a, b []store.AppProcess) bool {
+	return len(a) == len(b) && (len(a) == 0 || reflect.DeepEqual(a, b))
 }
 
 // mayChangeApp answers 403 and reports false when the user's role cannot save next over prev.

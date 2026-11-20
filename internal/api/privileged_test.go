@@ -254,3 +254,77 @@ func TestSecurityHeaders(t *testing.T) {
 		t.Fatalf("policy = %q, want the hash %s", got, want)
 	}
 }
+
+// Volumes the panel owns hold its data and other projects' databases; an app that mounts
+// a host path is the admin's: whoever picks what runs in it reaches that path.
+func TestMaintainerVolumesAndBoundApps(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	admin := e.join("admin@b.co", "admin")
+	maint := e.join("maint@b.co", "maintainer")
+	pid := maint.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
+	apps := "/api/projects/" + pid + "/apps"
+	vol := func(name string) map[string]any {
+		return map[string]any{"type": "volume", "source": name, "target": "/data"}
+	}
+
+	for _, name := range []string{"dokyr-data", "dokyr-s3-data", "dokyr-registry-data", "Dokyr-db-abc-data", "dokyr", "buildx_buildkit_dokyr0_state"} {
+		if code, m := maint.call("POST", apps, map[string]any{"name": "web", "image": "nginx:1", "port": 80, "mounts": []any{vol(name)}}); code != 403 {
+			t.Fatalf("maintainer mounted %s = %d %v", name, code, m)
+		}
+	}
+	app := maint.must(201, "POST", apps, map[string]any{"name": "web", "image": "nginx:1", "port": 80, "mounts": []any{vol("shop-data")}})
+	appURL := "/api/apps/" + app["id"].(string)
+	maint.must(403, "PATCH", appURL, map[string]any{"mounts": []any{vol("dokyr-s3-data")}})
+	file := "services:\n  db:\n    image: nginx:1\n    volumes:\n      - dokyr-data:/data\nvolumes:\n  dokyr-data:\n    external: true\n"
+	if code, m := maint.call("POST", "/api/projects/"+pid+"/compose", map[string]any{"compose": file, "dry_run": true}); code == 200 {
+		for _, a := range m["apps"].([]any) {
+			for _, mt := range a.(map[string]any)["mounts"].([]any) {
+				if mt.(map[string]any)["source"] == "dokyr-data" {
+					t.Fatalf("compose import kept the panel volume: %v", m)
+				}
+			}
+		}
+	}
+	// An admin may, and the maintainer then keeps it.
+	admin.must(200, "PATCH", appURL, map[string]any{"mounts": []any{vol("dokyr-s3-data")}})
+	maint.must(200, "PATCH", appURL, map[string]any{"port": 8080})
+	admin.must(200, "PATCH", appURL, map[string]any{"mounts": []any{vol("shop-data")}})
+
+	// No host path: the maintainer changes the app freely.
+	maint.must(200, "PATCH", appURL, map[string]any{"image": "nginx:2", "start_command": "nginx -g 'daemon off;'"})
+	sock := map[string]any{"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"}
+	admin.must(200, "PATCH", appURL, map[string]any{"mounts": []any{sock}})
+	for name, change := range map[string]map[string]any{
+		"image":     {"image": "docker:cli"},
+		"command":   {"start_command": "sleep 1d"},
+		"processes": {"processes": []any{map[string]any{"name": "worker", "command": "sh"}}},
+		"source":    {"source_type": "git", "git_repository": "https://github.com/org/app.git"},
+	} {
+		if code, m := maint.call("PATCH", appURL, change); code != 403 {
+			t.Fatalf("maintainer changed %s of an app with a host path = %d %v", name, code, m)
+		}
+	}
+	maint.must(200, "PATCH", appURL, map[string]any{"port": 9090, "environment": map[string]any{"A": "b"}})
+	admin.must(200, "PATCH", appURL, map[string]any{"image": "docker:cli"})
+
+	// Its terminal is a shell on that path.
+	term := appURL + "/terminal?cols=80&rows=24&shell=auto"
+	stub := &terminalStub{Deployer: e.deployer, binds: []string{"/var/run/docker.sock"}}
+	e.srv.deployer = stub
+	denied := func(when string) {
+		t.Helper()
+		if code, m := maint.call("GET", term, nil, "Origin", e.url); code != 403 || m["error"].(map[string]any)["code"] != "forbidden" {
+			t.Fatalf("maintainer terminal of an app with a host path, %s = %d %v", when, code, m)
+		}
+	}
+	denied("saved and running")
+	// Taking the mount out of the settings does not take it out of the running container.
+	maint.must(200, "PATCH", appURL, map[string]any{"mounts": []any{}})
+	denied("removed from the settings, not yet deployed")
+	// Deployed without it: an ordinary app again (the request then fails as a WebSocket upgrade).
+	stub.binds = nil
+	if code, m := maint.call("GET", term, nil, "Origin", e.url); code == 403 {
+		t.Fatalf("maintainer terminal after the host path is gone = %d %v", code, m)
+	}
+}

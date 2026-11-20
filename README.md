@@ -26,7 +26,9 @@ It installs Docker if needed, starts the panel and prints a one-time setup link
 2. Point a domain at the server and save it in Settings → General, so the panel and
    passkeys run over HTTPS ([Sign-in methods](docs/sign-in.md)).
 3. Invite your team from Settings → Users ([Users and roles](docs/users-and-roles.md)).
-4. Create a project, then deploy apps and add [databases](docs/databases.md) to it.
+4. Create a project, then deploy apps ([First deploy](docs/first-deploy.md)) and add
+   [databases](docs/databases.md) to it.
+5. Set up the panel backup in Settings → Backup ([Backups and restore](docs/backups.md)).
 
 Lost the setup link or the owner password? Use the `dokyr` host command
 ([CLI](docs/cli.md)).
@@ -41,6 +43,7 @@ Later versions install from the panel (Settings → Updates) or over SSH with `d
 | Guide | What it covers |
 |---|---|
 | [Install and update](docs/install.md) | installer options, custom images, updates |
+| [First deploy](docs/first-deploy.md) | project, app, variables, domain and HTTPS |
 | [Configuration](docs/configuration.md) | `DOKYR_*` environment variables, builds, proxy |
 | [CLI](docs/cli.md) | `dokyr` commands |
 | [Users and roles](docs/users-and-roles.md) | invites, permissions, host terminal |
@@ -48,6 +51,9 @@ Later versions install from the panel (Settings → Updates) or over SSH with `d
 | [Cron jobs](docs/cron-jobs.md) | scheduled commands on the host |
 | [Databases](docs/databases.md) | instances, Adminer, backups, references, API |
 | [Monitoring](docs/monitoring.md) | host and Docker metrics, app problems |
+| [Backups and restore](docs/backups.md) | panel backup, restore, what is not covered |
+| [Recovery](docs/recovery.md) | lost link or password, unreachable panel, lost server |
+| [Security](docs/security.md) | security model and hardening |
 
 ## Develop Dokyr
 

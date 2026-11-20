@@ -14,8 +14,10 @@ link and send it yourself; the invited person opens it, picks a password and is 
 
 There is one owner, who cannot be changed or removed. A role change applies at once;
 removing a user ends their sessions and API tokens, and what they created stays. An API
-token carries the role of its user. Roles are guardrails, not a sandbox: a maintainer can
-still open an app's container terminal or mount a host path into an app.
+token carries the role of its user. A maintainer cannot reach the
+host through an app either: mounting a host path and choosing a Buildpacks builder image
+need an admin (a maintainer keeps what an admin set). Inside an app the roles are no
+sandbox: a maintainer can open the container's terminal and read its variables.
 
 ## Host terminal confirmation
 

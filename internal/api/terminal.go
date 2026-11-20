@@ -23,6 +23,8 @@ import (
 
 type terminalDeployer interface {
 	OpenTerminal(context.Context, string, string, uint, uint) (executor.Terminal, error)
+	// HostPaths lists the host paths the app's running container mounts.
+	HostPaths(ctx context.Context, appID string) ([]string, error)
 }
 
 func terminalOrigin(r *http.Request) bool {
@@ -52,6 +54,20 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	a, err := s.store.GetApp(r.Context(), r.PathValue("id"))
 	if s.storeError(w, "get terminal app", err, "") {
 		return
+	}
+	// A shell in a container that mounts a host path is a shell on that path. The running
+	// container decides, not only the saved settings: removing the mount there changes
+	// nothing until the next deploy.
+	if !isAdmin(userFrom(r.Context())) {
+		bound := hasBind(store.AppInput{Mounts: a.Mounts})
+		if !bound {
+			paths, err := d.HostPaths(r.Context(), a.ID)
+			bound = err == nil && len(paths) > 0
+		}
+		if bound {
+			writeError(w, http.StatusForbidden, "forbidden", "this app mounts a host path, so only an admin can open its terminal")
+			return
+		}
 	}
 	s.serveTerminal(w, r, terminalSession{
 		open: func(ctx context.Context) (executor.Terminal, error) {
@@ -253,6 +269,7 @@ func (s *Server) handleHostTerminal(w http.ResponseWriter, r *http.Request) {
 		},
 		failed: "Cannot open a shell on the host.",
 		idle:   cfg.idle(),
+		admin:  true,
 		audit: func(action string) {
 			s.audit(r, "host.terminal."+action, "host", "", "host", "as "+cmp.Or(cfg.User, "root"))
 		},
@@ -264,6 +281,7 @@ type terminalSession struct {
 	failed string              // shown in the browser when open fails
 	audit  func(action string) // "open" and "close"
 	idle   time.Duration       // closed after this long without input; 0: never
+	admin  bool                // closed when the user stops being an admin (host shells)
 }
 
 // terminalIdleClose is the WebSocket close code of a shell closed for being idle.
@@ -298,7 +316,8 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, session t
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if _, err := s.accounts.SessionUser(ctx, cookie.Value); err != nil {
+					// A demoted admin loses an open host shell too, not only new ones.
+					if u, err := s.accounts.SessionUser(ctx, cookie.Value); err != nil || (session.admin && !isAdmin(u)) {
 						cancel()
 						return
 					}

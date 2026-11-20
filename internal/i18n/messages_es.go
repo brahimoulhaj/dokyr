@@ -10,6 +10,7 @@ func init() {
 		"%s already routes %s":                                                     "%s ya dirige %s",
 		"%s failed for what looks like a temporary reason: %v":                     "%s falló por un motivo que parece temporal: %v",
 		"%s is an address inside the server's own network; ask an admin to add it": "%s es una dirección de la red interna del servidor; pide a un administrador que la añada",
+		"this app mounts a host path, so only an admin can open its terminal":      "esta aplicación monta una ruta del host, así que solo un administrador puede abrir su terminal",
 		"%s is required": "%s es obligatorio",
 		"%s is the panel's own account; choose another name":                        "%s es la cuenta propia del panel; elige otro nombre",
 		"%s needs a %s database":                                                    "%s necesita una base de datos %s",

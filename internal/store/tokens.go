@@ -83,3 +83,9 @@ func apiToken(id, userID, name string, lastUsed sql.NullString, created string) 
 	}
 	return t
 }
+
+// DeleteUserAPITokens revokes every API token of a user.
+func (s *Store) DeleteUserAPITokens(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ?`, userID)
+	return err
+}

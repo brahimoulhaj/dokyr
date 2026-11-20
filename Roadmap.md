@@ -7,7 +7,7 @@ Dokyr (dokyr.com, earlier working name Berth); the name lives only in `internal/
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
 
-**Progress:** M0 ◐ (sqlc started: two stores of about thirty) · M1 ◐ (users and roles, host terminal and cron jobs in; email invites, more owners, per-project access, VPS checks left) · M2 ◐ (nearly done: Gitea token left; Nixpacks not yet deployed through the panel) · M3 ◐ (TLS modes, redirects, Certificates page left) · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS; built-in S3 per-bucket keys in; a real domain and VPS checks left) · M6 ◐ (container metrics with history and charts; notifications and alert rules; continuous health monitoring; usage threshold alerts; MongoDB and ClickHouse remain) · Cross-cutting ◐ (docs, security review left; install e2e written, not yet run)
+**Progress:** M0 ◐ (sqlc started: two stores of about thirty) · M1 ◐ (users and roles, host terminal and cron jobs in; email invites, more owners, per-project access, VPS checks left) · M2 ◐ (nearly done: Gitea token left; Nixpacks not yet deployed through the panel) · M3 ◐ (TLS modes, redirects, Certificates page left) · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS; built-in S3 per-bucket keys in; a real domain and VPS checks left) · M6 ◐ (container metrics with history and charts; notifications and alert rules; continuous health monitoring; usage threshold alerts; MongoDB and ClickHouse remain) · M7 ○ (remote CLI for a personal machine with browser sign-in: not started) · Cross-cutting ◐ (docs and security review done, with open security findings in `docs/security.md`; install e2e written, not yet run)
 
 **Open checks (built, not yet verified) — v0.20.0 to v0.30.0, newest first.** Nothing from v0.20.0 onward is checked on the VPS.
 - v0.31.0: nothing of it in a browser yet beyond the type check and lint, and nothing on the VPS — the passkey button and the idle close of the host terminal, a shebang cron job run by the panel, the Deploy on push panel and a GitHub App made with the new manifest (its webhook reaching the panel), Sync with server and the external-user badge, Host history with real samples, an error and a deployment log shown in French, Arabic and Spanish (translations not reviewed by native speakers); CI has not run the new lint steps, the sqlc check or the `install` job; the panel image was not rebuilt with the pinned tools on amd64
@@ -36,8 +36,9 @@ Dokyr (dokyr.com, earlier working name Berth); the name lives only in `internal/
 1. A VPS round for v0.20.0–v0.29.0 (the new builders, host terminal, cron jobs, roles, templates, processes, secrets, subdomain routes with a real on-demand certificate, domain migration), then the open checks above that need only the browser.
 2. M6 is done except more database engines (MongoDB, ClickHouse). Next candidates: M3 TLS (DNS-01 wildcards, custom certificates, redirects, Certificates page). Built-in S3 left: a real domain, and checking database backups, the registry and per-bucket keys against it on the VPS.
 3. `TestRealPublicPort` fails on this Mac at the TLS handshake (since v0.26.0 every run; earlier intermittently; Docker is OrbStack, `host.docker.internal` resolves to 0.250.250.254): find out how the gate is reached there and make the test wait for it. Check whether "Build log stream on the deployment page" is already covered by the deployment log (Git build output streams there with `|` lines) and tick it if so.
-4. Add the `LICENSE` file (MIT, decided), linting in CI, and the docs (install, first deploy, backups, updates, recovery CLI).
+4. The open findings of the security review (`docs/security.md`), first a network of their own for panel, proxy and Adminer, build planning outside the panel container, and the re-confirmation for cron jobs.
 5. Record the fresh-install time with image download (M1, "Under 60 seconds").
+6. M7, the remote CLI: the client binary, `dokyr login` through the browser, the version check, then `deploy` and `logs`.
 ---
 
 ## M0 — Project skeleton
@@ -438,15 +439,65 @@ Goal: see what the server is doing and get told when something breaks.
 - [x] Panel scaled to 90% (root font size); theme picker previews the current Overview (v0.27.0)
 - [x] Onboarding steps for storage, registry and notifications (see Onboarding stepper in M1), checked in the browser
 
+## M7 — Remote CLI
+
+Goal: manage a panel from a personal machine, the way `doctl` or `gh` do: install one
+binary on a laptop, sign in through the browser against your own panel, then deploy and
+look at things from the terminal. The CLI on the server (`dokyr setup-token`, `owner`,
+`update`, `restore`) stays what it is: it works on the data directory and needs root there.
+This one only speaks the HTTP API, as a user, with that user's role.
+
+### Client binary (`cmd/dokyr`)
+- [ ] A client of its own, apart from `cmd/panel`: no store, Docker or web app inside, only the API client; macOS, Linux and Windows, amd64 and arm64
+- [ ] Naming: the installer's host command on the server is also called `dokyr`; decide whether the client takes the name on the server too (it would wrap the container CLI for the local commands) or the two stay apart
+- [ ] Config in the user's config directory (`~/.config/dokyr/config.json`, mode 600): contexts, each a panel URL, a user and a token; the token in the OS keychain where there is one, in the file otherwise
+- [ ] Contexts for more than one panel: `dokyr context list|use|remove`, `--context` and `DOKYR_CONTEXT` for one command
+- [ ] `DOKYR_URL` and `DOKYR_TOKEN` for CI, where no browser sign-in happens: an API token from Settings works as it does today
+
+### Sign-in through the browser
+- [ ] `dokyr login https://panel.example.com`: opens the browser on the panel, the user signs in there as usual (password, passkey, GitHub) and approves the device; the CLI never sees the password
+- [ ] The flow: the CLI listens on a loopback port, opens `/cli/authorize` with a state and a PKCE challenge, the panel shows who asks (device name, a short code also printed in the terminal) and redirects back to `127.0.0.1` with a one-time code, which the CLI exchanges for a token
+- [ ] Without a browser on the machine (SSH session): `dokyr login --no-browser` prints a URL and a code to type on another device, and polls until it is approved (device flow)
+- [ ] API: `POST /api/cli/authorize` (start), the approval page in the web app (session only, same-origin), `POST /api/cli/token` (exchange); one-time codes hashed, valid a few minutes, rate-limited like sign-in
+- [ ] The token is an API token of that user, marked as a CLI sign-in with the device name: listed in Settings → API tokens and Settings → Security with last use, revocable there, ended with the user. A token still cannot create tokens
+- [ ] `dokyr logout` revokes the token on the panel and forgets it; `dokyr whoami` shows the panel, the user and the role
+- [ ] Plain-HTTP panels (`http://<server-ip>`): refuse by default, `--insecure` to go on with a warning; the loopback redirect and PKCE keep the code from other local programs
+
+### Versions
+- [ ] The CLI reads the panel's version at sign-in and on each command (`/api/meta`), and says so when the panel is older than a command needs or newer than the CLI knows: "this panel is v0.31.0; `dokyr logs --follow` needs v0.33.0", "update the CLI"
+- [ ] An API version in `/api/meta` (a number raised on breaking changes) so the check does not compare release numbers
+- [ ] `dokyr version` prints the CLI's version and the panel's; `dokyr upgrade` fetches the client release that matches the panel
+
+### Commands
+- [ ] `dokyr projects list|create`, `dokyr apps list|create|show`
+- [ ] `dokyr deploy APP` with the deployment log streamed to the terminal and the exit code of the deploy; `--no-wait`; `dokyr rollback APP [DEPLOYMENT]`
+- [ ] `dokyr logs APP [--follow] [--since]`, `dokyr ps` (apps with state and health)
+- [ ] `dokyr env list|set|unset APP` (secrets never printed), `dokyr env pull|push` with a `.env` file
+- [ ] `dokyr exec APP [-- command]`: the container terminal over the existing WebSocket, with the role rules of the interface
+- [ ] `dokyr domains`, `dokyr databases list|backup|restore`, `dokyr open APP` (the app's URL or its page on the panel)
+- [ ] `--json` on every listing for scripts; a stable exit code per kind of failure (not signed in, forbidden, not found, deploy failed)
+- [ ] Project file: `dokyr link` writes `.dokyr.json` (context, project, app) in a repository, so `dokyr deploy` and `dokyr logs` need no argument there
+- [ ] Shell completion (bash, zsh, fish, PowerShell)
+
+### Distribution
+- [ ] Release workflow builds the client for each platform and attaches the archives and checksums to the GitHub release
+- [ ] Install script for the client (`curl … | sh`, no root, into `~/.local/bin`), Homebrew tap, Scoop or winget for Windows
+- [ ] Docs: `docs/remote-cli.md` (install, sign-in, contexts, CI use), and the difference from the server CLI in `docs/cli.md`
+
+### Security
+- [ ] The approval page names the device and the code, and cannot be framed or auto-submitted; approving needs a click in a signed-in session
+- [ ] Only loopback redirect addresses are accepted; the code is bound to the PKCE verifier and to the state
+- [ ] Tests: a code used twice, an expired code, a wrong verifier, a redirect that is not loopback, a revoked token, a maintainer's CLI token against admin routes
+
 ## Cross-cutting
 
 - [x] Unit tests for store, secret, deploy state machine, Caddy config builder — 86 Go test files; `internal/store`, `internal/secret`, `internal/deploy` (phases, recreate, rollback, drain), `internal/proxy` (`TestBuildSites`, wildcard and panel paths)
 - [~] Integration tests against a real Docker daemon — executor, builder (Dockerfile, Railpack, build caps, secrets), proxy with real Caddy, registry with real Distribution and RustFS, databases (`TestRealDatabaseInstances`, `TestRealInstanceBackupRestore`, `TestRealPublicPort`); skipped with `-short`, so CI does not run them, and a full app deploy still has no automated real-Docker test. v0.31.0: `TestRealDeploy` is the full app deploy; still skipped in CI
 - [x] Linting in CI (v0.31.0) — `pnpm run lint` and golangci-lint v2.15.0 (built with `go run` at the version `make lint` uses) in the `test` job of `.github/workflows/ci.yml`; not yet through a CI run
 - [~] End-to-end test: install script on a fresh VM (v0.31.0) — `install/e2e.sh` (`make installer-e2e`, CI job `install`): builds the image, runs the rendered installer with the local image, then checks the setup link, the recovery port, the proxy on port 80, the host command, the owner created with the setup token, and a second run that keeps the installation. It installs for real, so it refuses to run outside CI unless `E2E_FRESH_VM=1`. Written and syntax-checked; not yet run (it has not been through CI)
-- [ ] Security review: socket exposure, secrets at rest, webhook token handling, headers
+- [x] Security review: socket exposure, secrets at rest, webhook token handling, headers (2026-11-20) — a read of the code in the four areas, recorded in `docs/security.md` with what is sound, what was fixed and what stays open. Fixed, with tests (`TestMaintainerVolumesAndBoundApps`, `TestRetiredSites`): a maintainer mounting a volume the panel owns (`dokyr-*`, BuildKit state); a maintainer changing the source, image, command or processes of, or opening a terminal in, an app with a host path; a `*` route serving a retired panel hostname (it answers 404 now); `NET_RAW` dropped from every container the panel creates; an open host shell closing when its user stops being an admin; `owner reset-password` revoking API tokens. Open, in order: one shared Docker network for panel, proxy and apps; Railpack and Nixpacks planning inside the panel container (not confirmed exploitable); Buildpacks building next to the Docker socket; cron jobs without the host terminal's re-confirmation; SSH Git URLs and registry servers not checked for internal addresses; file mounts unsealed; no `__Host-` cookie prefix; registry tokens and webhook URLs not tied to a user; per-address rate limits only; the GitHub App webhook reading 25 MiB before the signature check. Nothing was exploited live, and the `NET_RAW` drop is not yet checked on real Docker (a template that pings, such as Uptime Kuma)
 - [x] Panel self-backup (SQLite file + key) and restore procedure (2026-11-16): Settings → Backup sends an encrypted copy (`age` with a passphrase, sealed at rest with the panel key; `gzip`+`tar` of a `VACUUM INTO` snapshot, the key and a manifest) to an S3 connection on a cron schedule or on demand, keeps the newest N, lists and downloads them; failures feed the `backup.failed` alert. `panel restore FILE` checks the file (passphrase, key fingerprint, size, SQLite integrity) and stages it; the next start moves the old database, WAL and key to `backups/pre-restore-<time>` and swaps the backup in (`internal/selfbackup`; real round-trip against RustFS checked)
-- [ ] Docs: install, first deploy, backups, updates, recovery CLI
+- [x] Docs: install, first deploy, backups, updates, recovery CLI (2026-11-20) — `docs/install.md` (requirements, what the installer leaves, how an update swaps the panel and goes back), `docs/first-deploy.md`, `docs/backups.md` (panel backup, restore on the same or a new server), `docs/recovery.md` (lost link or password, the `127.0.0.1:8080` port, a panel that does not start, a lost server), `docs/cli.md` (`update`, `restore`), `docs/security.md`; written from the code and the interface texts, the commands not run on a server
 - [x] Release pipeline: versioned image (amd64 + arm64), generated `install.sh`, changelog — push a `vX.Y.Z` tag; `.github/workflows/release.yml` publishes `ghcr.io/brahimoulhaj/paas:X.Y.Z` and `:latest` and a GitHub release with generated notes (v0.1.0 → v0.6.0 published)
 
 ## Out of v1

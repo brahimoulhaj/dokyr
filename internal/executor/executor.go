@@ -130,8 +130,9 @@ type Container struct {
 	ExitCode   int
 	Restarts   int // times Docker restarted it under its restart policy
 	OOMKilled  bool
-	Health     string // "", starting, healthy, unhealthy
-	IP         string // address on the shared network, empty when not running
+	Health     string   // "", starting, healthy, unhealthy
+	IP         string   // address on the shared network, empty when not running
+	Binds      []string // host paths mounted into it (InspectContainer only)
 	CreatedAt  time.Time
 	StartedAt  time.Time
 }

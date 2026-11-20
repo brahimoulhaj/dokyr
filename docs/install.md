@@ -2,6 +2,14 @@
 
 Back to the [docs index](README.md).
 
+## Requirements
+
+- Linux, amd64 or arm64. Ubuntu and Debian are what the installer is tried on.
+- Root access, and ports 80 and 443 free and open to the internet (the proxy needs them
+  for HTTP and for certificates).
+- Docker with the Compose plugin; the installer installs Docker when it is missing.
+- One panel per server.
+
 ## Quick install
 
 On a fresh Ubuntu or Debian server (amd64 or arm64) with ports 80 and 443 open:
@@ -15,10 +23,51 @@ It installs Docker if needed, starts the panel and prints a one-time setup link
 `… | sudo DOKYR_PUBLIC_URL=http://203.0.113.10 sh`. A specific version:
 `https://github.com/brahimoulhaj/paas/releases/download/v0.1.1/install.sh`.
 
+The link is valid for 15 minutes and works once; `dokyr setup-token` prints a new one.
+Next: [First deploy](first-deploy.md).
+
+What the installer leaves on the server:
+
+| Path | What |
+|---|---|
+| `/var/lib/dokyr/` | all panel data: `dokyr.db`, `secret.key`, certificates, deployment logs (mode 700) |
+| `/var/lib/dokyr/compose.yaml` | the panel's Compose project; rewritten by the installer and by updates |
+| `/var/lib/dokyr/panel.env` | `DOKYR_*` settings ([Configuration](configuration.md)); kept across runs |
+| `/usr/local/bin/dokyr` | host command that runs the CLI inside the panel container |
+| `127.0.0.1:8080` | the panel without the proxy, from the server itself ([Recovery](recovery.md)) |
+
 ## Updating
 
-Later versions install from the panel (Settings → Updates) or over SSH with `dokyr update`
-(`--check` only reports, `--yes` skips the prompt).
+Two ways, same mechanism:
+
+- **In the panel**: Settings → Updates shows the running version and whether a newer one
+  exists (**Check now**), and installs it with **Update now**. **Update automatically**
+  checks every hour and installs what it finds; an update waits while a deployment runs.
+- **Over SSH**: `dokyr update` (`--check` only reports, `--yes` skips the prompt).
+
+What happens: the new image is pulled, then a short-lived helper container
+(`dokyr-updater`) replaces the panel container with one from the new image and the same
+configuration (mounts, environment, networks, ports). The panel is away for a few
+seconds; the proxy, apps and databases keep running and serving traffic. If the new panel
+does not answer its health check within 90 seconds, it is removed and the previous one
+comes back; Settings → Updates and the activity log say why.
+
+The installer's `/var/lib/dokyr/compose.yaml` is rewritten to the new image, so running
+the installer again later keeps the updated version.
+
+Database migrations run when the new version starts and are not undone by going back to
+an older image. Before an update that matters, take a panel backup
+([Backups and restore](backups.md)).
+
+When an update seems stuck:
+
+```sh
+docker logs -f dokyr-updater   # the helper's own log
+docker logs dokyr              # the panel
+dokyr version
+```
+
+More in [Recovery](recovery.md).
 
 ## Install on a server (custom image)
 
