@@ -482,7 +482,7 @@ This one only speaks the HTTP API, as a user, with that user's role.
 - [ ] `dokyr logs APP [--follow] [--since]`, `dokyr ps` (apps with state and health)
 - [ ] `dokyr env list|set|unset APP` (secrets never printed), `dokyr env pull|push` with a `.env` file
 - [ ] `dokyr exec APP [-- command]`: the container terminal over the existing WebSocket, with the role rules of the interface
-- [ ] `dokyr domains`, `dokyr databases list|backup|restore`, `dokyr open APP` (the app's URL or its page on the panel)
+- [~] `dokyr domains`, `dokyr databases list|backup|restore`, `dokyr open APP` (the app's URL or its page on the panel) — `databases list|show|create|start|stop|restart|delete` (alias `db`): operations are followed until they end, the password is never shown, delete asks for the name and says the data volume stays. Backup, restore, connection details and the databases and users inside an instance need the browser session on the panel, so they are not in the CLI. `domains` and `open` left
 - [ ] `--json` on every listing for scripts; a stable exit code per kind of failure (not signed in, forbidden, not found, deploy failed)
 - [ ] Project file: `dokyr link` writes `.dokyr.json` (context, project, app) in a repository, so `dokyr deploy` and `dokyr logs` need no argument there
 - [~] Shell completion (bash, zsh, fish, PowerShell) — `dokyr completion <shell>` from Cobra prints the scripts; command and flag names only (no project or app names yet), and not tried in each shell

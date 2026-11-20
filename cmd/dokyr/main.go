@@ -71,6 +71,7 @@ func newRootCmd(s streams) *cobra.Command {
 		newAppsCmd(s),
 		newDeployCmd(s),
 		newDeploymentsCmd(s),
+		newDatabasesCmd(s),
 		newRegistryCmd(s),
 		&cobra.Command{
 			Use:   "version",
