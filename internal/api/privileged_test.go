@@ -310,8 +310,21 @@ func TestMaintainerVolumesAndBoundApps(t *testing.T) {
 
 	// Its terminal is a shell on that path.
 	term := appURL + "/terminal?cols=80&rows=24&shell=auto"
-	e.srv.deployer = &terminalStub{Deployer: e.deployer}
-	if code, m := maint.call("GET", term, nil, "Origin", e.url); code != 403 || m["error"].(map[string]any)["code"] != "forbidden" {
-		t.Fatalf("maintainer terminal of an app with a host path = %d %v", code, m)
+	stub := &terminalStub{Deployer: e.deployer, binds: []string{"/var/run/docker.sock"}}
+	e.srv.deployer = stub
+	denied := func(when string) {
+		t.Helper()
+		if code, m := maint.call("GET", term, nil, "Origin", e.url); code != 403 || m["error"].(map[string]any)["code"] != "forbidden" {
+			t.Fatalf("maintainer terminal of an app with a host path, %s = %d %v", when, code, m)
+		}
+	}
+	denied("saved and running")
+	// Taking the mount out of the settings does not take it out of the running container.
+	maint.must(200, "PATCH", appURL, map[string]any{"mounts": []any{}})
+	denied("removed from the settings, not yet deployed")
+	// Deployed without it: an ordinary app again (the request then fails as a WebSocket upgrade).
+	stub.binds = nil
+	if code, m := maint.call("GET", term, nil, "Origin", e.url); code == 403 {
+		t.Fatalf("maintainer terminal after the host path is gone = %d %v", code, m)
 	}
 }

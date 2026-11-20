@@ -389,6 +389,11 @@ func (d *Docker) InspectContainer(ctx context.Context, id string) (Container, er
 	if in.NetworkSettings != nil {
 		c.IP = d.ip(in.NetworkSettings.Networks)
 	}
+	for _, m := range in.Mounts {
+		if m.Type == mount.TypeBind {
+			c.Binds = append(c.Binds, m.Source)
+		}
+	}
 	return c, nil
 }
 

@@ -58,7 +58,10 @@ type terminalStub struct {
 	Deployer
 	conn  net.Conn
 	sizes chan [2]uint
+	binds []string // host paths of the running container
 }
+
+func (d *terminalStub) HostPaths(context.Context, string) ([]string, error) { return d.binds, nil }
 
 func (d *terminalStub) OpenTerminal(context.Context, string, string, uint, uint) (executor.Terminal, error) {
 	return &testPTY{Conn: d.conn, sizes: d.sizes}, nil

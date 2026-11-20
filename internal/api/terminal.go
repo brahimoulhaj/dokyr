@@ -23,6 +23,8 @@ import (
 
 type terminalDeployer interface {
 	OpenTerminal(context.Context, string, string, uint, uint) (executor.Terminal, error)
+	// HostPaths lists the host paths the app's running container mounts.
+	HostPaths(ctx context.Context, appID string) ([]string, error)
 }
 
 func terminalOrigin(r *http.Request) bool {
@@ -53,10 +55,19 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, "get terminal app", err, "") {
 		return
 	}
-	// A shell in a container that mounts a host path is a shell on that path.
-	if !isAdmin(userFrom(r.Context())) && hasBind(store.AppInput{Mounts: a.Mounts}) {
-		writeError(w, http.StatusForbidden, "forbidden", "this app mounts a host path, so only an admin can open its terminal")
-		return
+	// A shell in a container that mounts a host path is a shell on that path. The running
+	// container decides, not only the saved settings: removing the mount there changes
+	// nothing until the next deploy.
+	if !isAdmin(userFrom(r.Context())) {
+		bound := hasBind(store.AppInput{Mounts: a.Mounts})
+		if !bound {
+			paths, err := d.HostPaths(r.Context(), a.ID)
+			bound = err == nil && len(paths) > 0
+		}
+		if bound {
+			writeError(w, http.StatusForbidden, "forbidden", "this app mounts a host path, so only an admin can open its terminal")
+			return
+		}
 	}
 	s.serveTerminal(w, r, terminalSession{
 		open: func(ctx context.Context) (executor.Terminal, error) {

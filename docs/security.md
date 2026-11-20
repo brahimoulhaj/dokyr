@@ -32,7 +32,8 @@ privately to the maintainers rather than in a public issue.
 - A maintainer cannot add or change a host-path mount, mount a volume the panel owns
   (`dokyr-*`, BuildKit state), or choose a Buildpacks builder image. An app that already
   mounts a host path is the admin's: a maintainer cannot change its source, image, start
-  command or processes, nor open its terminal.
+  command or processes, nor open its terminal; the terminal looks at what the running
+  container mounts, not only at the saved settings.
 - The host terminal asks for the password or a passkey again, closes when idle, and closes
   when its user stops being an admin.
 - Dockerfile and Static builds run in BuildKit without entitlements. Git clones restrict
