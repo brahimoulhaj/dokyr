@@ -20,7 +20,7 @@ import (
 
 // fakePanel answers what the CLI calls. The exchange checks the verifier against the
 // challenge the browser was given, as the panel does.
-func fakePanel(t *testing.T, challenge *string, revoked *[]string) *httptest.Server {
+func fakePanel(t *testing.T, challenge *string, revoked *[]string, created *[]map[string]any, deleted *[]string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/meta", func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +80,26 @@ func fakePanel(t *testing.T, challenge *string, revoked *[]string) *httptest.Ser
 			`"cpu_limit":0.5,"memory_limit_mb":512,"runtime_state":"running","needs_redeploy":true,"environment":{"A":"1","B":"2"},`+
 			`"health":{"status":"healthy","reason":"","restarts":2},"process_states":[{"name":"worker","state":"running"}],"created_at":"2026-11-01T10:00:00Z"}`)
 	})
+	mux.HandleFunc("POST /api/projects/{id}/apps", func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		in["project"] = r.PathValue("id")
+		*created = append(*created, in)
+		if in["name"] == "web" {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"error":{"code":"conflict","message":"an app with this name already exists in the project"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "01NEWAPP", "project_id": r.PathValue("id"), "name": in["name"], "source_type": in["source_type"]})
+	})
+	mux.HandleFunc("GET /api/git-sources", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `[{"id":"01G","type":"github","name":"My GitHub"}]`)
+	})
+	mux.HandleFunc("DELETE /api/apps/{id}", func(w http.ResponseWriter, r *http.Request) {
+		*deleted = append(*deleted, r.PathValue("id"))
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /api/apps/{id}/routes", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `[{"url":"https://api.example.com/"},{"url":"https://example.com/api"}]`)
 	})
@@ -127,8 +147,9 @@ func TestLoginThenProjects(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	var challenge string
-	var revoked []string
-	panel := fakePanel(t, &challenge, &revoked)
+	var revoked, deleted []string
+	var created []map[string]any
+	panel := fakePanel(t, &challenge, &revoked, &created, &deleted)
 
 	// Signed out: status says so and fails, logout has nothing to do.
 	var first bytes.Buffer
@@ -277,6 +298,77 @@ func TestLoginThenProjects(t *testing.T) {
 	out.Reset()
 	if err := run(context.Background(), []string{"apps", "show", "01A", "--json"}, plain(&out)); err != nil || !strings.Contains(out.String(), `"needs_redeploy":true`) {
 		t.Fatalf("apps show --json = %v %s", err, out.String())
+	}
+
+	// Creating an app: from an image, from Git, and what a script must say.
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "create", "cache", "-p", "shop", "--image", "redis:7", "--port", "6379",
+		"--memory", "256", "--cpu", "0.5", "-e", "A=1", "-e", "B=x=y"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Created app cache in project shop") {
+		t.Fatalf("apps create = %v %q", err, out.String())
+	}
+	got := created[len(created)-1]
+	env, _ := got["environment"].(map[string]any)
+	if got["project"] != "01P" || got["source_type"] != "image" || got["image"] != "redis:7" || got["port"] != float64(6379) ||
+		got["memory_limit_mb"] != float64(256) || got["cpu_limit"] != 0.5 || env["A"] != "1" || env["B"] != "x=y" {
+		t.Fatalf("apps create sent %v", got)
+	}
+	if _, has := got["git_repository"]; has {
+		t.Fatalf("an image app was sent Git fields: %v", got)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "create", "site", "--project", "Blog", "--git", "https://github.com/org/site.git",
+		"--branch", "prod", "--git-source", "my github", "--builder", "static", "--port", "80", "--json"}, plain(&out)); err != nil || !strings.Contains(out.String(), "01NEWAPP") {
+		t.Fatalf("apps create from git = %v %q", err, out.String())
+	}
+	got = created[len(created)-1]
+	if got["project"] != "02P" || got["source_type"] != "git" || got["git_repository"] != "https://github.com/org/site.git" ||
+		got["git_branch"] != "prod" || got["git_source_id"] != "01G" || got["builder"] != "static" {
+		t.Fatalf("apps create from git sent %v", got)
+	}
+	sent := len(created)
+	for name, c := range map[string]struct {
+		args []string
+		want string
+	}{
+		"no project":      {[]string{"apps", "create", "x", "--image", "nginx", "--port", "80"}, "which project"},
+		"no source":       {[]string{"apps", "create", "x", "-p", "shop", "--port", "80"}, "usage"},
+		"no name":         {[]string{"apps", "create", "-p", "shop", "--image", "nginx", "--port", "80"}, "usage"},
+		"no port":         {[]string{"apps", "create", "x", "-p", "shop", "--image", "nginx"}, "which port"},
+		"both sources":    {[]string{"apps", "create", "x", "-p", "shop", "--image", "nginx", "--git", "https://a/b.git", "--port", "80"}, "none of the others"},
+		"bad env":         {[]string{"apps", "create", "x", "-p", "shop", "--image", "nginx", "--port", "80", "-e", "NOVALUE"}, "KEY=VALUE"},
+		"no such source":  {[]string{"apps", "create", "x", "-p", "shop", "--git", "https://a/b.git", "--git-source", "nope", "--port", "80"}, "no Git connection"},
+		"no such project": {[]string{"apps", "create", "x", "-p", "nope", "--image", "nginx", "--port", "80"}, "no project"},
+	} {
+		if err := run(context.Background(), c.args, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("apps create with %s = %v, want %q", name, err, c.want)
+		}
+	}
+	if len(created) != sent {
+		t.Fatalf("a refused create reached the panel: %v", created[sent:])
+	}
+	if err := run(context.Background(), []string{"apps", "create", "web", "-p", "shop", "--image", "nginx", "--port", "80"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("apps create of a taken name = %v", err)
+	}
+
+	// Deleting: never without a yes when nobody is there to ask.
+	if err := run(context.Background(), []string{"apps", "delete", "web"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("apps delete without --yes = %v", err)
+	}
+	if err := run(context.Background(), []string{"apps", "delete", "api", "--yes"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "--project") {
+		t.Fatalf("apps delete of a name two projects have = %v", err)
+	}
+	if err := run(context.Background(), []string{"apps", "delete", "nope", "--yes"}, plain(io.Discard)); err == nil || !strings.Contains(err.Error(), "no app") {
+		t.Fatalf("apps delete of an unknown app = %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("a refused delete reached the panel: %v", deleted)
+	}
+	out.Reset()
+	if err := run(context.Background(), []string{"apps", "rm", "api", "-p", "blog", "-y"}, plain(&out)); err != nil || !strings.Contains(out.String(), "Deleted app api from project Blog") {
+		t.Fatalf("apps rm = %v %q", err, out.String())
+	}
+	if len(deleted) != 1 || deleted[0] != "02A" {
+		t.Fatalf("deleted on the panel = %v", deleted)
 	}
 
 	// Registry: one line per tag, named the way it is pulled.

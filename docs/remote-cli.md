@@ -6,7 +6,7 @@ The remote CLI manages a panel from your own machine. It only speaks the panel's
 as you, with your role. It is not the [server CLI](cli.md) (`setup-token`, `owner`,
 `update`, `restore`), which works on the data directory and runs on the server.
 
-It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show) and the images of the built-in registry. The rest (deploy, logs, contexts,
+It is a first slice: sign-in and sign-out, who is signed in, projects (list, create), apps (list, show, create, delete) and the images of the built-in registry. The rest (deploy, logs, contexts,
 releases for each platform) is planned under M7 in the [Roadmap](../Roadmap.md).
 
 ## Build
@@ -104,6 +104,38 @@ An app is named by its name or its id. The state is the container's: `running`, 
 check's verdict, the addresses the app answers at, its extra processes, how many
 variables it has (their values are not shown) and whether changes wait for a deploy.
 Both take `--json`.
+
+### Create an app
+
+```
+dokyr apps create web --project Demo --image nginx:1.27 --port 80
+dokyr apps create api -p Demo --git https://github.com/org/api.git --branch main --port 8080
+dokyr apps create                  # in a terminal: asks for the project, name, source and port
+```
+
+An app comes from a ready image (`--image`) or is built from a Git repository (`--git`,
+with `--branch`, `--builder` and, for a private repository, `--git-source` naming a Git
+connection of the panel). Also: `--command`, `--cpu` (cores), `--memory` (MB), and
+`-e KEY=VALUE` as often as needed for plain variables. Secrets and build-time variables
+are set in the panel.
+
+In a script the name, `--project` (unless the panel has only one), a source and `--port`
+are required. The panel validates and its refusal is printed as it comes.
+
+Creating an app does not start it: it runs after its first deploy, which for now is done
+from the app's page on the panel.
+
+### Delete an app
+
+```
+dokyr apps delete web --project Demo
+dokyr apps delete web --yes        # no prompt, for scripts
+```
+
+Deleting removes the app's containers, makes its addresses stop answering, and drops its
+settings, variables and deployment history. It cannot be undone. In a terminal the
+command shows what will go and asks you to type the app's name. In a script it refuses
+without `--yes`. A maintainer is refused by the panel: deleting takes an admin or the owner.
 
 ## Registry
 

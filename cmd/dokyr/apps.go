@@ -104,7 +104,7 @@ func newAppsCmd(s streams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "apps",
 		Aliases: []string{"app"},
-		Short:   "List apps and look at one",
+		Short:   "List, show, create and delete apps",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -140,7 +140,7 @@ func newAppsCmd(s streams) *cobra.Command {
 	show.Flags().StringVarP(&showProject, "project", "p", "", "the project the app is in (name or id)")
 	show.Flags().BoolVar(&showJSON, "json", false, "print the app as JSON, as the API returns it")
 
-	cmd.AddCommand(list, show)
+	cmd.AddCommand(list, show, newAppsCreateCmd(s), newAppsDeleteCmd(s))
 	return cmd
 }
 
