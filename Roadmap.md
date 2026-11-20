@@ -7,7 +7,7 @@ Dokyr (dokyr.com, earlier working name Berth); the name lives only in `internal/
 **How to use:** tick a box only when the item is built *and* verified (test or manual run).
 `[ ]` not started · `[~]` in progress · `[x]` done.
 
-**Progress:** M0 ◐ (sqlc started: two stores of about thirty) · M1 ◐ (users and roles, host terminal and cron jobs in; email invites, more owners, per-project access, VPS checks left) · M2 ◐ (nearly done: Gitea token left; Nixpacks not yet deployed through the panel) · M3 ◐ (TLS modes, redirects, Certificates page left) · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS; built-in S3 per-bucket keys in; a real domain and VPS checks left) · M6 ◐ (container metrics with history and charts; notifications and alert rules; continuous health monitoring; usage threshold alerts; MongoDB and ClickHouse remain) · M7 ○ (remote CLI for a personal machine with browser sign-in: not started) · Cross-cutting ◐ (docs and security review done, with open security findings in `docs/security.md`; install e2e written, not yet run)
+**Progress:** M0 ◐ (sqlc started: two stores of about thirty) · M1 ◐ (users and roles, host terminal and cron jobs in; email invites, more owners, per-project access, VPS checks left) · M2 ◐ (nearly done: Gitea token left; Nixpacks not yet deployed through the panel) · M3 ◐ (TLS modes, redirects, Certificates page left) · M4 ◐ (instances, users/grants with drop and password rotation, Adminer, S3 backups/restore/deletion, daily/weekly/cron retention policies, whole-instance backups, backups of deleted instances, public ports; checked on the VPS) · M5 ◐ (registry done and checked on the VPS; built-in S3 per-bucket keys in; a real domain and VPS checks left) · M6 ◐ (container metrics with history and charts; notifications and alert rules; continuous health monitoring; usage threshold alerts; MongoDB and ClickHouse remain) · M7 ◐ (remote CLI started: `cmd/dokyr` with browser sign-in and `projects list`; device flow, contexts, the other commands and releases left) · Cross-cutting ◐ (docs and security review done, with open security findings in `docs/security.md`; install e2e written, not yet run)
 
 **Open checks (built, not yet verified) — v0.20.0 to v0.32.0, newest first.** Nothing from v0.20.0 onward is checked on the VPS.
 - v0.32.0: a maintainer refused on a `dokyr-*` volume, on an app with the Docker socket mounted (edit and terminal, also right after removing the mount without a deploy) in the browser; an app and a template that pings (Uptime Kuma) deployed without `NET_RAW`; a retired panel hostname under a `*` route answering 404 on the VPS
@@ -451,20 +451,20 @@ look at things from the terminal. The CLI on the server (`dokyr setup-token`, `o
 This one only speaks the HTTP API, as a user, with that user's role.
 
 ### Client binary (`cmd/dokyr`)
-- [ ] A client of its own, apart from `cmd/panel`: no store, Docker or web app inside, only the API client; macOS, Linux and Windows, amd64 and arm64
+- [~] A client of its own, apart from `cmd/panel`: no store, Docker or web app inside, only the API client; macOS, Linux and Windows, amd64 and arm64 — `cmd/dokyr` (`make cli` writes `bin/cli/dokyr`); built and run on macOS arm64 only, no release builds yet
 - [ ] Naming: the installer's host command on the server is also called `dokyr`; decide whether the client takes the name on the server too (it would wrap the container CLI for the local commands) or the two stay apart
-- [ ] Config in the user's config directory (`~/.config/dokyr/config.json`, mode 600): contexts, each a panel URL, a user and a token; the token in the OS keychain where there is one, in the file otherwise
+- [~] Config in the user's config directory (`~/.config/dokyr/config.json`, mode 600): contexts, each a panel URL, a user and a token; the token in the OS keychain where there is one, in the file otherwise — the file with its contexts is in; the token is in the file everywhere, no keychain yet
 - [ ] Contexts for more than one panel: `dokyr context list|use|remove`, `--context` and `DOKYR_CONTEXT` for one command
 - [ ] `DOKYR_URL` and `DOKYR_TOKEN` for CI, where no browser sign-in happens: an API token from Settings works as it does today
 
 ### Sign-in through the browser
-- [ ] `dokyr login https://panel.example.com`: opens the browser on the panel, the user signs in there as usual (password, passkey, GitHub) and approves the device; the CLI never sees the password
-- [ ] The flow: the CLI listens on a loopback port, opens `/cli/authorize` with a state and a PKCE challenge, the panel shows who asks (device name, a short code also printed in the terminal) and redirects back to `127.0.0.1` with a one-time code, which the CLI exchanges for a token
+- [x] `dokyr login https://panel.example.com`: opens the browser on the panel, the user signs in there as usual (password, passkey, GitHub) and approves the device; the CLI never sees the password — a sign-in that passes through the sign-in page comes back to the approval (kept in the tab's session storage)
+- [x] The flow: the CLI listens on a loopback port, opens `/cli/authorize` with a state and a PKCE challenge, the panel shows who asks (device name, a short code also printed in the terminal) and redirects back to `127.0.0.1` with a one-time code, which the CLI exchanges for a token
 - [ ] Without a browser on the machine (SSH session): `dokyr login --no-browser` prints a URL and a code to type on another device, and polls until it is approved (device flow)
-- [ ] API: `POST /api/cli/authorize` (start), the approval page in the web app (session only, same-origin), `POST /api/cli/token` (exchange); one-time codes hashed, valid a few minutes, rate-limited like sign-in
-- [ ] The token is an API token of that user, marked as a CLI sign-in with the device name: listed in Settings → API tokens and Settings → Security with last use, revocable there, ended with the user. A token still cannot create tokens
+- [x] API: `POST /api/cli/authorize` (start), the approval page in the web app (session only, same-origin), `POST /api/cli/token` (exchange); one-time codes hashed, valid a few minutes, rate-limited like sign-in — `internal/api/cli_login.go`; pending codes are held in memory (5 minutes), not in the database
+- [~] The token is an API token of that user, marked as a CLI sign-in with the device name: listed in Settings → API tokens and Settings → Security with last use, revocable there, ended with the user. A token still cannot create tokens — an API token named `CLI on <device>`, listed and revocable under API tokens; the mark is the name only (no column), and it is not shown under Security
 - [ ] `dokyr logout` revokes the token on the panel and forgets it; `dokyr whoami` shows the panel, the user and the role
-- [ ] Plain-HTTP panels (`http://<server-ip>`): refuse by default, `--insecure` to go on with a warning; the loopback redirect and PKCE keep the code from other local programs
+- [x] Plain-HTTP panels (`http://<server-ip>`): refuse by default, `--insecure` to go on with a warning; the loopback redirect and PKCE keep the code from other local programs — a panel on a loopback address needs no flag
 
 ### Versions
 - [ ] The CLI reads the panel's version at sign-in and on each command (`/api/meta`), and says so when the panel is older than a command needs or newer than the CLI knows: "this panel is v0.31.0; `dokyr logs --follow` needs v0.33.0", "update the CLI"
@@ -472,7 +472,7 @@ This one only speaks the HTTP API, as a user, with that user's role.
 - [ ] `dokyr version` prints the CLI's version and the panel's; `dokyr upgrade` fetches the client release that matches the panel
 
 ### Commands
-- [ ] `dokyr projects list|create`, `dokyr apps list|create|show`
+- [~] `dokyr projects list|create`, `dokyr apps list|create|show` — `projects list` (with `--json`) only
 - [ ] `dokyr deploy APP` with the deployment log streamed to the terminal and the exit code of the deploy; `--no-wait`; `dokyr rollback APP [DEPLOYMENT]`
 - [ ] `dokyr logs APP [--follow] [--since]`, `dokyr ps` (apps with state and health)
 - [ ] `dokyr env list|set|unset APP` (secrets never printed), `dokyr env pull|push` with a `.env` file
@@ -485,12 +485,12 @@ This one only speaks the HTTP API, as a user, with that user's role.
 ### Distribution
 - [ ] Release workflow builds the client for each platform and attaches the archives and checksums to the GitHub release
 - [ ] Install script for the client (`curl … | sh`, no root, into `~/.local/bin`), Homebrew tap, Scoop or winget for Windows
-- [ ] Docs: `docs/remote-cli.md` (install, sign-in, contexts, CI use), and the difference from the server CLI in `docs/cli.md`
+- [~] Docs: `docs/remote-cli.md` (install, sign-in, contexts, CI use), and the difference from the server CLI in `docs/cli.md` — build, sign-in, projects and how the flow works; install, contexts and CI use wait for those features
 
 ### Security
-- [ ] The approval page names the device and the code, and cannot be framed or auto-submitted; approving needs a click in a signed-in session
-- [ ] Only loopback redirect addresses are accepted; the code is bound to the PKCE verifier and to the state
-- [ ] Tests: a code used twice, an expired code, a wrong verifier, a redirect that is not loopback, a revoked token, a maintainer's CLI token against admin routes
+- [x] The approval page names the device and the code, and cannot be framed or auto-submitted; approving needs a click in a signed-in session — the page is under the panel's `frame-ancestors 'none'`, and the approval is a same-origin POST that API tokens are refused on
+- [x] Only loopback redirect addresses are accepted; the code is bound to the PKCE verifier and to the state — the client sends a port and the panel builds the `127.0.0.1` address itself; the CLI checks the state
+- [x] Tests: a code used twice, an expired code, a wrong verifier, a redirect that is not loopback, a revoked token, a maintainer's CLI token against admin routes — `TestCLISignIn`, `TestCLISignInKeepsRole`; the client against a fake panel in `cmd/dokyr` (`TestLoginThenProjects`)
 
 ## Cross-cutting
 

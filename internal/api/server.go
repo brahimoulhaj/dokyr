@@ -48,6 +48,7 @@ type Server struct {
 	objectStore    ObjectStore
 	authPublicURL  string
 	loginFlows     loginFlows
+	cliGrants      cliGrants    // remote CLI sign-ins waiting for their exchange
 	authHTTPClient *http.Client // injected only by OAuth tests
 
 	logPoll  time.Duration // how often a deployment log stream looks for new lines
@@ -140,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tokens", s.requireAuth(sessionOnly(s.handleListTokens)))
 	mux.HandleFunc("POST /api/tokens", s.requireAuth(sessionOnly(s.handleCreateToken)))
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.requireAuth(sessionOnly(s.handleDeleteToken)))
+	mux.HandleFunc("POST /api/cli/authorize", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleCLIAuthorize))))
+	mux.HandleFunc("POST /api/cli/token", s.limit(s.authRate, s.handleCLIToken))
 
 	mux.HandleFunc("GET /api/git-sources", s.requireAuth(s.withGit(s.handleListGitSources)))
 	mux.HandleFunc("POST /api/git-sources/gitlab", s.requireAuth(s.withGit(s.handleAddGitLab)))

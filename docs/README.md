@@ -9,6 +9,7 @@ Detailed guides behind the [main README](../README.md). Progress is tracked in
 - [First deploy](first-deploy.md): project, app from an image or Git, variables, domain and HTTPS.
 - [Configuration](configuration.md): `DOKYR_*` environment variables, builds, proxy settings.
 - [CLI](cli.md): `dokyr` commands, setup links, owner password recovery.
+- [Remote CLI](remote-cli.md): sign in from your own machine through the browser, list projects.
 - [Users and roles](users-and-roles.md): invites, the roles table, host terminal confirmation.
 - [Sign-in methods](sign-in.md): passkeys, GitHub sign-in, active sessions.
 - [Cron jobs](cron-jobs.md): scheduled commands on the host.
