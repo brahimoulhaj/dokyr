@@ -92,7 +92,7 @@ func (s *Server) handlePutPanelSettings(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if in.Domain != "" {
-		taken, err := s.store.DomainExists(r.Context(), in.Domain)
+		taken, err := s.store.HostRouted(r.Context(), in.Domain)
 		if err != nil {
 			s.internal(w, "panel settings", err)
 			return

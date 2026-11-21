@@ -35,7 +35,7 @@ import * as dockerMetrics from './dockerMetrics'
 import * as databases from './databases'
 import * as lists from './lists'
 import * as command from './command'
-import * as domains from './domains'
+import * as routing from './routing'
 import * as templates from './templates'
 import * as compose from './compose'
 import * as newApp from './newApp'
@@ -48,7 +48,7 @@ type Code = 'en' | 'fr' | 'ar' | 'es'
 
 const pick = (l: Code) => ({
   databases: databases[l] as typeof databases.en,
-  domains: domains[l] as typeof domains.en,
+  routing: routing[l] as typeof routing.en,
   templates: templates[l] as typeof templates.en,
   compose: compose[l] as typeof compose.en,
   newApp: newApp[l] as typeof newApp.en,

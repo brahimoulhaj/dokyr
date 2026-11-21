@@ -100,22 +100,21 @@ func TestPanelDomainIsAdminOnly(t *testing.T) {
 	pid := maint.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
 	app := maint.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})
 
-	// The retired name: not as a domain, not as a subdomain route, not under a wildcard.
-	maint.must(403, "POST", "/api/domains", map[string]any{"hostname": "panel.example.com"})
-	maint.must(403, "POST", "/api/projects/"+pid+"/domains", map[string]any{"hostname": "panel.example.com"})
-	d := maint.must(201, "POST", "/api/projects/"+pid+"/domains", map[string]any{"hostname": "example.com"})
-	routes := "/api/domains/" + d["id"].(string) + "/routes"
-	maint.must(403, "POST", routes, map[string]any{"subdomain": "panel", "path": "/", "app_id": app["id"]})
-	maint.must(403, "POST", routes, map[string]any{"subdomain": "*", "path": "/", "app_id": app["id"]})
-	rt := maint.must(201, "POST", routes, map[string]any{"subdomain": "shop", "path": "/", "app_id": app["id"]})
-	maint.must(403, "PATCH", "/api/routes/"+rt["id"].(string), map[string]any{"subdomain": "panel", "path": "/", "app_id": app["id"]})
+	// The retired name: not as a hostname, not under a wildcard, not by moving a route there.
+	const routes = "/api/routes"
+	maint.must(403, "POST", routes, map[string]any{"hostname": "panel.example.com", "app_id": app["id"]})
+	maint.must(403, "POST", routes, map[string]any{"hostname": "panel.example.com/api", "app_id": app["id"]})
+	maint.must(403, "POST", routes, map[string]any{"hostname": "*.example.com", "app_id": app["id"]})
+	rt := maint.must(201, "POST", routes, map[string]any{"hostname": "shop.example.com", "app_id": app["id"]})
+	maint.must(403, "PATCH", routes+"/"+rt["id"].(string), map[string]any{"hostname": "panel.example.com", "path": "/", "app_id": app["id"]})
 
 	// An admin decides; and a name the panel takes back is no longer retired.
-	admin.must(201, "POST", routes, map[string]any{"subdomain": "panel", "path": "/api", "app_id": app["id"]})
+	admin.must(201, "POST", routes, map[string]any{"hostname": "panel.example.com/api", "app_id": app["id"]})
+	// Once an admin routed it, a maintainer may add paths to it or edit them.
 	admin.must(200, "PUT", "/api/settings/panel", map[string]any{"domain": "old.example.com"})
 	admin.must(200, "PUT", "/api/settings/panel", map[string]any{"domain": "console.example.com"})
-	maint.must(403, "POST", "/api/domains", map[string]any{"hostname": "old.example.com"})
-	maint.must(201, "POST", "/api/domains", map[string]any{"hostname": "other.example.org"})
+	maint.must(403, "POST", routes, map[string]any{"hostname": "old.example.com", "app_id": app["id"]})
+	maint.must(201, "POST", routes, map[string]any{"hostname": "other.example.org", "app_id": app["id"]})
 }
 
 // What moves the panel's own data, its updates and where its alerts go is for admins.

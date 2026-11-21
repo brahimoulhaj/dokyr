@@ -24,7 +24,7 @@ func TestProjectSummaries(t *testing.T) {
 	d2, _ := s.CreateDeployment(ctx, api.ID, "manual", "nginx", 80, logPath)
 	_ = s.FinishDeployment(ctx, d2.ID, DeployFailed, "boom")
 	_ = s.SetAppCurrentDeployment(ctx, api.ID, d1.ID, "stopped")
-	if _, err := s.CreateDomain(ctx, p.ID, "shop.example.com", "auto"); err != nil {
+	if _, err := s.CreateRoute(ctx, RouteInput{Hostname: "shop.example.com", Path: "/", AppID: web.ID}); err != nil {
 		t.Fatal(err)
 	}
 	sums, err := s.ProjectSummaries(ctx)

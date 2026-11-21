@@ -92,7 +92,7 @@ func TestRegistryAPI(t *testing.T) {
 	// Its domain is then off limits for apps and the panel.
 	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
 	app := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "api", "image": "registry.example.com/shop/api:1.0", "port": 80})
-	e.must(409, "POST", "/api/projects/"+pid+"/domains", map[string]any{"hostname": "registry.example.com"})
+	e.must(409, "POST", "/api/routes", map[string]any{"hostname": "registry.example.com", "app_id": app["id"]})
 	e.must(409, "PUT", "/api/settings/panel", map[string]any{"domain": "registry.example.com"})
 
 	// Tokens: shown once, then only their name.

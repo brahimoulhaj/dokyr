@@ -224,26 +224,6 @@ type Deployment struct {
 	CommitMessage string
 }
 
-type Domain struct {
-	ID        string
-	ProjectID sql.NullString
-	Hostname  string
-	TlsMode   string
-	CreatedAt string
-	UpdatedAt string
-}
-
-type DomainRoute struct {
-	ID          string
-	DomainID    string
-	Subdomain   string
-	Path        string
-	AppID       string
-	StripPrefix int64
-	CreatedAt   string
-	UpdatedAt   string
-}
-
 type Event struct {
 	ID         string
 	UserID     sql.NullString
@@ -342,6 +322,17 @@ type RegistryToken struct {
 	LastUsedAt sql.NullString
 	CreatedAt  string
 	UpdatedAt  string
+}
+
+type Route struct {
+	ID          string
+	Hostname    string
+	Path        string
+	AppID       string
+	StripPrefix int64
+	TlsMode     string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 type S3AccessKey struct {

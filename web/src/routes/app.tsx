@@ -37,9 +37,10 @@ import { appSource, appStatus, commitSubject, dateTime, deploymentVersion, durat
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { poll } from '../lib/live'
 import { useCan } from '../lib/roles'
+import { RoutingBoard } from '../components/routing'
 
 const ContainerTerminal = lazy(() => import('../components/container-terminal'))
-export const appTabs = ['overview', 'deployments', 'logs', 'metrics', 'terminal', 'settings'] as const
+export const appTabs = ['overview', 'deployments', 'routing', 'logs', 'metrics', 'terminal', 'settings'] as const
 export type AppTab = (typeof appTabs)[number]
 
 export function AppPage() {
@@ -210,6 +211,7 @@ export function AppPage() {
           git={a.source_type === 'git'}
         />
       )}
+      {tab === 'routing' && <RoutingBoard appId={a.id} intro={t.routing.appIntro} />}
       {tab === 'logs' && <RuntimeLogs app={a} />}
       {tab === 'metrics' && <ResourceMetrics kind="apps" id={a.id} />}
       {(tab === 'terminal' || terminalAppId === a.id) && (
@@ -350,7 +352,7 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
               '—'
             )}
           </Fact>
-          <Fact label={t.app.tabs.domains}>
+          <Fact label={t.app.tabs.routing}>
             {routes.data?.length ? (
               <span className="flex flex-col items-start">
                 {routes.data.map((r) => (
@@ -362,7 +364,7 @@ function Overview({ app, latest, onOpenDeployments }: { app: App; latest?: Deplo
             ) : (
               <span className="text-muted">{t.app.noDomains}</span>
             )}
-            <Link to="/projects/$projectId" params={{ projectId: app.project_id }} search={{ tab: 'domains' }} className="mt-1 block text-xs text-muted hover:text-fg">
+            <Link to="/projects/$projectId/apps/$appId" params={{ projectId: app.project_id, appId: app.id }} search={{ tab: 'routing' }} className="mt-1 block text-xs text-muted hover:text-fg">
               {t.app.manageDomains}
             </Link>
           </Fact>

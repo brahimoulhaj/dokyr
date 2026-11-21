@@ -125,7 +125,7 @@ func (s *Server) handlePutRegistrySettings(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusConflict, "conflict", "this hostname is the built-in storage's domain; the registry needs one of its own")
 			return
 		}
-		if taken, err := s.store.DomainExists(ctx, in.Domain); err != nil {
+		if taken, err := s.store.HostRouted(ctx, in.Domain); err != nil {
 			s.internal(w, "registry settings", err)
 			return
 		} else if taken {

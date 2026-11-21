@@ -2,30 +2,27 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, PageHeader, Panel, QueryState } from '../components/ui'
-import { allDomainsQuery, api, appQuery, appsQuery, dnsQuery, domainsQuery, hostHref, isWildcard, projectQuery, projectsQuery, type App, type Domain, type Project, type Route } from '../lib/api'
+import { api, appQuery, appsQuery, isWildcard, projectQuery, projectsQuery, routesQuery, type App, type Project, type Route } from '../lib/api'
 import { appSource, appStatus } from '../lib/format'
 import { useT } from '../lib/i18n'
-import { Sheet, SheetActions } from '../components/sheet'
+import { Sheet } from '../components/sheet'
 import { EnvironmentEditor } from '../components/environment'
-import { DnsBadge, DnsRecords, dnsRail, dnsState } from '../components/dns'
 import { projectDatabasesQuery } from '../lib/databases'
 import { DatabaseStatus, NewDatabase } from './databases'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { poll } from '../lib/live'
-import { withToast } from '../lib/toasts'
-import { ActionsMenu } from '../components/actions-menu'
-import { ConfirmModal } from '../components/confirm-dialog'
-import { AddDomain } from './domains'
 import { useCan } from '../lib/roles'
 
-export const projectTabs = ['apps', 'databases', 'domains', 'environment', 'settings'] as const
+export const projectTabs = ['apps', 'databases', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
 
 export function ProjectPage() {
   const { projectId } = useParams({ strict: false }) as { projectId: string }
   const project = useQuery(projectQuery(projectId))
   const apps = useQuery(appsQuery(projectId))
-  const domains = useQuery(domainsQuery(projectId))
+  // Routes belong to apps; the project's are those of its apps.
+  const routes = (useQuery(routesQuery).data ?? []).filter((r) => r.project_id === projectId)
+  const front = mainRoute(routes)
   const databases = useQuery(projectDatabasesQuery(projectId))
   const [addingDatabase, setAddingDatabase] = useState(false)
   const navigate = useNavigate()
@@ -49,10 +46,10 @@ export function ProjectPage() {
         crumbs={<ContextBreadcrumb projectId={p.id} projectName={p.name} projectTab={tab} />}
         title={p.name}
         subtitle={
-          (p.description || mainDomain(domains.data)) && (
+          (p.description || front) && (
             <>
               {p.description && <span className="block">{p.description}</span>}
-              {mainDomain(domains.data) && <DomainLink domain={mainDomain(domains.data)!} />}
+              {front && <RouteLink route={front} />}
             </>
           )
         }
@@ -70,7 +67,7 @@ export function ProjectPage() {
             className={cx('border-b-2 px-3 py-1.5 text-sm whitespace-nowrap', name === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg')}
             aria-current={name === tab ? 'page' : undefined}
           >
-            {{ apps: t.project.apps, databases: t.databases.title, domains: t.project.domainsTab, environment: t.project.envTab, settings: t.common.settings }[name]}
+            {{ apps: t.project.apps, databases: t.databases.title, environment: t.project.envTab, settings: t.common.settings }[name]}
             {name === 'apps' && apps.data && <span className="ms-1.5 text-xs text-muted">{apps.data.length}</span>}
             {name === 'databases' && databases.data && <span className="ms-1.5 text-xs text-muted">{databases.data.length}</span>}
           </Link>
@@ -86,13 +83,12 @@ export function ProjectPage() {
             ) : (
               <ul className="divide-y divide-line">
                 {apps.data.map((a) => (
-                  <AppRow key={a.id} app={a} />
+                  <AppRow key={a.id} app={a} routes={routes.filter((r) => r.app_id === a.id)} />
                 ))}
               </ul>
             ))}
         </Panel>
       )}
-      {tab === 'domains' && <ProjectDomains projectId={p.id} apps={apps.data ?? []} />}
       {tab === 'databases' && <div className="space-y-4">
         <p className="text-sm text-muted">{t.project.databasesIntro}</p>
         <Panel>
@@ -124,7 +120,7 @@ export function ProjectPage() {
 }
 
 /** One app in the list. It asks for the app on its own to learn what the container is doing. */
-function AppRow({ app }: { app: App }) {
+function AppRow({ app, routes }: { app: App; routes: Route[] }) {
   const live = useQuery({ ...appQuery(app.id), refetchInterval: poll(10_000) })
   const t = useT()
   const status = appStatus(live.data ?? app, false)
@@ -140,6 +136,11 @@ function AppRow({ app }: { app: App }) {
           <span className="block truncate text-xs text-muted">
             <span dir="ltr">{appSource(app)}</span> · {t.project.port(app.port)}
           </span>
+          {routes.length > 0 && (
+            <span dir="ltr" className="block truncate text-xs text-muted">
+              {routes.map((r) => r.url.replace(/^https?:\/\//, '')).join('  ·  ')}
+            </span>
+          )}
         </span>
         <Badge tone={status.tone}>{status.label}</Badge>
       </Link>
@@ -235,217 +236,18 @@ function ProjectEnvironment({ projectId }: { projectId: string }) {
   )
 }
 
-// ---- domains ----
-
-type RouteSheet = { domain: Domain; route?: Route } | null
-
-/** The domains this project uses, each with the routes that send its paths to apps.
- * Domains are added on the Domains page; here one is picked from those no project uses. */
-function ProjectDomains({ projectId, apps }: { projectId: string; apps: App[] }) {
-  const t = useT()
-  const queryClient = useQueryClient()
-  const domains = useQuery(domainsQuery(projectId))
-  const all = useQuery(allDomainsQuery)
-  const [adding, setAdding] = useState(false)
-  const [routing, setRouting] = useState<RouteSheet>(null)
-  const [picked, setPicked] = useState('')
-  const free = (all.data ?? []).filter((d) => !d.project_id)
-  const choice = free.find((d) => d.id === picked)
-  const use = useMutation({
-    mutationFn: (d: Domain) => withToast(() => api<Domain>(`/projects/${projectId}/domains`, { method: 'POST', body: { domain_id: d.id } }),
-      { loading: t.project.usingToast(d.hostname), success: t.project.usedToast(d.hostname), error: t.project.useFailed }),
-    onSuccess: () => setPicked(''),
-    onSettled: () => { // a 503 still saved it
-      queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
-      queryClient.invalidateQueries({ queryKey: allDomainsQuery.queryKey })
-    },
-  })
-  return (
-    <div className="space-y-6">
-      <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (choice) use.mutate(choice) }} className="flex flex-wrap items-end gap-3">
-        <label className="block min-w-56 flex-1 space-y-1.5 text-xs text-muted sm:max-w-sm">
-          {t.project.pickDomain}
-          <select value={choice?.id ?? ''} onChange={(e) => setPicked(e.target.value)} disabled={free.length === 0 || use.isPending} dir="ltr"
-            className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg disabled:opacity-60">
-            <option value="">{free.length === 0 ? t.project.noFreeDomains : t.project.pickDomainPlaceholder}</option>
-            {free.map((d) => <option key={d.id} value={d.id}>{d.hostname}</option>)}
-          </select>
-        </label>
-        <Button type="submit" disabled={!choice || use.isPending}>{use.isPending ? t.app.adding : t.project.useDomain}</Button>
-        <Button type="button" variant="ghost" onClick={() => setAdding(true)}>{t.project.addDomain}</Button>
-        <Link to="/domains" className="ms-auto self-center text-xs text-muted hover:text-fg">
-          {t.project.manageDomains} <span aria-hidden className="inline-block rtl:-scale-x-100">→</span>
-        </Link>
-      </form>
-      <QueryState loading={domains.isPending} error={domains.error} what={t.project.domainsTab} />
-      {domains.data?.length === 0 && (
-        <Panel>
-          <Empty title={t.project.noDomains}>{t.project.noDomainsHint}</Empty>
-        </Panel>
-      )}
-      {domains.data?.map((d) => <DomainCard key={d.id} domain={d} projectId={projectId} onRoute={(route) => setRouting({ domain: d, route })} />)}
-
-      <Sheet open={adding} onOpenChange={setAdding} title={t.project.addDomain} description={t.app.noDomainsYetHint}>
-        {adding && <AddDomain projectId={projectId} onDone={() => setAdding(false)} />}
-      </Sheet>
-      <Sheet open={routing !== null} onOpenChange={(o) => !o && setRouting(null)} title={routing?.route ? t.project.editRoute : t.project.addRoute}
-        description={routing?.domain.hostname}>
-        {routing && <RouteForm projectId={projectId} apps={apps} domain={routing.domain} route={routing.route} onDone={() => setRouting(null)} />}
-      </Sheet>
-    </div>
-  )
+/** The address that stands for the project: a route serving "/" (its front door), else
+ * its first one. */
+function mainRoute(list: Route[]): Route | undefined {
+  const exact = list.filter((r) => !isWildcard(r.hostname))
+  return exact.find((r) => r.path === '/') ?? exact[0]
 }
 
-function DomainCard({ domain, projectId, onRoute }: { domain: Domain; projectId: string; onRoute: (r?: Route) => void }) {
-  const can = useCan()
-  const t = useT()
-  const queryClient = useQueryClient()
-  const dns = useQuery(dnsQuery(domain.id))
-  const state = dnsState(dns)
-  const [confirming, setConfirming] = useState(false)
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
-    queryClient.invalidateQueries({ queryKey: allDomainsQuery.queryKey })
-  }
-  const httpOnly = domain.tls_mode === 'http_only'
-  const host = domain.hostname
-  const detach = useMutation({
-    mutationFn: () => withToast(() => api<void>(`/projects/${projectId}/domains/${domain.id}`, { method: 'DELETE' }),
-      { loading: t.project.detachingToast(host), success: t.project.detachedToast(host), error: t.project.detachFailed }),
-    onSettled: () => { refresh(); queryClient.invalidateQueries({ queryKey: ['apps'] }) },
-  })
-  const setMode = useMutation({
-    mutationFn: (tls_mode: string) => withToast(() => api<Domain>(`/domains/${domain.id}`, { method: 'PATCH', body: { tls_mode } }),
-      { loading: t.domains.switching(host), success: t.domains.switched(host), error: t.domains.switchFailed }),
-    onSettled: refresh,
-  })
-  const busy = detach.isPending || setMode.isPending
+function RouteLink({ route }: { route: Route }) {
   return (
-    <Panel>
-      {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
-      <div className="relative flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 ps-5 pe-4">
-        {/* Same DNS badge and rail as the Domains page. */}
-        <span aria-hidden className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-300', dnsRail[state])} />
-        <div className="min-w-0 space-y-2">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <a href={hostHref(host, httpOnly)} target="_blank" rel="noreferrer" className="text-base leading-tight text-fg [overflow-wrap:anywhere] hover:text-accent" dir="ltr">
-              {host}
-            </a>
-            <DnsBadge state={state} />
-            {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
-          </p>
-          <DnsRecords dns={dns} />
-        </div>
-        <ActionsMenu
-          label={t.domains.actions}
-          ariaLabel={t.domains.actionsFor(host)}
-          disabled={busy}
-          items={[
-            { label: httpOnly ? t.app.useHttps : t.common.httpOnly, onSelect: () => setMode.mutate(httpOnly ? 'auto' : 'http_only') },
-            ...(can.remove ? [{ label: t.project.detachDomain, danger: true, onSelect: () => setConfirming(true) }] : []),
-          ]}
-        />
-      </div>
-      {domain.routes.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-muted">{t.project.noRoutes}</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {domain.routes.map((r) => <RouteRow key={r.id} route={r} projectId={projectId} onEdit={() => onRoute(r)} onChanged={refresh} />)}
-        </ul>
-      )}
-      <div className="border-t border-line px-4 py-3">
-        <Button variant="ghost" onClick={() => onRoute()}>{t.project.addRoute}</Button>
-      </div>
-      <ConfirmModal
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={t.project.detachTitle}
-        message={t.project.detachMessage(host, domain.routes.length)}
-        confirm={t.common.yesRemove}
-        onConfirm={() => detach.mutate()}
-      />
-    </Panel>
-  )
-}
-
-function RouteRow({ route, projectId, onEdit, onChanged }: { route: Route; projectId: string; onEdit: () => void; onChanged: () => void }) {
-  const can = useCan()
-  const t = useT()
-  const remove = useMutation({ mutationFn: () => api<void>(`/routes/${route.id}`, { method: 'DELETE' }), onSettled: onChanged })
-  return (
-    <li className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
-        <code dir="ltr" className="min-w-16 text-fg [overflow-wrap:anywhere]">{route.subdomain ? route.hostname : ''}{route.subdomain && route.path === '/' ? '' : route.path}</code>
-        <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
-        <Link to="/projects/$projectId/apps/$appId" params={{ projectId, appId: route.app_id }} className="hover:text-accent hover:underline">{route.app_name}</Link>
-        {route.strip_prefix && <Badge tone="muted">{t.project.stripped}</Badge>}
-      </div>
-      <span className="flex items-center gap-2">
-        <Button variant="ghost" onClick={onEdit}>{t.common.edit}</Button>
-        {can.remove && <ConfirmButton label={t.project.removeRoute} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
-      </span>
-      {remove.error && <p className="w-full text-xs text-danger">{remove.error.message}</p>}
-    </li>
-  )
-}
-
-function RouteForm({ projectId, apps, domain, route, onDone }: { projectId: string; apps: App[]; domain: Domain; route?: Route; onDone: () => void }) {
-  const t = useT()
-  const queryClient = useQueryClient()
-  const [subdomain, setSubdomain] = useState(route?.subdomain ?? '')
-  const [path, setPath] = useState(route?.path ?? (domain.routes.some((r) => r.subdomain === '' && r.path === '/') ? '/api' : '/'))
-  const [appId, setAppId] = useState(route?.app_id ?? apps[0]?.id ?? '')
-  const [strip, setStrip] = useState(route?.strip_prefix ?? false)
-  const save = useMutation({
-    mutationFn: () => {
-      const body = { subdomain, path, app_id: appId, strip_prefix: strip }
-      return route
-        ? api<Route>(`/routes/${route.id}`, { method: 'PATCH', body })
-        : api<Route>(`/domains/${domain.id}/routes`, { method: 'POST', body })
-    },
-    onSuccess: onDone,
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: domainsQuery(projectId).queryKey })
-      queryClient.invalidateQueries({ queryKey: ['apps'] })
-    },
-  })
-  if (apps.length === 0) return <p className="p-5 text-sm text-muted">{t.project.noApps}</p>
-  const root = path.trim() === '/' || path.trim() === ''
-  return (
-    <form onSubmit={(e: FormEvent) => { e.preventDefault(); save.mutate() }} className="space-y-5 p-5">
-      <Field label={t.project.routeSubdomain} name="route-subdomain" dir="ltr" placeholder="admin, *" hint={t.project.routeSubdomainHint(domain.hostname)}
-        value={subdomain} onChange={(e) => setSubdomain(e.target.value.trim().toLowerCase())} autoComplete="off" spellCheck={false} />
-      <Field label={t.project.routePath} name="route-path" required dir="ltr" placeholder="/api" hint={t.project.routePathHint}
-        value={path} onChange={(e) => setPath(e.target.value)} autoComplete="off" spellCheck={false} />
-      <label className="block space-y-1.5 text-xs text-muted">
-        {t.project.routeApp}
-        <select value={appId} onChange={(e) => setAppId(e.target.value)} className="block h-9 w-full border border-line bg-bg px-2 text-sm text-fg">
-          {apps.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-      </label>
-      {!root && <CheckOption checked={strip} onChange={setStrip} label={t.project.strip} hint={t.project.stripHint} />}
-      {save.error && <ErrorNote>{save.error.message}</ErrorNote>}
-      <SheetActions>
-        <Button type="submit" disabled={save.isPending || !appId}>{save.isPending ? t.common.saving : route ? t.common.save : t.project.addRoute}</Button>
-        <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
-      </SheetActions>
-    </form>
-  )
-}
-
-/** The domain that stands for the project: the one serving "/" (its front door), else the
- * first one. */
-function mainDomain(list: Domain[] | undefined): Domain | undefined {
-  const exact = list?.filter((d) => !isWildcard(d.hostname))
-  return exact?.find((d) => d.routes.some((r) => r.path === '/')) ?? exact?.[0] ?? list?.[0]
-}
-
-function DomainLink({ domain }: { domain: Domain }) {
-  const url = hostHref(domain.hostname, domain.tls_mode === 'http_only')
-  return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-accent hover:underline" dir="ltr">
-      <span className="[overflow-wrap:anywhere]">{domain.hostname}</span>
-      {url && <span aria-hidden="true">↗</span>}
+    <a href={route.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-accent hover:underline" dir="ltr">
+      <span className="[overflow-wrap:anywhere]">{route.url.replace(/^https?:\/\//, '')}</span>
+      <span aria-hidden="true">↗</span>
     </a>
   )
 }

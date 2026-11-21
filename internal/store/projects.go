@@ -516,7 +516,7 @@ func (s *Store) SetAppCurrentDeployment(ctx context.Context, appID, deploymentID
 		deploymentID, state, now(), appID))
 }
 
-// DeleteApp removes the app with its domains and deployments.
+// DeleteApp removes the app with its routes and deployments.
 func (s *Store) DeleteApp(ctx context.Context, appID string) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM apps WHERE id = ?`, appID))
 }

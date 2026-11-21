@@ -16,7 +16,7 @@ import { Package } from '@phosphor-icons/react/dist/csr/Package'
 import { Plus } from '@phosphor-icons/react/dist/csr/Plus'
 import { SquaresFour } from '@phosphor-icons/react/dist/csr/SquaresFour'
 import type { Icon } from '@phosphor-icons/react'
-import { allDomainsQuery, gitSourcesQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, type Project } from '../lib/api'
+import { gitSourcesQuery, objectStoreQuery, projectsQuery, registriesQuery, registrySettingsQuery, routesByHost, routesQuery, type Project } from '../lib/api'
 import { useCan } from '../lib/roles'
 import { databasesQuery } from '../lib/databases'
 import { useT } from '../lib/i18n'
@@ -39,7 +39,7 @@ export function Sidebar() {
   const databases = useQuery(databasesQuery)
   const store = useQuery({ ...objectStoreQuery, retry: false })
   const registries = useQuery(registriesQuery)
-  const domains = useQuery(allDomainsQuery)
+  const routes = useQuery(routesQuery)
   const builtin = useQuery({ ...registrySettingsQuery, retry: false })
   const gitSources = useQuery({ ...gitSourcesQuery, retry: false })
   const can = useCan()
@@ -88,7 +88,7 @@ export function Sidebar() {
       </Group>
 
       <Group label={ts.groupInfrastructure}>
-        <NavItem to="/domains" icon={Globe} label={t.domains.title} trailing={<Count n={domains.data?.length} />} />
+        <NavItem to="/routing" icon={Globe} label={t.routing.title} trailing={<Count n={routes.data && routesByHost(routes.data).length} />} />
         <NavItem to="/storage" icon={HardDrives} label={ts.storage} trailing={store.data && <StorageState enabled={store.data.enabled} state={store.data.state} />} />
         <NavItem to="/registry" icon={Package} label={ts.registry} trailing={<Count n={registries.isSuccess ? registryCount : undefined} />} />
         <NavItem to="/git" icon={GitBranch} label={t.settingsGit.title} trailing={<Count n={gitSources.data?.length} />} />
@@ -134,7 +134,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/domains' | '/git' | '/backups' | '/tokens' | '/cron'
+type To = '/' | '/projects' | '/activity' | '/registry' | '/settings' | '/databases' | '/storage' | '/routing' | '/git' | '/backups' | '/tokens' | '/cron'
 
 // Each item's icon is drawn outlined, and solid (fill weight) while its page is open.
 function NavItem({ to, icon: ItemIcon, label, exact, trailing }: { to: To; icon: Icon; label: string; exact?: boolean; trailing?: ReactNode }) {

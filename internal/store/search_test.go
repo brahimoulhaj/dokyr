@@ -18,7 +18,7 @@ func TestSearchResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateDomain(ctx, p.ID, "portal.example.com", TLSAuto); err != nil {
+	if _, err := s.CreateRoute(ctx, RouteInput{Hostname: "portal.example.com", Path: "/", AppID: a.ID}); err != nil {
 		t.Fatal(err)
 	}
 	// Seed intentionally unreadable secrets: search must never attempt decryption.

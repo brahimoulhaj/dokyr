@@ -7,8 +7,8 @@ link and send it yourself; the invited person opens it, picks a password and is 
 
 | | Owner | Admin | Maintainer |
 |---|---|---|---|
-| Create, deploy and configure apps, databases, domains | yes | yes | yes |
-| Delete apps, databases, domains, projects, backups and other resources | yes | yes | no |
+| Create, deploy and configure apps, databases, routes | yes | yes | yes |
+| Delete apps, databases, routes, projects, backups and other resources | yes | yes | no |
 | Host terminal, cron jobs, panel backups, GitHub sign-in configuration | yes | yes | no |
 | Invite and remove users, change roles | yes | no | no |
 

@@ -264,12 +264,20 @@ export type Deployment = {
   created_at: string
 }
 
-/** A path of a project domain sent to an app. */
-export type Route = { id: string; domain_id: string; hostname: string; subdomain: string; path: string; app_id: string; app_name: string; strip_prefix: boolean; url: string }
-
-/** A hostname of the panel, with the routes that send its paths to apps. project_id is ''
- * while no project uses it. */
-export type Domain = { id: string; project_id: string; project_name: string; hostname: string; tls_mode: string; routes: Route[]; created_at: string }
+/** A path of a hostname sent to an app. The hostname is the route's own ("*.example.com"
+ * for every other name under example.com); tls_mode is the same for all routes of a hostname. */
+export type Route = {
+  id: string
+  hostname: string
+  path: string
+  app_id: string
+  app_name: string
+  project_id: string
+  project_name: string
+  strip_prefix: boolean
+  tls_mode: 'auto' | 'http_only'
+  url: string
+}
 
 export type DnsHint = {
   hostname: string
@@ -407,17 +415,18 @@ export const isWildcard = (hostnameOrUrl: string) => hostnameOrUrl.includes('*')
 export const hostHref = (hostname: string, httpOnly: boolean) =>
   isWildcard(hostname) ? undefined : (httpOnly ? 'http://' : 'https://') + hostname
 
-/** Every domain of the panel, used by a project or not. */
-export const allDomainsQuery = {
-  queryKey: ['domains', 'all'] as const,
-  queryFn: () => api<Domain[]>('/domains'),
+/** Every route of the panel, by hostname then path: the whole of what the proxy sends to apps. */
+export const routesQuery = {
+  queryKey: ['routes'] as const,
+  queryFn: () => api<Route[]>('/routes'),
 }
 
-/** The domains a project uses. */
-export const domainsQuery = (projectId: string) => ({
-  queryKey: ['projects', projectId, 'domains'] as const,
-  queryFn: () => api<Domain[]>(`/projects/${projectId}/domains`),
-})
+/** Routes grouped by the hostname they answer on, in the order they came. */
+export function routesByHost(routes: Route[]): { hostname: string; routes: Route[] }[] {
+  const hosts = new Map<string, Route[]>()
+  for (const r of routes) hosts.set(r.hostname, [...(hosts.get(r.hostname) ?? []), r])
+  return [...hosts].map(([hostname, list]) => ({ hostname, routes: list }))
+}
 
 /** Where an app is reachable: its routes, with their URLs. */
 export const appRoutesQuery = (appId: string) => ({
@@ -425,9 +434,10 @@ export const appRoutesQuery = (appId: string) => ({
   queryFn: () => api<Route[]>(`/apps/${appId}/routes`),
 })
 
-export const dnsQuery = (domainId: string) => ({
-  queryKey: ['domains', domainId, 'dns'] as const,
-  queryFn: () => api<DnsHint>(`/domains/${domainId}/dns`),
+/** Where a routed hostname points, compared with this server's addresses. */
+export const dnsQuery = (hostname: string) => ({
+  queryKey: ['dns', hostname] as const,
+  queryFn: () => api<DnsHint>(`/hosts/${encodeURIComponent(hostname)}/dns`),
   staleTime: 30_000,
 })
 

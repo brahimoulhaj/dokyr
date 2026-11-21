@@ -51,29 +51,16 @@ func TestProjectsAppsDomains(t *testing.T) {
 		t.Fatalf("update app = %+v, %v", a, err)
 	}
 
-	// Domains belong to the project, unique panel-wide; routes send paths to apps.
-	d, err := s.CreateDomain(ctx, p.ID, "shop.example.com", "")
-	if err != nil || d.TLSMode != "auto" || d.ProjectID != p.ID {
-		t.Fatalf("create domain = %+v, %v", d, err)
-	}
-	if _, err := s.CreateDomain(ctx, p.ID, "shop.example.com", ""); !errors.Is(err, ErrConflict) {
-		t.Fatalf("hostname reuse = %v", err)
-	}
-	if _, err := s.CreateDomain(ctx, p.ID, "www.shop.example.com", ""); err != nil {
+	// Routes send paths of a hostname to apps.
+	if _, err := s.CreateRoute(ctx, RouteInput{Hostname: "shop.example.com", Path: "/", AppID: a.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
-		t.Error("DomainExists = false")
-	}
-	if _, err := s.CreateRoute(ctx, d.ID, "/", a.ID, false); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.CreateRoute(ctx, d.ID, "/", a.ID, false); !errors.Is(err, ErrConflict) {
-		t.Fatalf("the same path twice = %v", err)
+	if ok, _ := s.HostRouted(ctx, "shop.example.com"); !ok {
+		t.Error("HostRouted = false")
 	}
 	upstream := func() string {
 		sites, err := s.ProxySites(ctx)
-		if err != nil || len(sites) != 2 || sites[0].Host != "shop.example.com" || len(sites[0].Paths) != 1 || len(sites[1].Paths) != 0 {
+		if err != nil || len(sites) != 1 || sites[0].Host != "shop.example.com" || len(sites[0].Paths) != 1 {
 			t.Fatalf("sites = %+v, %v", sites, err)
 		}
 		return sites[0].Paths[0].Upstream
@@ -147,7 +134,7 @@ func TestProjectsAppsDomains(t *testing.T) {
 		t.Fatalf("deployments newest first = %+v", list)
 	}
 
-	// Deleting: a project with apps is refused; an app takes its domains and deployments along.
+	// Deleting: a project with apps is refused; an app takes its routes and deployments along.
 	if err := s.DeleteProject(ctx, p.ID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("delete project with apps = %v", err)
 	}
@@ -160,14 +147,11 @@ func TestProjectsAppsDomains(t *testing.T) {
 	if routes, _ := s.AppRoutes(ctx, a.ID); len(routes) != 0 {
 		t.Error("a route survived its app")
 	}
-	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
-		t.Error("the project's domain went with an app")
+	if ok, _ := s.HostRouted(ctx, "shop.example.com"); ok {
+		t.Error("the hostname stayed routed without its app")
 	}
 	if err := s.DeleteProject(ctx, p.ID); err != nil {
 		t.Fatalf("delete empty project: %v", err)
-	}
-	if ok, _ := s.DomainExists(ctx, "shop.example.com"); !ok {
-		t.Error("the domain went with its project; it should stay, unused")
 	}
 	if err := s.DeleteProject(ctx, p.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete project twice = %v", err)

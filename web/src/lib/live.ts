@@ -10,12 +10,11 @@ import { useEffect } from 'react'
 
 // Which queries read each table. A key matches every query that starts with it.
 const readers: Record<string, QueryKey[]> = {
-  projects: [['projects'], ['apps'], ['databases'], ['domains', 'all'], ['command-search']],
-  apps: [['apps'], ['projects'], ['command-search']],
+  projects: [['projects'], ['apps'], ['databases'], ['routes'], ['command-search']],
+  apps: [['apps'], ['projects'], ['routes'], ['command-search']],
   app_health_checks: [['apps']],
   deployments: [['deployments'], ['apps'], ['projects']],
-  domains: [['domains'], ['projects'], ['apps'], ['command-search']],
-  domain_routes: [['domains'], ['projects'], ['apps']],
+  routes: [['routes'], ['projects'], ['apps'], ['command-search']],
   events: [['events'], ['apps']],
   db_instances: [['databases'], ['projects'], ['apps'], ['command-search']],
   db_operations: [['database-operations'], ['databases'], ['database-catalog'], ['database-backups']],
