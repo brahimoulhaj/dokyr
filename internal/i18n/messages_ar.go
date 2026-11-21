@@ -314,7 +314,7 @@ func init() {
 		"this endpoint needs a signed-in browser session, not an API token":                                 "نقطة النهاية هذه تحتاج إلى جلسة متصفح مسجلة الدخول، لا إلى رمز API",
 		"this event cannot be limited to that target":                                                       "لا يمكن حصر هذا الحدث في ذلك الهدف",
 		"this hostname is already used by an app":                                                           "اسم المضيف هذا يستخدمه تطبيق",
-		"hostname must be a name like shop.example.com, or *.example.com for every other name under example.com (no port)": "يجب أن يكون hostname اسمًا مثل shop.example.com، أو ‎*.example.com لكل الأسماء الأخرى تحت example.com (دون منفذ)",
+		"hostname must be a name like shop.example.com, or *.example.com for every other name under example.com (no port)": "يجب أن يكون hostname اسمًا مثل shop.example.com، أو \u200e*.example.com لكل الأسماء الأخرى تحت example.com (دون منفذ)",
 		"app_id must be an existing app":                                                       "يجب أن يكون app_id تطبيقًا موجودًا",
 		"nothing is routed on this hostname":                                                   "لا يوجد أي توجيه على اسم المضيف هذا",
 		"this hostname is the built-in registry's domain":                                      "اسم المضيف هذا هو نطاق السجل المدمج",
