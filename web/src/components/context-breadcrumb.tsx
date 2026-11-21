@@ -8,10 +8,10 @@ import { CompactCombo, type ComboOption } from './combobox'
 type ContextBreadcrumbProps = {
   projectId: string
   projectName?: string
-  projectTab?: 'apps' | 'databases' | 'domains' | 'environment' | 'settings'
+  projectTab?: 'apps' | 'databases' | 'environment' | 'settings'
   appId?: string
   appName?: string
-  appTab?: 'overview' | 'deployments' | 'logs' | 'metrics' | 'terminal' | 'settings'
+  appTab?: 'overview' | 'deployments' | 'routing' | 'logs' | 'metrics' | 'terminal' | 'settings'
 }
 
 /** Compact breadcrumb with quick switches for the current project and app. */

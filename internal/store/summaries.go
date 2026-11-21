@@ -12,7 +12,7 @@ type ProjectSummary struct {
 	AppsStopped      int        `json:"apps_stopped"`
 	AppsNotDeployed  int        `json:"apps_not_deployed"`
 	Databases        int        `json:"databases"`
-	Domains          int        `json:"domains"`
+	Domains          int        `json:"domains"` // hostnames routed to its apps
 	LastDeployAt     *time.Time `json:"last_deploy_at"`
 	LastDeployStatus string     `json:"last_deploy_status"`
 	LastDeployApp    string     `json:"last_deploy_app"`
@@ -25,7 +25,7 @@ func (s *Store) ProjectSummaries(ctx context.Context) (map[string]ProjectSummary
  (SELECT COUNT(*) FROM apps a WHERE a.project_id=p.id AND a.desired_state<>'running' AND a.current_deployment_id IS NOT NULL AND a.current_deployment_id<>''),
  (SELECT COUNT(*) FROM apps a WHERE a.project_id=p.id AND (a.current_deployment_id IS NULL OR a.current_deployment_id='')),
  (SELECT COUNT(*) FROM db_instances d WHERE d.project_id=p.id),
- (SELECT COUNT(*) FROM domains m WHERE m.project_id=p.id),
+ (SELECT COUNT(DISTINCT r.hostname) FROM routes r JOIN apps a ON a.id=r.app_id WHERE a.project_id=p.id),
  l.created_at, COALESCE(l.status,''), COALESCE(l.name,'')
 FROM projects p LEFT JOIN (
  SELECT a.project_id, d.created_at, d.status, a.name,

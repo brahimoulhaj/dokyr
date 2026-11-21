@@ -7,9 +7,10 @@ import { FormActions, NameList, NewAppLayout, SummaryRows } from '../components/
 import { builderLabel, SourceFields, sourceForm, sourceInput, usesDockerfile, type OtherSource, type SourceForm } from '../components/source'
 import { NewFromTemplate } from '../components/templates'
 import { Button, ErrorNote, Field, HelpTip, PageHeader, QueryState } from '../components/ui'
-import { api, gitSourcesQuery, projectQuery, projectsQuery, registriesQuery, type App } from '../lib/api'
+import { api, gitSourcesQuery, projectQuery, projectsQuery, registriesQuery, routesQuery, type App, type Route } from '../lib/api'
 import { environmentMap, parseEnvironment } from '../lib/environment'
 import { useT } from '../lib/i18n'
+import { withToast } from '../lib/toasts'
 
 /**
  * The page a new app is made on: the form on one side, a summary of what it will create on
@@ -44,6 +45,7 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
   const [name, setName] = useState('')
   const [source, setSource] = useState(sourceForm())
   const [port, setPort] = useState('80')
+  const [address, setAddress] = useState('')
   const [envText, setEnvText] = useState('')
   const [envError, setEnvError] = useState('')
   const [limits, setLimits] = useState({ cpu: '0', memory: '0' })
@@ -51,14 +53,20 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
   const t = useT()
 
   const create = useMutation({
-    mutationFn: (environment: Record<string, string>) =>
-      api<App>(`/projects/${projectId}/apps`, {
+    mutationFn: async (environment: Record<string, string>) => {
+      const app = await api<App>(`/projects/${projectId}/apps`, {
         method: 'POST',
         body: { name, port: Number(port), ...sourceInput(source), environment, cpu_limit: Number(limits.cpu) || 0, memory_limit_mb: Number(limits.memory) || 0 },
-      }),
-    onSuccess: (a) => {
+      })
+      // The app exists either way; a refused address is fixed on its Routing tab.
+      const routed = !address || await withToast(() => api<Route>('/routes', { method: 'POST', body: { hostname: address, app_id: app.id } }),
+        { loading: t.routing.adding(address), success: t.routing.added(address), error: t.routing.addFailed }).then(() => true, () => false)
+      return { app, routed }
+    },
+    onSuccess: ({ app, routed }) => {
       queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
-      navigate({ to: '/projects/$projectId/apps/$appId', params: { projectId, appId: a.id } })
+      queryClient.invalidateQueries({ queryKey: routesQuery.queryKey })
+      navigate({ to: '/projects/$projectId/apps/$appId', params: { projectId, appId: app.id }, search: routed ? {} : { tab: 'routing' } })
     },
   })
 
@@ -96,6 +104,7 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
           ...(source.builder === 'buildpacks' ? [{ label: t.source.builderImage, value: source.build_image.trim() || 'heroku/builder:24', ltr: true }] : []),
         ]),
     { label: t.project.containerPort, value: port, ltr: true },
+    ...(address ? [{ label: t.routing.address, value: address, ltr: true }] : []),
     { label: t.app.environment, value: variables === null ? <span className="text-danger">{t.app.environmentInvalid}</span> : variables.length === 0 ? t.newApp.none : <NameList names={variables} /> },
     {
       label: t.app.settingsSections.resources,
@@ -130,6 +139,8 @@ function NewApp({ projectId, onDone }: { projectId: string; onDone: () => void }
         <Field label={t.project.containerPort} name="port" type="number" required min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} />
       </div>
       <SourceFields form={source} onChange={setSource} onOther={setOther} />
+      <Field label={`${t.routing.address} (${t.common.optional})`} name="address" dir="ltr" placeholder="shop.example.com"
+        hint={t.routing.newAppHint} value={address} onChange={(e) => setAddress(e.target.value.trim())} autoComplete="off" autoCapitalize="none" spellCheck={false} />
       <details className="group border border-line" open={!!envError || undefined}>
         <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-sm text-muted hover:text-fg">
           <span>{t.app.environment} <span className="text-xs">({t.common.optional})</span></span>

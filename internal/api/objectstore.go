@@ -113,7 +113,7 @@ func (s *Server) handlePutObjectStore(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "conflict", "this hostname is used by the panel or the registry; the storage needs one of its own")
 			return
 		}
-		if taken, err := s.store.DomainExists(ctx, in.Domain); err != nil {
+		if taken, err := s.store.HostRouted(ctx, in.Domain); err != nil {
 			s.internal(w, "object storage settings", err)
 			return
 		} else if taken {

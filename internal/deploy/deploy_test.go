@@ -1710,13 +1710,9 @@ func TestBuildCache(t *testing.T) {
 	}
 }
 
-// addRoute gives the app host: a project domain with a "/" route to the app.
+// addRoute gives the app host: a "/" route on that hostname to the app.
 func (e *env) addRoute(ctx context.Context, host string) (store.Route, error) {
-	d, err := e.st.CreateDomain(ctx, e.app.ProjectID, host, "")
-	if err != nil {
-		return store.Route{}, err
-	}
-	return e.st.CreateRoute(ctx, d.ID, "/", e.app.ID, false)
+	return e.st.CreateRoute(ctx, store.RouteInput{Hostname: host, Path: "/", AppID: e.app.ID})
 }
 
 // Extra processes run in their own containers, follow the app through deploys, stop and

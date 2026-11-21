@@ -338,7 +338,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetRegistryChecker(ex)
-	metrics := hostmetrics.New(hostmetrics.Options{DataDir: cfg.DataDir, ProcRoot: os.Getenv(brand.EnvPrefix() + "HOST_PROC")})
+	metrics := hostmetrics.New(hostmetrics.Options{DataDir: cfg.DataDir, ProcRoot: os.Getenv(brand.EnvPrefix() + "HOST_PROC"), History: containermetrics.HostHistory(st)})
 	go metrics.Run(ctx)
 	apiSrv.SetHostMetrics(metrics)
 	go notifier.WatchDisk(ctx, metrics.Snapshot, time.Minute)

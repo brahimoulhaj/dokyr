@@ -122,7 +122,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       case 'project': return navigate({ to: '/projects/$projectId', params: { projectId: resource.id } })
       case 'app': return navigate({ to: '/projects/$projectId/apps/$appId', params: { projectId: resource.project_id, appId: resource.id } })
       case 'database': return navigate({ to: '/databases/$databaseId', params: { databaseId: resource.id } })
-      case 'domain': return navigate({ to: '/domains' })
+      case 'domain': return navigate({ to: '/routing' })
       case 'registry': return navigate({ to: '/registry' })
       case 'git': return navigate({ to: '/git' })
       case 'storage': return navigate({ to: '/settings', search: { tab: 'storage' } })
@@ -131,7 +131,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
 
   const labels: Record<ResourceKind, string> = {
     project: t.shell.projects, app: t.project.apps, database: t.shell.databases,
-    domain: t.domains.title, registry: t.shell.registry, git: t.settingsGit.title, storage: t.settingsStorage.title,
+    domain: t.routing.title, registry: t.shell.registry, git: t.settingsGit.title, storage: t.settingsStorage.title,
   }
   const local: Entry[] = [
     { id: 'new-app', label: c.newApp, icon: Plus, group: c.actions, keywords: 'create new app application', run: chooseProject },
@@ -148,7 +148,7 @@ export function CommandPalette({ onOpenTerminal }: { onOpenTerminal?: () => void
       ['projects', t.shell.projects, FolderSimple, '/projects'],
       ['databases', t.shell.databases, Database, '/databases'],
       ['activity', t.shell.activity, ClockCounterClockwise, '/activity'],
-      ['domains', t.domains.title, Globe, '/domains'],
+      ['routing', t.routing.title, Globe, '/routing'],
       ['registry', t.shell.registry, Package, '/registry'],
       ['storage', t.storage.title, HardDrives, '/storage'],
       ['settings', t.common.settings, GearSix, '/settings'],

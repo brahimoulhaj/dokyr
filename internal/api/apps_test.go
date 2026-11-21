@@ -55,7 +55,7 @@ func TestAppsRequireAuth(t *testing.T) {
 	for _, c := range [][2]string{
 		{"GET", "/api/projects"}, {"POST", "/api/projects"}, {"GET", "/api/projects/x"}, {"DELETE", "/api/projects/x"},
 		{"GET", "/api/apps/x"}, {"POST", "/api/apps/x/deploy"}, {"POST", "/api/apps/x/stop"}, {"DELETE", "/api/apps/x"},
-		{"POST", "/api/projects/x/domains"}, {"DELETE", "/api/projects/x/domains/y"}, {"GET", "/api/domains"}, {"POST", "/api/domains"}, {"POST", "/api/domains/x/routes"}, {"DELETE", "/api/domains/x"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
+		{"GET", "/api/routes"}, {"POST", "/api/routes"}, {"PATCH", "/api/routes/x"}, {"DELETE", "/api/routes/x"}, {"PATCH", "/api/hosts/x.example.com"}, {"DELETE", "/api/hosts/x.example.com"}, {"GET", "/api/hosts/x.example.com/dns"}, {"GET", "/api/deployments/x/log"}, {"GET", "/api/events"},
 	} {
 		if code, _ := e.call(c[0], c[1], map[string]any{}); code != 401 {
 			t.Errorf("%s %s signed out = %d, want 401", c[0], c[1], code)
@@ -250,7 +250,7 @@ func TestDeployBusy(t *testing.T) {
 	}
 }
 
-func TestDomainsAPI(t *testing.T) {
+func TestRoutesAPI(t *testing.T) {
 	e := newEnv(t)
 	px := &fakeProxy{}
 	e.srv.SetProxy(px)
@@ -259,168 +259,105 @@ func TestDomainsAPI(t *testing.T) {
 	web := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
 	api := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "api", "image": "nginx:1", "port": 80})["id"].(string)
 	pid2 := e.must(201, "POST", "/api/projects", map[string]any{"name": "Blog"})["id"].(string)
-	stranger := e.must(201, "POST", "/api/projects/"+pid2+"/apps", map[string]any{"name": "blog", "image": "nginx:1", "port": 80})["id"].(string)
-	domains := "/api/projects/" + pid + "/domains"
+	blog := e.must(201, "POST", "/api/projects/"+pid2+"/apps", map[string]any{"name": "blog", "image": "nginx:1", "port": 80})["id"].(string)
+	const routes = "/api/routes"
 
-	for _, bad := range []string{"", "nodots", "https://shop.example.com", "shop.example.com/path", "*.example.com", "10.0.0.1", "shop.example.com:8443"} {
-		e.must(422, "POST", domains, map[string]any{"hostname": bad})
+	for _, bad := range []string{"", "nodots", "shop.example.com:8080", "1.2.3.4", "*.*.example.com", "shop.*.example.com", "*"} {
+		e.must(422, "POST", routes, map[string]any{"hostname": bad, "path": "/", "app_id": web})
 	}
-	e.must(404, "POST", "/api/projects/missing/domains", map[string]any{"hostname": "shop.example.com"})
-	if px.applied != 0 {
-		t.Fatalf("rejected input reached the proxy %d times", px.applied)
-	}
+	e.must(422, "POST", routes, map[string]any{"hostname": "shop.example.com", "path": "/a b", "app_id": web})
+	e.must(422, "POST", routes, map[string]any{"hostname": "shop.example.com", "path": "/", "app_id": "missing"})
+	e.must(422, "POST", routes, map[string]any{"hostname": "shop.example.com", "path": "/", "app_id": web, "tls_mode": "nope"})
 
-	d := e.must(201, "POST", domains, map[string]any{"hostname": " Shop.Example.com "})
-	if d["hostname"] != "shop.example.com" || d["tls_mode"] != "auto" || d["project_id"] != pid || px.applied != 1 {
-		t.Fatalf("created = %v, applied %d", d, px.applied)
+	// The hostname is typed with the route: nothing to add first. An address is taken apart.
+	before := px.applied
+	front := e.must(201, "POST", routes, map[string]any{"hostname": " Shop.Example.com ", "path": "", "app_id": web, "strip_prefix": true})
+	if front["hostname"] != "shop.example.com" || front["path"] != "/" || front["strip_prefix"] != false || front["url"] != "https://shop.example.com" ||
+		front["app_name"] != "web" || front["project_id"] != pid || front["project_name"] != "Shop" || front["tls_mode"] != "auto" || px.applied != before+1 {
+		t.Fatalf("/ route = %v (applied %d)", front, px.applied-before)
 	}
-	e.must(409, "POST", domains, map[string]any{"hostname": "shop.example.com"})
-	e.must(409, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"hostname": "shop.example.com"})
-	did := d["id"].(string)
-
-	// Routes: a path of the domain to an app of the same project.
-	routes := "/api/domains/" + did + "/routes"
-	e.must(422, "POST", routes, map[string]any{"path": "/a b", "app_id": web})
-	e.must(422, "POST", routes, map[string]any{"path": "/", "app_id": stranger})
-	e.must(422, "POST", routes, map[string]any{"path": "/", "app_id": "missing"})
-	front := e.must(201, "POST", routes, map[string]any{"path": "", "app_id": web, "strip_prefix": true})
-	if front["path"] != "/" || front["strip_prefix"] != false || front["url"] != "https://shop.example.com" || front["app_name"] != "web" {
-		t.Fatalf("/ route = %v", front)
-	}
-	back := e.must(201, "POST", routes, map[string]any{"path": "api/", "app_id": api})
-	if back["path"] != "/api" || back["strip_prefix"] != false || back["url"] != "https://shop.example.com/api" {
+	back := e.must(201, "POST", routes, map[string]any{"hostname": "https://shop.example.com/api/", "app_id": api})
+	if back["hostname"] != "shop.example.com" || back["path"] != "/api" || back["url"] != "https://shop.example.com/api" {
 		t.Fatalf("/api route = %v", back)
 	}
-	e.must(409, "POST", routes, map[string]any{"path": "/api", "app_id": web})
-	if m := e.must(200, "PATCH", "/api/routes/"+back["id"].(string), map[string]any{"path": "/api", "app_id": api, "strip_prefix": true}); m["strip_prefix"] != true {
-		t.Fatalf("strip = %v", m)
+	e.must(409, "POST", routes, map[string]any{"hostname": "shop.example.com", "path": "/api", "app_id": web})
+	// A hostname belongs to no project: another project's app takes a path of it.
+	other := e.must(201, "POST", routes, map[string]any{"hostname": "shop.example.com/blog", "app_id": blog})
+	if other["project_name"] != "Blog" {
+		t.Fatalf("/blog route = %v", other)
 	}
-	e.must(409, "PATCH", "/api/routes/"+back["id"].(string), map[string]any{"path": "/", "app_id": api})
-	list := e.list(domains)
-	if len(list) != 1 || len(list[0]["routes"].([]any)) != 2 {
-		t.Fatalf("domains = %v", list)
+
+	if m := e.must(200, "PATCH", routes+"/"+back["id"].(string), map[string]any{"hostname": "shop.example.com", "path": "/api", "app_id": api, "strip_prefix": true}); m["strip_prefix"] != true {
+		t.Fatalf("patched route = %v", m)
+	}
+	e.must(409, "PATCH", routes+"/"+back["id"].(string), map[string]any{"hostname": "shop.example.com", "path": "/", "app_id": api})
+	e.must(404, "PATCH", routes+"/missing", map[string]any{"hostname": "shop.example.com", "path": "/x", "app_id": api})
+	if list := e.list(routes); len(list) != 3 || list[0]["path"] != "/" || list[1]["path"] != "/api" || list[2]["path"] != "/blog" {
+		t.Fatalf("routes = %v", list)
 	}
 	if got := e.list("/api/apps/" + api + "/routes"); len(got) != 1 || got[0]["url"] != "https://shop.example.com/api" {
 		t.Fatalf("app routes = %v", got)
 	}
 
-	// TLS mode: HTTP only for a CDN that terminates TLS; URLs follow.
-	e.must(422, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "nope"})
-	before := px.applied
-	if m := e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "http_only"}); m["tls_mode"] != "http_only" || px.applied != before+1 {
-		t.Fatalf("http only = %v", m)
+	// The TLS mode is the hostname's, for all its routes; a new route there takes it.
+	host := "/api/hosts/shop.example.com"
+	e.must(422, "PATCH", host, map[string]any{"tls_mode": "nope"})
+	e.must(404, "PATCH", "/api/hosts/nothing.example.com", map[string]any{"tls_mode": "http_only"})
+	before = px.applied
+	if m := e.must(200, "PATCH", host, map[string]any{"tls_mode": "http_only"}); m["tls_mode"] != "http_only" || px.applied != before+1 {
+		t.Fatalf("patch hostname = %v (applied %d)", m, px.applied-before)
 	}
-	e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "http_only"}) // no change, no reload
-	if px.applied != before+1 {
-		t.Fatal("unchanged mode reloaded the proxy")
+	for _, rt := range e.list(routes) {
+		if rt["tls_mode"] != "http_only" || !strings.HasPrefix(rt["url"].(string), "http://shop.example.com") {
+			t.Fatalf("route after the switch = %v", rt)
+		}
 	}
-	if got := e.list("/api/apps/" + web + "/routes"); got[0]["url"] != "http://shop.example.com" {
-		t.Errorf("http-only url = %v", got[0]["url"])
+	if m := e.must(201, "POST", routes, map[string]any{"hostname": "shop.example.com/docs", "app_id": web, "tls_mode": "auto"}); m["tls_mode"] != "http_only" {
+		t.Fatalf("a new route on an http-only hostname = %v", m)
+	}
+	if m := e.must(201, "POST", routes, map[string]any{"hostname": "cdn.example.com", "app_id": web, "tls_mode": "http_only"}); m["url"] != "http://cdn.example.com" {
+		t.Fatalf("a new http-only hostname = %v", m)
 	}
 
-	// The panel's domain and project domains exclude each other, both ways.
+	// The panel's domain and routed hostnames exclude each other, both ways.
 	e.must(409, "PUT", "/api/settings/panel", map[string]any{"domain": "shop.example.com"})
 	e.must(200, "PUT", "/api/settings/panel", map[string]any{"domain": "panel.example.com"})
-	e.must(409, "POST", domains, map[string]any{"hostname": "panel.example.com"})
+	e.must(409, "POST", routes, map[string]any{"hostname": "panel.example.com", "app_id": web})
+	e.must(409, "PATCH", routes+"/"+back["id"].(string), map[string]any{"hostname": "panel.example.com", "path": "/api", "app_id": api})
 
-	// DNS hint.
-	dns := "/api/domains/" + did + "/dns"
+	// DNS hint, for hostnames that are routed.
 	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) { return []string{"203.0.113.5"}, nil }
 	e.srv.serverAddrs = func() []string { return []string{"203.0.113.5"} }
-	if m := e.must(200, "GET", dns, nil); m["resolves"] != true || m["points_here"] != true {
+	if m := e.must(200, "GET", host+"/dns", nil); m["resolves"] != true || m["points_here"] != true || m["hostname"] != "shop.example.com" {
 		t.Errorf("dns match = %v", m)
 	}
-	e.must(404, "GET", "/api/domains/missing/dns", nil)
+	e.must(404, "GET", "/api/hosts/nothing.example.com/dns", nil)
 
 	// Proxy down: saved, and the caller is told it is not live.
 	px.err = errors.New("down")
-	e.must(503, "POST", domains, map[string]any{"hostname": "www.shop.example.com"})
-	if got := e.list(domains); len(got) != 2 {
-		t.Fatalf("domain not saved while the proxy was down: %v", got)
+	e.must(503, "POST", routes, map[string]any{"hostname": "www.shop.example.com", "app_id": web})
+	if got := e.list("/api/apps/" + web + "/routes"); len(got) != 4 {
+		t.Fatalf("route not saved while the proxy was down: %v", got)
 	}
 	px.err = nil
 
-	// Deleting an app removes its routes, not the domain; deleting the domain frees the hostname.
+	// Deleting an app removes its routes; removing a hostname removes all of its routes.
 	if code, _ := e.raw("DELETE", "/api/apps/"+api, nil); code != 204 {
 		t.Fatal("delete app")
 	}
-	if got := e.list(domains); len(got[0]["routes"].([]any))+len(got[1]["routes"].([]any)) != 1 {
-		t.Errorf("routes after deleting an app = %v", got)
+	if list := e.list(routes); len(list) != 5 {
+		t.Fatalf("routes after app delete = %v", list)
 	}
-	e.must(204, "DELETE", "/api/routes/"+front["id"].(string), nil)
-	e.must(404, "DELETE", "/api/routes/"+front["id"].(string), nil)
-	e.must(204, "DELETE", "/api/domains/"+did, nil)
-	e.must(404, "DELETE", "/api/domains/"+did, nil)
-	e.must(201, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"hostname": "shop.example.com"})
-}
-
-func TestTopLevelDomainsAPI(t *testing.T) {
-	e := newEnv(t)
-	px := &fakeProxy{}
-	e.srv.SetProxy(px)
-	e.signIn()
-	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
-	web := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
-	pid2 := e.must(201, "POST", "/api/projects", map[string]any{"name": "Blog"})["id"].(string)
-
-	// Added on its own: listed, used by no project, and already known to the proxy.
-	e.must(422, "POST", "/api/domains", map[string]any{"hostname": "nodots"})
-	e.must(422, "POST", "/api/domains", map[string]any{"hostname": "shop.example.com", "project_id": "missing"})
-	d := e.must(201, "POST", "/api/domains", map[string]any{"hostname": " Shop.Example.com ", "tls_mode": "http_only"})
-	if d["hostname"] != "shop.example.com" || d["project_id"] != "" || d["tls_mode"] != "http_only" || px.applied != 1 {
-		t.Fatalf("created = %v, applied %d", d, px.applied)
+	e.must(204, "DELETE", routes+"/"+front["id"].(string), nil)
+	e.must(404, "DELETE", routes+"/"+front["id"].(string), nil)
+	e.must(204, "DELETE", host, nil)
+	e.must(404, "DELETE", host, nil)
+	if list := e.list(routes); len(list) != 2 {
+		t.Fatalf("routes after hostname delete = %v", list)
 	}
-	did := d["id"].(string)
-	e.must(409, "POST", "/api/domains", map[string]any{"hostname": "shop.example.com"})
-	if got := e.list("/api/projects/" + pid + "/domains"); len(got) != 0 {
-		t.Fatalf("project domains before attach = %v", got)
-	}
-	// No routes while no project uses it.
-	e.must(422, "POST", "/api/domains/"+did+"/routes", map[string]any{"path": "/", "app_id": web})
-
-	// A project picks it; a second project cannot.
-	attach := "/api/projects/" + pid + "/domains"
-	e.must(422, "POST", attach, map[string]any{})
-	e.must(422, "POST", attach, map[string]any{"domain_id": "missing"})
-	if m := e.must(201, "POST", attach, map[string]any{"domain_id": did}); m["project_id"] != pid || m["project_name"] != "Shop" {
-		t.Fatalf("attached = %v", m)
-	}
-	e.must(409, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"domain_id": did})
-	e.must(201, "POST", "/api/domains/"+did+"/routes", map[string]any{"path": "/", "app_id": web})
-	all := e.list("/api/domains")
-	if len(all) != 1 || all[0]["project_name"] != "Shop" || len(all[0]["routes"].([]any)) != 1 {
-		t.Fatalf("all domains = %v", all)
-	}
-
-	// Created straight into a project.
-	if m := e.must(201, "POST", "/api/domains", map[string]any{"hostname": "blog.example.com", "project_id": pid2}); m["project_id"] != pid2 {
-		t.Fatalf("created in project = %v", m)
-	}
-	if got := e.list("/api/projects/" + pid2 + "/domains"); len(got) != 1 || got[0]["hostname"] != "blog.example.com" {
-		t.Fatalf("blog domains = %v", got)
-	}
-
-	// Detach: only from the project that uses it; routes go, the domain stays and is free.
-	e.must(404, "DELETE", "/api/projects/"+pid2+"/domains/"+did, nil)
-	e.must(404, "DELETE", "/api/projects/"+pid+"/domains/missing", nil)
-	before := px.applied
-	e.must(204, "DELETE", "/api/projects/"+pid+"/domains/"+did, nil)
-	if px.applied != before+1 {
-		t.Fatal("detach did not reload the proxy")
-	}
-	e.must(404, "DELETE", "/api/projects/"+pid+"/domains/"+did, nil)
-	if got := e.list("/api/apps/" + web + "/routes"); len(got) != 0 {
-		t.Fatalf("routes after detach = %v", got)
-	}
-	if all := e.list("/api/domains"); len(all) != 2 || all[1]["hostname"] != "shop.example.com" || all[1]["project_id"] != "" {
-		t.Fatalf("after detach = %v", all)
-	}
-	e.must(201, "POST", "/api/projects/"+pid2+"/domains", map[string]any{"domain_id": did})
-
-	// Deleting a domain a project uses removes it from the project too.
-	e.must(204, "DELETE", "/api/domains/"+did, nil)
-	if got := e.list("/api/projects/" + pid2 + "/domains"); len(got) != 1 {
-		t.Fatalf("blog domains after delete = %v", got)
+	// The hostname is free again, with a fresh TLS mode.
+	if m := e.must(201, "POST", routes, map[string]any{"hostname": "shop.example.com", "app_id": blog}); m["tls_mode"] != "auto" {
+		t.Fatalf("re-added hostname = %v", m)
 	}
 }
 
@@ -644,74 +581,69 @@ func TestProjectEnvironmentAPI(t *testing.T) {
 	e.must(404, "GET", "/api/projects/nope/environment", nil)
 }
 
-// A project routes subdomains of a domain it uses: named ones, and "*" for all the others.
-func TestRouteSubdomainsAPI(t *testing.T) {
+// A wildcard hostname answers on every name under a domain that no other hostname claims.
+func TestWildcardRoutesAPI(t *testing.T) {
 	e := newEnv(t)
 	e.srv.SetProxy(&fakeProxy{})
 	e.signIn()
 	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
 	app := e.must(201, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": "web", "image": "nginx:1", "port": 80})["id"].(string)
-	domains := "/api/projects/" + pid + "/domains"
+	const routes = "/api/routes"
 	ask := func(name string) int {
 		code, _ := e.raw("GET", "/api/proxy/ask?domain="+name, nil)
 		return code
 	}
 
-	// The Domains page takes plain hostnames only.
-	e.must(422, "POST", "/api/domains", map[string]any{"hostname": "*.example.com"})
-	did := e.must(201, "POST", domains, map[string]any{"hostname": "example.com"})["id"].(string)
-	other := e.must(201, "POST", domains, map[string]any{"hostname": "blog.example.com"})["id"].(string)
-	routes := "/api/domains/" + did + "/routes"
-
-	if got := ask("acme.example.com"); got != 403 {
-		t.Errorf("ask before a * route = %d, want 403", got)
+	e.must(201, "POST", routes, map[string]any{"hostname": "example.com", "app_id": app})
+	wild := e.must(201, "POST", routes, map[string]any{"hostname": "*.Example.com", "path": "/", "app_id": app})
+	if wild["hostname"] != "*.example.com" || wild["url"] != "https://*.example.com" {
+		t.Fatalf("wildcard route = %v", wild)
 	}
-	for _, bad := range []string{"a b", "*.a", "a.*", "**", "-a", "https://a"} {
-		e.must(422, "POST", routes, map[string]any{"subdomain": bad, "path": "/", "app_id": app})
-	}
-	e.must(201, "POST", routes, map[string]any{"path": "/", "app_id": app})
-	wild := e.must(201, "POST", routes, map[string]any{"subdomain": "*", "path": "/", "app_id": app})
-	if wild["hostname"] != "*.example.com" || wild["subdomain"] != "*" || wild["url"] != "https://*.example.com" {
-		t.Fatalf("* route = %v", wild)
-	}
-	admin := e.must(201, "POST", routes, map[string]any{"subdomain": " Admin. ", "path": "/", "app_id": app})
-	if admin["hostname"] != "admin.example.com" || admin["subdomain"] != "admin" || admin["url"] != "https://admin.example.com" {
-		t.Fatalf("admin route = %v", admin)
-	}
-	e.must(409, "POST", routes, map[string]any{"subdomain": "admin", "path": "/", "app_id": app})
-	e.must(201, "POST", routes, map[string]any{"subdomain": "admin", "path": "/api", "app_id": app})
-
-	// A subdomain that is a domain of its own is routed there, and the other way round.
-	e.must(409, "POST", routes, map[string]any{"subdomain": "blog", "path": "/", "app_id": app})
-	e.must(409, "POST", "/api/domains", map[string]any{"hostname": "admin.example.com"})
+	// An exact name next to the wildcard is its own hostname, matched ahead of it.
+	admin := e.must(201, "POST", routes, map[string]any{"hostname": "admin.example.com", "app_id": app})
+	e.must(409, "POST", routes, map[string]any{"hostname": "admin.example.com", "app_id": app})
+	e.must(201, "POST", routes, map[string]any{"hostname": "admin.example.com/api", "app_id": app})
 	e.must(409, "PUT", "/api/settings/panel", map[string]any{"domain": "admin.example.com"})
-	// The same name through another domain: x.blog under example.com, x under blog.example.com.
-	e.must(201, "POST", "/api/domains/"+other+"/routes", map[string]any{"subdomain": "x", "path": "/", "app_id": app})
-	e.must(409, "POST", routes, map[string]any{"subdomain": "x.blog", "path": "/", "app_id": app})
 
-	// Certificates on demand: one label under a domain with a * route, while it serves HTTPS.
+	// Certificates on demand: one label under a routed wildcard, while it serves HTTPS.
 	for name, want := range map[string]int{
 		"acme.example.com": 200, "ACME.example.com": 200, "a.b.example.com": 403, "example.com": 403,
-		"acme.blog.example.com": 403, "acme.example.org": 403, "": 403, "*.example.com": 403,
+		"acme.admin.example.com": 403, "acme.example.org": 403, "": 403, "*.example.com": 403,
 	} {
 		if got := ask(name); got != want {
 			t.Errorf("ask %q = %d, want %d", name, got, want)
 		}
 	}
-	e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "http_only"})
-	if got := ask("acme.example.com"); got != 403 {
-		t.Errorf("ask on an http-only domain = %d, want 403", got)
+	// The wildcard has its own TLS mode: the bare domain's does not decide it.
+	e.must(200, "PATCH", "/api/hosts/example.com", map[string]any{"tls_mode": "http_only"})
+	if got := ask("acme.example.com"); got != 200 {
+		t.Errorf("ask after the bare domain went http-only = %d, want 200", got)
 	}
-	e.must(200, "PATCH", "/api/domains/"+did, map[string]any{"tls_mode": "auto"})
+	e.must(200, "PATCH", "/api/hosts/*.example.com", map[string]any{"tls_mode": "http_only"})
+	if got := ask("acme.example.com"); got != 403 {
+		t.Errorf("ask on an http-only wildcard = %d, want 403", got)
+	}
+	e.must(200, "PATCH", "/api/hosts/*.example.com", map[string]any{"tls_mode": "auto"})
 
-	// Editing keeps its own subdomain and can move to another.
-	moved := e.must(200, "PATCH", "/api/routes/"+wild["id"].(string), map[string]any{"subdomain": "app", "path": "/", "app_id": app})
+	// The DNS hint of a wildcard looks a name under it up.
+	var asked string
+	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) {
+		asked = host
+		return []string{"203.0.113.5"}, nil
+	}
+	e.srv.serverAddrs = func() []string { return []string{"203.0.113.5"} }
+	if m := e.must(200, "GET", "/api/hosts/*.example.com/dns", nil); m["hostname"] != "*.example.com" || m["points_here"] != true || !strings.HasSuffix(asked, ".example.com") || strings.Contains(asked, "*") {
+		t.Errorf("wildcard dns = %v (asked %q)", m, asked)
+	}
+
+	// Editing keeps its own hostname and can move to another.
+	moved := e.must(200, "PATCH", routes+"/"+wild["id"].(string), map[string]any{"hostname": "app.example.com", "path": "/", "app_id": app})
 	if moved["hostname"] != "app.example.com" {
 		t.Fatalf("moved route = %v", moved)
 	}
-	e.must(200, "PATCH", "/api/routes/"+admin["id"].(string), map[string]any{"subdomain": "admin", "path": "/", "app_id": app})
+	e.must(200, "PATCH", routes+"/"+admin["id"].(string), map[string]any{"hostname": "admin.example.com", "path": "/", "app_id": app})
 	if got := ask("acme.example.com"); got != 403 {
-		t.Errorf("ask after the * route moved = %d, want 403", got)
+		t.Errorf("ask after the wildcard route moved = %d, want 403", got)
 	}
 }
 

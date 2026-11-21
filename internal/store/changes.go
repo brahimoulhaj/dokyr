@@ -20,7 +20,7 @@ type Changes struct {
 // watchedTables are the tables whose changes are announced.
 var watchedTables = map[string]bool{
 	"projects": true, "apps": true, "app_health_checks": true, "deployments": true,
-	"domains": true, "domain_routes": true, "events": true,
+	"routes": true, "events": true,
 	"db_instances": true, "db_operations": true, "db_backups": true, "backup_policies": true,
 	"db_databases": true, "db_users": true, "db_user_grants": true,
 	"registries": true, "registry_tokens": true, "git_sources": true, "s3_connections": true, "s3_access_keys": true,

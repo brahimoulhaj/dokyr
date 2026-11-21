@@ -38,7 +38,7 @@ func (s *Store) SearchResources(ctx context.Context, query string) ([]SearchResu
 		SELECT 'project', id, name, description, id, name FROM projects
 		UNION ALL SELECT 'app', a.id, a.name, '', p.id, p.name FROM apps a JOIN projects p ON p.id = a.project_id
 		UNION ALL SELECT 'database', d.id, d.name, d.engine || ' ' || d.version, p.id, p.name FROM db_instances d JOIN projects p ON p.id = d.project_id
-		UNION ALL SELECT 'domain', d.id, d.hostname, '', COALESCE(p.id, ''), COALESCE(p.name, '') FROM domains d LEFT JOIN projects p ON p.id = d.project_id
+		UNION ALL SELECT 'domain', MIN(r.id), r.hostname, '', MIN(p.id), MIN(p.name) FROM routes r JOIN apps a ON a.id = r.app_id JOIN projects p ON p.id = a.project_id GROUP BY r.hostname
 		UNION ALL SELECT 'registry', id, name, server, '', '' FROM registries
 		UNION ALL SELECT 'git', id, name, base_url, '', '' FROM git_sources
 		UNION ALL SELECT 'storage', id, name, endpoint || ' / ' || bucket, '', '' FROM s3_connections`)

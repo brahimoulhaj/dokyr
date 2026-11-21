@@ -4,7 +4,7 @@ import { Shell } from './components/shell'
 import { meQuery, metaQuery, onboardingQuery } from './lib/api'
 import { ActivityPage } from './routes/activity'
 import { RegistryPage } from './routes/registries'
-import { DomainsPage } from './routes/domains'
+import { RoutingPage } from './routes/routing'
 import { BuiltinRegistryPage, builtinTabs, type BuiltinTab } from './routes/registry-builtin'
 import { AppPage, appTabs, type AppTab } from './routes/app'
 import { LoginPage } from './routes/login'
@@ -150,7 +150,15 @@ const databaseRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): { tab?: DatabaseTab } => (databaseTabs.includes(s.tab as DatabaseTab) ? { tab: s.tab as DatabaseTab } : {}),
 })
 const registryRoute = createRoute({ getParentRoute: () => appRoute, path: '/registry', component: RegistryPage })
-const domainsRoute = createRoute({ getParentRoute: () => appRoute, path: '/domains', component: DomainsPage })
+const routingRoute = createRoute({ getParentRoute: () => appRoute, path: '/routing', component: RoutingPage })
+// Routing used to be the Domains page; old links and bookmarks still say /domains.
+const domainsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/domains',
+  beforeLoad: () => {
+    throw redirect({ to: '/routing' })
+  },
+})
 const storageRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/storage',
@@ -216,7 +224,7 @@ const routeTree = rootRoute.addChildren([
   inviteRoute,
   cliAuthorizeRoute,
   onboardingRoute,
-  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, domainsRoute,
+  appRoute.addChildren([overviewRoute, projectsRoute, projectRoute, newAppRoute, appPageRoute, activityRoute, registryRoute, storageRoute, routingRoute, domainsRoute,
     builtinRegistryRoute, settingsRoute, gitRoute, backupsRoute, cronRoute, tokensRoute, databasesRoute, databaseRoute]),
 ])
 

@@ -188,27 +188,6 @@ CREATE TABLE deployments (
     updated_at     TEXT NOT NULL
 , commit_sha TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0, rollback_of TEXT NOT NULL DEFAULT '', phase TEXT NOT NULL DEFAULT '', phases TEXT NOT NULL DEFAULT '[]', commit_message TEXT NOT NULL DEFAULT '');
 
-CREATE TABLE "domain_routes" (
-    id           TEXT PRIMARY KEY,
-    domain_id    TEXT NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
-    subdomain    TEXT NOT NULL DEFAULT '',
-    path         TEXT NOT NULL,
-    app_id       TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
-    strip_prefix INTEGER NOT NULL DEFAULT 0 CHECK (strip_prefix IN (0, 1)),
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL,
-    UNIQUE (domain_id, subdomain, path)
-);
-
-CREATE TABLE "domains" (
-    id         TEXT PRIMARY KEY,
-    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-    hostname   TEXT NOT NULL UNIQUE,
-    tls_mode   TEXT NOT NULL DEFAULT 'auto',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
 CREATE TABLE events (
     id          TEXT PRIMARY KEY,
     user_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -310,6 +289,18 @@ CREATE TABLE registry_tokens (
     updated_at   TEXT NOT NULL
 );
 
+CREATE TABLE routes (
+    id           TEXT PRIMARY KEY,
+    hostname     TEXT NOT NULL,
+    path         TEXT NOT NULL,
+    app_id       TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+    strip_prefix INTEGER NOT NULL DEFAULT 0 CHECK (strip_prefix IN (0, 1)),
+    tls_mode     TEXT NOT NULL DEFAULT 'auto',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    UNIQUE (hostname, path)
+);
+
 CREATE TABLE s3_access_keys (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -399,15 +390,13 @@ CREATE INDEX db_operations_status ON db_operations(status, id);
 
 CREATE INDEX deployments_app_id ON deployments(app_id, id);
 
-CREATE INDEX domain_routes_app_id ON domain_routes(app_id);
-
-CREATE INDEX domains_project_id ON domains(project_id);
-
 CREATE INDEX events_target ON events(target_type, target_id);
 
 CREATE INDEX metrics_samples_age ON metrics_samples(resolution,ts);
 
 CREATE INDEX passkeys_user ON passkeys(user_id);
+
+CREATE INDEX routes_app_id ON routes(app_id);
 
 CREATE INDEX s3_access_keys_bucket ON s3_access_keys(bucket);
 

@@ -51,8 +51,6 @@ export const en = {
   project: 'Project',
   whatApp: 'app',
   whatDeployments: 'deployments',
-  whatDomains: 'domains',
-
   restart: 'Restart',
   stop: 'Stop',
   start: 'Start',
@@ -73,7 +71,7 @@ export const en = {
     deployments: 'Deployments',
     logs: 'Logs',
     metrics: 'Metrics',
-    domains: 'Domains',
+    routing: 'Routing',
     settings: 'Settings',
   },
   settingsSections: {
@@ -113,8 +111,8 @@ export const en = {
   container: 'Container',
   runningVersion: 'Running version',
   deployedAgo: (version: string, ago: string) => `${version} · deployed ${ago}`,
-  manageDomains: 'Domains are set in the project →',
-  noDomains: 'None. Without a domain the app is not reachable from outside.',
+  manageDomains: 'Manage routes →',
+  noDomains: 'None. Without a route the app is not reachable from outside.',
 
   deployStatus: {
     queued: 'queued',
@@ -168,17 +166,10 @@ export const en = {
   containerOutput: 'Container output',
   containerGone: 'The container is gone. Redeploy the app.',
 
-  noDomainsYet: 'No domains yet.',
   primary: 'Primary',
   primaryDomain: 'Primary domain',
   makePrimary: 'Make primary',
-  noDomainsYetHint: 'Add a hostname and point its DNS record at this server. The certificate is issued automatically.',
-  addDomainTitle: 'Add a domain',
-  hostname: 'Hostname',
-  hostnameHintHttp: 'No scheme, port or path. Served over plain HTTP, without a certificate.',
-  hostnameHintHttps: 'No scheme, port or path. Plain HTTP requests are redirected to HTTPS.',
   adding: 'Adding…',
-  addDomain: 'Add domain',
   toHttpsTitle: 'Get a certificate here and redirect HTTP to HTTPS',
   toHttpTitle: 'Serve over plain HTTP, for a CDN that handles HTTPS',
   useHttps: 'Use HTTPS',
@@ -248,8 +239,6 @@ export const fr: typeof en = {
   project: 'Projet',
   whatApp: 'application',
   whatDeployments: 'déploiements',
-  whatDomains: 'domaines',
-
   restart: 'Redémarrer',
   stop: 'Arrêter',
   start: 'Démarrer',
@@ -270,7 +259,7 @@ export const fr: typeof en = {
     deployments: 'Déploiements',
     logs: 'Journaux',
     metrics: 'Métriques',
-    domains: 'Domaines',
+    routing: 'Routage',
     settings: 'Paramètres',
   },
   settingsSections: {
@@ -310,8 +299,8 @@ export const fr: typeof en = {
   container: 'Conteneur',
   runningVersion: 'Version en cours d’exécution',
   deployedAgo: (version, ago) => `${version} · déployée ${ago}`,
-  manageDomains: 'Les domaines se règlent dans le projet →',
-  noDomains: 'Aucun. Sans domaine, l’application n’est pas accessible de l’extérieur.',
+  manageDomains: 'Gérer les routes →',
+  noDomains: 'Aucune. Sans route, l’application n’est pas accessible de l’extérieur.',
 
   deployStatus: {
     queued: 'en attente',
@@ -365,18 +354,10 @@ export const fr: typeof en = {
   containerOutput: 'Sortie du conteneur',
   containerGone: 'Le conteneur n’existe plus. Redéployez l’application.',
 
-  noDomainsYet: 'Aucun domaine pour l’instant.',
   primary: 'Principal',
   primaryDomain: 'Domaine principal',
   makePrimary: 'Définir comme principal',
-  noDomainsYetHint:
-    'Ajoutez un nom d’hôte et faites pointer son enregistrement DNS vers ce serveur. Le certificat est émis automatiquement.',
-  addDomainTitle: 'Ajouter un domaine',
-  hostname: 'Nom d’hôte',
-  hostnameHintHttp: 'Sans schéma, port ni chemin. Servi en HTTP simple, sans certificat.',
-  hostnameHintHttps: 'Sans schéma, port ni chemin. Les requêtes HTTP simples sont redirigées vers HTTPS.',
   adding: 'Ajout…',
-  addDomain: 'Ajouter le domaine',
   toHttpsTitle: 'Obtenir un certificat ici et rediriger HTTP vers HTTPS',
   toHttpTitle: 'Servir en HTTP simple, pour un CDN qui gère le HTTPS',
   useHttps: 'Utiliser HTTPS',
@@ -447,8 +428,6 @@ export const ar: typeof en = {
   project: 'المشروع',
   whatApp: 'التطبيق',
   whatDeployments: 'عمليات النشر',
-  whatDomains: 'النطاقات',
-
   restart: 'إعادة التشغيل',
   stop: 'إيقاف',
   start: 'تشغيل',
@@ -469,7 +448,7 @@ export const ar: typeof en = {
     deployments: 'عمليات النشر',
     logs: 'السجلات',
     metrics: 'المقاييس',
-    domains: 'النطاقات',
+    routing: 'التوجيه',
     settings: 'الإعدادات',
   },
   settingsSections: {
@@ -509,8 +488,8 @@ export const ar: typeof en = {
   container: 'الحاوية',
   runningVersion: 'النسخة العاملة',
   deployedAgo: (version, ago) => `⁦${version}⁩ · نُشرت ${ago}`,
-  manageDomains: 'تُضبط النطاقات في المشروع ←',
-  noDomains: 'لا يوجد. بدون نطاق لا يمكن الوصول إلى التطبيق من الخارج.',
+  manageDomains: 'إدارة المسارات ←',
+  noDomains: 'لا يوجد. بدون مسار لا يمكن الوصول إلى التطبيق من الخارج.',
 
   deployStatus: {
     queued: 'في الانتظار',
@@ -564,17 +543,10 @@ export const ar: typeof en = {
   containerOutput: 'مخرجات الحاوية',
   containerGone: 'الحاوية لم تعد موجودة. أعد نشر التطبيق.',
 
-  noDomainsYet: 'لا توجد نطاقات بعد.',
   primary: 'رئيسي',
   primaryDomain: 'النطاق الرئيسي',
   makePrimary: 'تعيين كرئيسي',
-  noDomainsYetHint: 'أضف اسم مضيف ووجّه سجل DNS الخاص به إلى هذا الخادم. تُصدر الشهادة تلقائيًا.',
-  addDomainTitle: 'إضافة نطاق',
-  hostname: 'اسم المضيف',
-  hostnameHintHttp: 'بدون بروتوكول أو منفذ أو مسار. يُقدَّم عبر HTTP العادي، بدون شهادة.',
-  hostnameHintHttps: 'بدون بروتوكول أو منفذ أو مسار. تُحوَّل طلبات HTTP العادية إلى HTTPS.',
   adding: 'جارٍ الإضافة…',
-  addDomain: 'إضافة النطاق',
   toHttpsTitle: 'الحصول على شهادة هنا وتحويل HTTP إلى HTTPS',
   toHttpTitle: 'التقديم عبر HTTP العادي، لشبكة CDN تتولى HTTPS',
   useHttps: 'استخدام HTTPS',
@@ -644,8 +616,6 @@ export const es: typeof en = {
   project: 'Proyecto',
   whatApp: 'aplicación',
   whatDeployments: 'despliegues',
-  whatDomains: 'dominios',
-
   restart: 'Reiniciar',
   stop: 'Detener',
   start: 'Iniciar',
@@ -666,7 +636,7 @@ export const es: typeof en = {
     deployments: 'Despliegues',
     logs: 'Registros',
     metrics: 'Métricas',
-    domains: 'Dominios',
+    routing: 'Enrutamiento',
     settings: 'Ajustes',
   },
   settingsSections: {
@@ -706,8 +676,8 @@ export const es: typeof en = {
   container: 'Contenedor',
   runningVersion: 'Versión en ejecución',
   deployedAgo: (version, ago) => `${version} · desplegada ${ago}`,
-  manageDomains: 'Los dominios se configuran en el proyecto →',
-  noDomains: 'Ninguno. Sin un dominio, la aplicación no es accesible desde fuera.',
+  manageDomains: 'Gestionar rutas →',
+  noDomains: 'Ninguna. Sin una ruta, la aplicación no es accesible desde fuera.',
 
   deployStatus: {
     queued: 'en cola',
@@ -761,18 +731,10 @@ export const es: typeof en = {
   containerOutput: 'Salida del contenedor',
   containerGone: 'El contenedor ya no existe. Vuelve a desplegar la aplicación.',
 
-  noDomainsYet: 'Aún no hay dominios.',
   primary: 'Principal',
   primaryDomain: 'Dominio principal',
   makePrimary: 'Establecer como principal',
-  noDomainsYetHint:
-    'Añade un nombre de host y apunta su registro DNS a este servidor. El certificado se emite automáticamente.',
-  addDomainTitle: 'Añadir un dominio',
-  hostname: 'Nombre de host',
-  hostnameHintHttp: 'Sin esquema, puerto ni ruta. Se sirve por HTTP simple, sin certificado.',
-  hostnameHintHttps: 'Sin esquema, puerto ni ruta. Las peticiones HTTP simples se redirigen a HTTPS.',
   adding: 'Añadiendo…',
-  addDomain: 'Añadir dominio',
   toHttpsTitle: 'Obtener un certificado aquí y redirigir HTTP a HTTPS',
   toHttpTitle: 'Servir por HTTP simple, para un CDN que gestiona HTTPS',
   useHttps: 'Usar HTTPS',

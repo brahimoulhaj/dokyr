@@ -21,7 +21,7 @@ domain, storage, a registry and notifications. All of them can be skipped and do
 ## 1. Create a project
 
 Projects → **Create a project**. A project is a folder for related apps: it holds their
-domains, shared variables and databases.
+routes, shared variables and databases.
 
 ## 2. Add an app
 
@@ -77,17 +77,22 @@ says why.
 
 Settings changed afterwards are flagged as **Changes not deployed** until the next deploy.
 
-## 5. Give it a domain
+## 5. Give it an address
 
-1. Domains → **Add domain**: the hostname, e.g. `example.com`.
-2. In the project's **Domains** tab, **Add domain** and pick it.
-3. **Add route**: a subdomain (empty for the hostname itself, `admin` for
-   `admin.example.com`, `*` for every other subdomain), a path (`/` for everything, or a
-   prefix like `/api`) and the app. The longest matching path wins, so `/` can go to a
-   frontend and `/api` to a backend.
+The panel routes traffic; DNS stays with your DNS provider. Point the record of the
+hostname at the server, then tell the panel which app answers on it:
 
-The certificate is issued on the first request; plain HTTP is redirected to HTTPS. A
-domain without a route answers 404.
+1. On the app, **Routing** → **Add route**.
+2. Type the address: `example.com` for the whole hostname, `example.com/api` for one path
+   of it, `*.example.com` for every other name under `example.com`. There is nothing to add
+   first: the hostname is part of the route.
+3. Save. The card of the hostname shows whether its DNS record points at this server.
+
+The longest matching path wins, so `/` can go to a frontend and `/api` to a backend, in
+the same project or not. **Routing** in the main menu lists every route of the panel.
+
+The certificate is issued on the first request; plain HTTP is redirected to HTTPS. Behind
+a CDN that terminates TLS itself, switch the hostname to **HTTP only** from its Actions.
 
 ## 6. Keep it deployed
 
@@ -105,7 +110,7 @@ domain without a route answers 404.
 | Health check never passes | wrong container port, or the app listens on `127.0.0.1` instead of `0.0.0.0` |
 | Build is killed | over the build memory cap (Settings → Builds) |
 | Private image or repository refused | no registry or Git connection chosen for the app |
-| Domain answers 404 | the domain has no route in the project |
+| Hostname answers 404 | no route matches the path: the hostname has routes, but none for `/` |
 | Certificate error in the browser | the DNS record does not point at the server yet, or port 80/443 is closed |
 
 The app's **Logs** tab shows the running container's output; a container that keeps

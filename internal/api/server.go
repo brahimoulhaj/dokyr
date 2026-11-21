@@ -272,12 +272,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/alert-rules/{id}", s.requireAuth(sessionOnly(s.handleDeleteRule)))
 	mux.HandleFunc("GET /api/apps/{id}/metrics", s.requireAuth(s.handleResourceMetrics("app")))
 	mux.HandleFunc("GET /api/databases/{id}/metrics", s.requireAuth(s.handleResourceMetrics("database")))
-	mux.HandleFunc("GET /api/projects/{id}/domains", s.requireAuth(s.handleListDomains))
-	mux.HandleFunc("POST /api/projects/{id}/domains", s.requireAuth(s.handleAttachDomain))
-	mux.HandleFunc("DELETE /api/projects/{id}/domains/{domainId}", s.requireAuth(s.handleDetachDomain))
-	mux.HandleFunc("GET /api/domains", s.requireAuth(s.handleAllDomains))
-	mux.HandleFunc("POST /api/domains", s.requireAuth(s.handleCreateDomain))
-	mux.HandleFunc("POST /api/domains/{id}/routes", s.requireAuth(s.handleCreateRoute))
+	mux.HandleFunc("GET /api/routes", s.requireAuth(s.handleListRoutes))
+	mux.HandleFunc("POST /api/routes", s.requireAuth(s.handleCreateRoute))
 	mux.HandleFunc("PATCH /api/routes/{id}", s.requireAuth(s.handleUpdateRoute))
 	mux.HandleFunc("DELETE /api/routes/{id}", s.requireAuth(s.handleDeleteRoute))
 
@@ -295,9 +291,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/deployments/{id}/rollback", s.requireAuth(s.handleRollback))
 	mux.HandleFunc("GET /api/deployments/{id}/log", s.requireAuth(s.handleDeploymentLog))
 	mux.HandleFunc("GET /api/deployments/{id}/log/stream", s.requireAuth(s.handleDeploymentLogStream))
-	mux.HandleFunc("PATCH /api/domains/{id}", s.requireAuth(s.handleUpdateDomain))
-	mux.HandleFunc("DELETE /api/domains/{id}", s.requireAuth(s.handleDeleteDomain))
-	mux.HandleFunc("GET /api/domains/{id}/dns", s.requireAuth(s.handleDomainDNS))
+	mux.HandleFunc("PATCH /api/hosts/{hostname}", s.requireAuth(s.handleUpdateHost))
+	mux.HandleFunc("DELETE /api/hosts/{hostname}", s.requireAuth(s.handleDeleteHost))
+	mux.HandleFunc("GET /api/hosts/{hostname}/dns", s.requireAuth(s.handleHostDNS))
 	mux.HandleFunc("GET "+proxy.AskPath, s.handleProxyAsk) // Caddy's on-demand TLS check
 
 	mux.HandleFunc("GET /api/events", s.requireAuth(s.handleListEvents))
