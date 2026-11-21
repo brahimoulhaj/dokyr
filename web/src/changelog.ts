@@ -15,6 +15,40 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.36.0',
+    date: '2026-11-21',
+    changes: {
+      en: [
+        'Domains become Routing: a route is an address (shop.example.com, or shop.example.com/api) and the app that answers on it. There is no domain to register or attach to a project first: type the hostname and pick the app.',
+        'Each app has a Routing tab, the new-app form takes an optional address, and the Routing page in the menu shows every hostname with its DNS status and its paths. The Domains tab of projects is gone.',
+        'Your routes are kept by the update. Domains that had no route are not carried over, and *.example.com now has its own HTTPS setting instead of following example.com.',
+        'API: /api/routes and /api/hosts replace the /api/domains endpoints; scripts that call the old ones need an update.',
+        'The host charts on the overview keep their last ten minutes across a restart or an update.',
+      ],
+      fr: [
+        'Les domaines deviennent le Routage : une route est une adresse (shop.example.com, ou shop.example.com/api) et l’app qui y répond. Plus de domaine à enregistrer ni à rattacher à un projet : saisissez le nom d’hôte et choisissez l’app.',
+        'Chaque app a un onglet Routage, le formulaire de nouvelle app accepte une adresse facultative, et la page Routage du menu montre chaque nom d’hôte avec son état DNS et ses chemins. L’onglet Domaines des projets disparaît.',
+        'Vos routes sont conservées par la mise à jour. Les domaines sans route ne sont pas repris, et *.example.com a désormais son propre réglage HTTPS au lieu de suivre example.com.',
+        'API : /api/routes et /api/hosts remplacent les points d’accès /api/domains ; les scripts qui appellent les anciens doivent être mis à jour.',
+        'Les graphiques de l’hôte sur la vue d’ensemble gardent leurs dix dernières minutes après un redémarrage ou une mise à jour.',
+      ],
+      ar: [
+        'النطاقات تصبح «التوجيه»: المسار عنوان (shop.example.com أو shop.example.com/api) والتطبيق الذي يجيب عليه. لم يعد هناك نطاق يُسجَّل أو يُربط بمشروع أولًا: اكتب اسم المضيف واختر التطبيق.',
+        'لكل تطبيق تبويب «التوجيه»، ونموذج التطبيق الجديد يقبل عنوانًا اختياريًا، وصفحة «التوجيه» في القائمة تعرض كل اسم مضيف مع حالة DNS ومساراته. أُزيل تبويب النطاقات من المشاريع.',
+        'يحتفظ التحديث بمساراتك. النطاقات التي لم يكن لها مسار لا تُنقل، و ‎*.example.com له الآن إعداد HTTPS خاص به بدل أن يتبع example.com.',
+        'الواجهة البرمجية: ‎/api/routes و ‎/api/hosts تحلّان محل نقاط ‎/api/domains؛ السكربتات التي تستدعي القديمة تحتاج إلى تحديث.',
+        'مخططات الخادم في النظرة العامة تحتفظ بآخر عشر دقائق بعد إعادة التشغيل أو التحديث.',
+      ],
+      es: [
+        'Los dominios pasan a ser Enrutamiento: una ruta es una dirección (shop.example.com, o shop.example.com/api) y la app que responde en ella. Ya no hay un dominio que registrar ni asociar a un proyecto: escribe el nombre de host y elige la app.',
+        'Cada app tiene una pestaña Enrutamiento, el formulario de nueva app admite una dirección opcional y la página Enrutamiento del menú muestra cada nombre de host con su estado DNS y sus rutas. La pestaña Dominios de los proyectos desaparece.',
+        'La actualización conserva tus rutas. Los dominios sin ruta no se trasladan, y *.example.com tiene ahora su propio ajuste de HTTPS en lugar de seguir a example.com.',
+        'API: /api/routes y /api/hosts sustituyen a los endpoints /api/domains; los scripts que llaman a los antiguos necesitan una actualización.',
+        'Los gráficos del host en el resumen conservan sus últimos diez minutos tras un reinicio o una actualización.',
+      ],
+    },
+  },
+  {
     version: '0.35.0',
     date: '2026-11-20',
     changes: {
