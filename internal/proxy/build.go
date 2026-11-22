@@ -340,7 +340,21 @@ func Build(c Config) ([]byte, error) {
 				"module": "http", "endpoint": "http://" + c.PanelUpstream + AskPath,
 			}}
 		}
-		apps["tls"] = object{"automation": automation}
+		tls := object{"automation": automation}
+		// Caddy leaves a name out of certificate management when a wildcard covering it is
+		// served too, expecting the wildcard's certificate to answer for it. Ours has none:
+		// it issues per name, on demand, and an exact name's policy is not on demand. Naming
+		// the exact hosts here keeps their certificates managed up front.
+		var exact []string
+		for _, h := range allHosts {
+			if !IsWildcard(h) && contains(allHosts, WildcardOf(h)) {
+				exact = append(exact, h)
+			}
+		}
+		if len(exact) > 0 {
+			tls["certificates"] = object{"automate": exact}
+		}
+		apps["tls"] = tls
 	}
 
 	return json.MarshalIndent(object{

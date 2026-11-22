@@ -370,6 +370,12 @@ func TestBuildWildcardSite(t *testing.T) {
 	if dig(t, policies, 3, "subjects") != nil {
 		t.Errorf("policy 3 = %s", raw)
 	}
+	// Caddy skips a name a served wildcard covers unless it is automated by name; without
+	// this the exact hostname has no certificate and its handshakes fail.
+	automate := dig(t, cfg, "apps", "tls", "certificates", "automate").([]any)
+	if len(automate) != 1 || automate[0] != "shop.example.com" {
+		t.Errorf("automate = %v, want only the exact hostname under a wildcard", automate)
+	}
 	if strings.Contains(string(raw), "plain.example.org") {
 		t.Errorf("http-only wildcard has a policy: %s", raw)
 	}

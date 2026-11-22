@@ -7,9 +7,10 @@ import { useCan } from '../lib/roles'
 import { withToast } from '../lib/toasts'
 import { ActionsMenu } from './actions-menu'
 import { ConfirmModal } from './confirm-dialog'
+import { ListToolbar, SearchBox, fold } from './list-controls'
 import { DnsBadge, DnsRecords, dnsRail, dnsState } from './dns'
 import { Sheet, SheetActions } from './sheet'
-import { Badge, Button, CheckOption, ConfirmButton, cx, Empty, ErrorNote, Field, HttpOnlyChoice, Panel, QueryState } from './ui'
+import { Badge, Button, CheckOption, cx, Empty, ErrorNote, Field, HttpOnlyChoice, Panel, QueryState } from './ui'
 
 /** What the route form opens with: a route to edit, or a hostname and an app to start from. */
 type Draft = { route?: Route; hostname?: string }
@@ -34,19 +35,30 @@ function useAllApps() {
 }
 
 /**
- * Routing as a board: one card per hostname, with the paths it sends to apps. With appId
- * it is that app's view: only the hostnames it answers on, and new routes go to it.
+ * Routing as one list: a line per hostname, then a line per path it sends to an app.
+ * Scoped to an app it shows only that app's routes, scoped to a project only those of its
+ * apps, and unscoped everything. Routes a scope leaves out are counted under their hostname.
  * Hostnames are typed with the route; there is nothing to add first.
  */
-export function RoutingBoard({ appId, intro }: { appId?: string; intro: ReactNode }) {
+export function RoutingBoard({ appId, projectId, intro }: { appId?: string; projectId?: string; intro: ReactNode }) {
   const t = useT()
   const tr = t.routing
   const routes = useQuery(routesQuery)
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [query, setQuery] = useState('')
   const all = routesByHost(routes.data ?? [])
-  const hosts = appId ? all.filter((h) => h.routes.some((r) => r.app_id === appId)) : all
+  const scoped = Boolean(appId || projectId)
+  const inScope = (r: Route) => (appId ? r.app_id === appId : projectId ? r.project_id === projectId : true)
+  const q = fold(query.trim())
+  const matches = (r: Route) => q === '' || [addressOf(r), r.app_name, r.project_name].some((s) => fold(s).includes(q))
+  const hosts = all
+    .map((h) => ({ hostname: h.hostname, total: h.routes.length, own: h.routes.filter(inScope) }))
+    .filter((h) => h.own.length > 0)
+  const shown = hosts.map((h) => ({ ...h, routes: h.own.filter(matches) })).filter((h) => h.routes.length > 0)
+  // Worth a filter only once the list no longer fits a glance.
+  const filterable = hosts.reduce((n, h) => n + h.own.length, 0) > 8
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <p className="max-w-2xl text-sm text-muted">{intro}</p>
         <Button onClick={() => setDraft({})}>{tr.add}</Button>
@@ -54,18 +66,29 @@ export function RoutingBoard({ appId, intro }: { appId?: string; intro: ReactNod
       <QueryState loading={routes.isPending} error={routes.error} what={tr.what} />
       {routes.data && hosts.length === 0 && (
         <Panel>
-          <Empty title={appId ? tr.appNone : tr.none}>
+          <Empty title={scoped ? tr.appNone : tr.none}>
             <p>{appId ? tr.appNoneHint : tr.noneHint}</p>
             <Button className="mt-5" onClick={() => setDraft({})}>{tr.add}</Button>
           </Empty>
         </Panel>
       )}
-      {hosts.map((h) => (
-        <HostCard key={h.hostname} hostname={h.hostname} routes={h.routes} appId={appId}
-          onRoute={(route) => setDraft(route ? { route } : { hostname: h.hostname })} />
-      ))}
+      {hosts.length > 0 && (
+        <>
+          {filterable && <ListToolbar><SearchBox value={query} onChange={setQuery} label={tr.filter} /></ListToolbar>}
+          <Panel>
+            {shown.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted">{tr.noMatch}</p>}
+            <div className="divide-y divide-line">
+              {shown.map((h) => (
+                <HostSection key={h.hostname} hostname={h.hostname} routes={h.routes} total={h.total} hidden={h.total - h.own.length}
+                  target={appId ? 'none' : projectId ? 'app' : 'full'}
+                  onRoute={(route) => setDraft(route ? { route } : { hostname: h.hostname })} />
+              ))}
+            </div>
+          </Panel>
+        </>
+      )}
       <Sheet open={draft !== null} onOpenChange={(o) => !o && setDraft(null)} title={draft?.route ? tr.edit : tr.add} description={tr.addressHint}>
-        {draft && <RouteForm draft={draft} appId={appId} known={all} onDone={() => setDraft(null)} />}
+        {draft && <RouteForm draft={draft} appId={appId} projectId={projectId} known={all} onDone={() => setDraft(null)} />}
       </Sheet>
     </div>
   )
@@ -78,8 +101,17 @@ function useRefreshRoutes() {
   }
 }
 
-/** One hostname: where its DNS points, how it is served, and its paths. */
-function HostCard({ hostname, routes, appId, onRoute }: { hostname: string; routes: Route[]; appId?: string; onRoute: (r?: Route) => void }) {
+/** How much of a route's destination a row says: nothing on the app's own page, the app
+ * on its project's, the app and its project everywhere else. */
+type Target = 'none' | 'app' | 'full'
+
+const rowAction = 'h-7 border border-transparent px-2 text-xs text-muted transition-colors hover:border-line-strong hover:text-fg disabled:opacity-50'
+
+/** One hostname: a line with where its DNS points and how it is served, then its paths.
+ * total counts every route of the hostname, hidden those this view leaves out. */
+function HostSection({ hostname, routes, total, hidden, target, onRoute }: {
+  hostname: string; routes: Route[]; total: number; hidden: number; target: Target; onRoute: (r?: Route) => void
+}) {
   const t = useT()
   const tr = t.routing
   const can = useCan()
@@ -100,18 +132,16 @@ function HostCard({ hostname, routes, appId, onRoute }: { hostname: string; rout
     onSettled: refresh, // a 503 still saved it
   })
   return (
-    <Panel>
-      {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
-      <div className="relative flex flex-wrap items-start justify-between gap-3 border-b border-line py-3 ps-5 pe-4">
+    <section>
+      <div className="relative flex items-start justify-between gap-x-4 bg-bg/60 py-1.5 ps-5 pe-3">
         {/* The rail repeats the DNS state, so a long page can be scanned down its edge. */}
         <span aria-hidden className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-300', dnsRail[state])} />
-        <div className="min-w-0 space-y-2">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <a href={hostHref(hostname, httpOnly)} target="_blank" rel="noreferrer" dir="ltr"
-              className="text-base leading-tight text-fg [overflow-wrap:anywhere] hover:text-accent">{hostname}</a>
-            <DnsBadge state={state} />
-            {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
-          </p>
+        <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+          {/* The hostname in the body font: the pixel font of panel titles has no lowercase. */}
+          <a href={hostHref(hostname, httpOnly)} target="_blank" rel="noreferrer" dir="ltr"
+            className="text-sm font-medium leading-tight text-fg [overflow-wrap:anywhere] hover:text-accent">{hostname}</a>
+          <DnsBadge state={state} />
+          {httpOnly && <Badge tone="muted">{t.common.httpOnly}</Badge>}
           <DnsRecords dns={dns} />
         </div>
         <ActionsMenu
@@ -119,34 +149,38 @@ function HostCard({ hostname, routes, appId, onRoute }: { hostname: string; rout
           ariaLabel={tr.actionsFor(hostname)}
           disabled={remove.isPending || setMode.isPending}
           items={[
+            { label: tr.add, onSelect: () => onRoute() },
             { label: httpOnly ? t.app.useHttps : t.common.httpOnly, onSelect: () => setMode.mutate(httpOnly ? 'auto' : 'http_only') },
             ...(can.remove ? [{ label: tr.removeHost, danger: true, onSelect: () => setConfirming(true) }] : []),
           ]}
         />
       </div>
-      <ul className="divide-y divide-line">
-        {routes.map((r) => <RouteRow key={r.id} route={r} own={r.app_id === appId} onEdit={() => onRoute(r)} />)}
+      <ul>
+        {routes.map((r) => <RouteRow key={r.id} route={r} target={target} onEdit={() => onRoute(r)} />)}
+        {hidden > 0 && (
+          <li className="py-1 ps-5 pe-3 text-xs text-muted">
+            <Link to="/routing" className="underline decoration-dotted underline-offset-2 hover:text-fg">{tr.others(hidden)}</Link>
+          </li>
+        )}
       </ul>
-      <div className="border-t border-line px-4 py-3">
-        <Button variant="ghost" onClick={() => onRoute()}>{tr.add}</Button>
-      </div>
       <ConfirmModal
         open={confirming}
         onOpenChange={setConfirming}
         title={tr.removeHostTitle}
-        message={tr.removeHostMessage(hostname, routes.length)}
+        message={tr.removeHostMessage(hostname, total)}
         confirm={t.common.yesRemove}
         onConfirm={() => remove.mutate()}
       />
-    </Panel>
+    </section>
   )
 }
 
-function RouteRow({ route, own, onEdit }: { route: Route; own: boolean; onEdit: () => void }) {
+function RouteRow({ route, target, onEdit }: { route: Route; target: Target; onEdit: () => void }) {
   const t = useT()
   const tr = t.routing
   const can = useCan()
   const refresh = useRefreshRoutes()
+  const [armed, setArmed] = useState(false)
   const address = addressOf(route)
   const remove = useMutation({
     mutationFn: () => withToast(() => api<void>(`/routes/${route.id}`, { method: 'DELETE' }),
@@ -154,27 +188,46 @@ function RouteRow({ route, own, onEdit }: { route: Route; own: boolean; onEdit: 
     onSettled: refresh,
   })
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
-        <code dir="ltr" className="min-w-16 text-fg [overflow-wrap:anywhere]">{route.path}</code>
-        <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
-        <span className="min-w-0">
-          <Link to="/projects/$projectId/apps/$appId" params={{ projectId: route.project_id, appId: route.app_id }} search={{ tab: 'routing' }}
-            className="hover:text-accent hover:underline">{route.app_name}</Link>
-          <span className="ms-2 text-xs text-muted">{own ? tr.thisApp : route.project_name}</span>
-        </span>
+    <li className="flex flex-wrap items-center justify-between gap-x-4 py-0.5 ps-5 pe-3 hover:bg-raised">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 text-sm">
+        <code dir="ltr" className={cx('text-fg [overflow-wrap:anywhere]', target !== 'none' && 'min-w-28')}>{route.path}</code>
+        {target !== 'none' && (
+          <>
+            <span aria-hidden className="text-muted rtl:-scale-x-100">→</span>
+            <span className="min-w-0">
+              <Link to="/projects/$projectId/apps/$appId" params={{ projectId: route.project_id, appId: route.app_id }} search={{ tab: 'routing' }}
+                className="hover:text-accent hover:underline">{route.app_name}</Link>
+              {target === 'full' && <span className="ms-2 text-xs text-muted">{route.project_name}</span>}
+            </span>
+          </>
+        )}
         {route.strip_prefix && <Badge tone="muted">{tr.stripped}</Badge>}
       </div>
-      <span className="flex items-center gap-2">
-        <Button variant="ghost" onClick={onEdit}>{t.common.edit}</Button>
-        {can.remove && <ConfirmButton label={tr.removeRoute} confirm={t.common.yesRemove} pending={remove.isPending} onConfirm={() => remove.mutate()} />}
+      <span className="flex items-center gap-1">
+        {armed ? (
+          <>
+            <button type="button" disabled={remove.isPending} onClick={() => remove.mutate()}
+              className="h-7 border border-danger/60 px-2 text-xs text-danger transition-colors hover:bg-danger hover:text-bg disabled:opacity-50">
+              {remove.isPending ? t.common.working : t.common.yesRemove}
+            </button>
+            <button type="button" disabled={remove.isPending} onClick={() => setArmed(false)} className={rowAction}>{t.common.cancel}</button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={onEdit} aria-label={`${t.common.edit}: ${address}`} className={rowAction}>{t.common.edit}</button>
+            {can.remove && (
+              <button type="button" onClick={() => setArmed(true)} aria-label={`${tr.removeRoute}: ${address}`}
+                className={cx(rowAction, 'hover:border-danger/60 hover:text-danger')}>{tr.removeRoute}</button>
+            )}
+          </>
+        )}
       </span>
     </li>
   )
 }
 
 /** One address field does it: "shop.example.com" or "shop.example.com/api", then the app. */
-function RouteForm({ draft, appId, known, onDone }: { draft: Draft; appId?: string; known: { hostname: string; routes: Route[] }[]; onDone: () => void }) {
+function RouteForm({ draft, appId, projectId, known, onDone }: { draft: Draft; appId?: string; projectId?: string; known: { hostname: string; routes: Route[] }[]; onDone: () => void }) {
   const t = useT()
   const tr = t.routing
   const refresh = useRefreshRoutes()
@@ -187,7 +240,8 @@ function RouteForm({ draft, appId, known, onDone }: { draft: Draft; appId?: stri
   const [strip, setStrip] = useState(route?.strip_prefix ?? false)
   const [httpOnly, setHttpOnly] = useState(false)
   const apps = groups.flatMap((g) => g.apps)
-  const target = apps.find((a) => a.id === picked) ?? apps[0]
+  // On a project's page a new route starts with one of its apps.
+  const target = apps.find((a) => a.id === picked) ?? apps.find((a) => a.project_id === projectId) ?? apps[0]
   const { host, path } = splitAddress(address)
   const existing = known.find((h) => h.hostname === host)
   // How a hostname is served is asked once, with its first route.
