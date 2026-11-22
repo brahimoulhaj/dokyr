@@ -15,6 +15,28 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.37.1',
+    date: '2026-11-22',
+    changes: {
+      en: [
+        'DNS status: a hostname that points at this server now says Verified. A panel installed with Docker could not see the server’s own address, so every hostname stayed Unconfirmed.',
+        'New DNS status Cloudflare, for a hostname whose record goes through Cloudflare’s proxy.',
+      ],
+      fr: [
+        'État DNS : un nom d’hôte qui pointe vers ce serveur indique maintenant Vérifié. Un panneau installé avec Docker ne voyait pas l’adresse du serveur, et tous les noms d’hôte restaient Non confirmé.',
+        'Nouvel état DNS Cloudflare, pour un nom d’hôte dont l’enregistrement passe par le proxy de Cloudflare.',
+      ],
+      ar: [
+        'حالة DNS: اسم المضيف الذي يشير إلى هذا الخادم يظهر الآن «تم التحقق». اللوحة المثبّتة عبر Docker لم تكن ترى عنوان الخادم نفسه، فبقيت كل الأسماء «غير مؤكد».',
+        'حالة DNS جديدة «Cloudflare» لاسم المضيف الذي يمرّ سجله عبر وسيط Cloudflare.',
+      ],
+      es: [
+        'Estado DNS: un nombre de host que apunta a este servidor ahora indica Verificado. Un panel instalado con Docker no veía la dirección del propio servidor, y todos los nombres de host quedaban Sin confirmar.',
+        'Nuevo estado DNS Cloudflare, para un nombre de host cuyo registro pasa por el proxy de Cloudflare.',
+      ],
+    },
+  },
+  {
     version: '0.37.0',
     date: '2026-11-22',
     changes: {
