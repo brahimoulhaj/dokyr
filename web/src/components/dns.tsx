@@ -25,6 +25,7 @@ export function DnsHintText({ dns }: { dns: UseQueryResult<DnsHint> }): ReactNod
   if (dns.error || !d) text = t.dns.failed
   else if (!d.resolves) text = <span className="text-warn">{t.dns.notResolving}</span>
   else if (d.points_here === true) return <span className="text-accent">{t.dns.pointsHere(d.addresses.join(', '))}</span>
+  else if (d.cdn === 'cloudflare') text = t.dns.viaCloudflare(d.addresses.join(', '))
   else if (d.points_here === false)
     text = <span className="text-warn">{t.dns.pointsElsewhere(d.addresses.join(', '), d.server_addresses.join(', '))}</span>
   else text = t.dns.unknown(d.addresses.join(', '))
@@ -36,27 +37,31 @@ export function DnsHintText({ dns }: { dns: UseQueryResult<DnsHint> }): ReactNod
   )
 }
 
-export type DnsState = 'checking' | 'failed' | 'unresolved' | 'verified' | 'elsewhere' | 'unconfirmed'
+export type DnsState = 'checking' | 'failed' | 'unresolved' | 'verified' | 'elsewhere' | 'cloudflare' | 'unconfirmed'
 
 /** What a DNS hint query says about a hostname, as one state. */
 export function dnsState(dns: UseQueryResult<DnsHint>): DnsState {
   if (!dns.data && !dns.error) return 'checking'
   if (dns.error || !dns.data) return 'failed'
   if (!dns.data.resolves) return 'unresolved'
-  return dns.data.points_here === true ? 'verified' : dns.data.points_here === false ? 'elsewhere' : 'unconfirmed'
+  if (dns.data.points_here === true) return 'verified'
+  // Proxied: the record names Cloudflare, which forwards to wherever it was told to.
+  if (dns.data.cdn === 'cloudflare') return 'cloudflare'
+  return dns.data.points_here === false ? 'elsewhere' : 'unconfirmed'
 }
 
 /** The colour of a state, for a row's status rail. */
 export const dnsRail: Record<DnsState, string> = {
   verified: 'bg-accent', elsewhere: 'bg-warn', unresolved: 'bg-danger', failed: 'bg-danger',
-  unconfirmed: 'bg-line-strong', checking: 'bg-line-strong',
+  cloudflare: 'bg-accent/50', unconfirmed: 'bg-line-strong', checking: 'bg-line-strong',
 }
 
-/** The state as a badge: solid when verified, outlined otherwise, so "verified" reads first. */
+/** The state as a badge: solid when verified, outlined otherwise, so "verified" reads first.
+ * Behind Cloudflare is outlined in the accent: fine, but not checked end to end. */
 export function DnsBadge({ state }: { state: DnsState }) {
   const t = useT().dns
   const label = {
-    verified: t.verified, elsewhere: t.elsewhere, unconfirmed: t.unconfirmed,
+    verified: t.verified, elsewhere: t.elsewhere, cloudflare: t.cloudflare, unconfirmed: t.unconfirmed,
     unresolved: t.noRecord, failed: t.checkFailed, checking: t.checkingShort,
   }[state]
   return (
@@ -66,6 +71,7 @@ export function DnsBadge({ state }: { state: DnsState }) {
       className={cx(
         'inline-flex h-5 shrink-0 items-center gap-1.5 border px-1.5 font-pixel text-[10px] uppercase leading-none',
         state === 'verified' && 'border-accent bg-accent text-accent-fg',
+        state === 'cloudflare' && 'border-accent text-accent',
         state === 'elsewhere' && 'border-warn text-warn',
         (state === 'unresolved' || state === 'failed') && 'border-danger text-danger',
         (state === 'unconfirmed' || state === 'checking') && 'border-line-strong text-muted',
@@ -102,6 +108,7 @@ export function DnsRecords({ dns }: { dns: UseQueryResult<DnsHint> }) {
   const d = dns.data
   const addresses = d?.addresses.join(', ') ?? ''
   const help = state === 'elsewhere' && d ? t.pointsElsewhere(addresses, d.server_addresses.join(', '))
+    : state === 'cloudflare' ? t.viaCloudflare(addresses)
     : state === 'unconfirmed' ? t.unknown(addresses)
     : state === 'verified' ? t.pointsHere(addresses) : null
   return (
