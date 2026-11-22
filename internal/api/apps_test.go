@@ -331,6 +331,24 @@ func TestRoutesAPI(t *testing.T) {
 	if m := e.must(200, "GET", host+"/dns", nil); m["resolves"] != true || m["points_here"] != true || m["hostname"] != "shop.example.com" {
 		t.Errorf("dns match = %v", m)
 	}
+	// The hostname is HTTP only here: behind a CDN the record names the CDN, so another
+	// address stays unknown. Served by the panel itself, another address is another server.
+	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) { return []string{"198.51.100.7"}, nil }
+	if m := e.must(200, "GET", host+"/dns", nil); m["points_here"] != nil {
+		t.Errorf("dns behind a CDN = %v", m)
+	}
+	e.must(200, "PATCH", host, map[string]any{"tls_mode": "auto"})
+	if m := e.must(200, "GET", host+"/dns", nil); m["points_here"] != false {
+		t.Errorf("dns elsewhere = %v", m)
+	}
+	// Cloudflare's addresses are recognised whatever the TLS mode.
+	e.srv.lookupHost = func(_ context.Context, host string) ([]string, error) {
+		return []string{"104.21.12.100", "2606:4700:3034::6815:c64"}, nil
+	}
+	if m := e.must(200, "GET", host+"/dns", nil); m["cdn"] != "cloudflare" || m["points_here"] != nil {
+		t.Errorf("dns behind Cloudflare = %v", m)
+	}
+	e.must(200, "PATCH", host, map[string]any{"tls_mode": "http_only"})
 	e.must(404, "GET", "/api/hosts/nothing.example.com/dns", nil)
 
 	// Proxy down: saved, and the caller is told it is not live.

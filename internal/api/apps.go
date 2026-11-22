@@ -3,9 +3,7 @@ package api
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"os"
 	"path"
@@ -1262,7 +1260,7 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 // when this server has public addresses, whether one of them is among them. Behind NAT or
 // a CDN the answer is "unknown" (null), and the hostname can still work.
 func (s *Server) handleHostDNS(w http.ResponseWriter, r *http.Request) {
-	host, _, ok := s.routedHost(w, r)
+	host, routes, ok := s.routedHost(w, r)
 	if !ok {
 		return
 	}
@@ -1271,13 +1269,17 @@ func (s *Server) handleHostDNS(w http.ResponseWriter, r *http.Request) {
 	if proxy.IsWildcard(host) {
 		lookup = "wildcard-check." + host[2:]
 	}
-	out := s.dnsHint(r.Context(), lookup)
+	out := s.dnsHint(r.Context(), lookup, routes[0].TLSMode == store.TLSHTTPOnly)
 	out["hostname"] = host
 	writeJSON(w, http.StatusOK, out)
 }
 
 // dnsHint looks a hostname up and compares the answer with this server's public addresses.
-func (s *Server) dnsHint(ctx context.Context, hostname string) map[string]any {
+// A hostname behind a CDN resolves to the CDN, so an address that is not this server's
+// says nothing and stays "unknown": that is one whose addresses are all Cloudflare's
+// (reported as cdn "cloudflare"), and one served over plain HTTP for a CDN that
+// terminates TLS (behindCDN).
+func (s *Server) dnsHint(ctx context.Context, hostname string, behindCDN bool) map[string]any {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	addrs, lookupErr := s.lookupHost(ctx, hostname)
@@ -1291,7 +1293,9 @@ func (s *Server) dnsHint(ctx context.Context, hostname string) map[string]any {
 		"addresses":        addrs,
 		"server_addresses": server,
 		"points_here":      nil,
+		"cdn":              cdnOf(addrs),
 	}
+	behindCDN = behindCDN || out["cdn"] != ""
 	if len(server) > 0 {
 		match := false
 		for _, a := range addrs {
@@ -1299,30 +1303,8 @@ func (s *Server) dnsHint(ctx context.Context, hostname string) map[string]any {
 				match = match || a == sa
 			}
 		}
-		out["points_here"] = match
-	}
-	return out
-}
-
-// publicAddrs lists this machine's public unicast addresses.
-func publicAddrs() []string {
-	out := []string{}
-	ifaces, err := net.InterfaceAddrs()
-	if err != nil {
-		return out
-	}
-	for _, a := range ifaces {
-		ipnet, ok := a.(*net.IPNet)
-		if !ok {
-			continue
-		}
-		ip, ok := netip.AddrFromSlice(ipnet.IP)
-		if !ok {
-			continue
-		}
-		ip = ip.Unmap()
-		if ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
-			out = append(out, ip.String())
+		if match || !behindCDN {
+			out["points_here"] = match
 		}
 	}
 	return out

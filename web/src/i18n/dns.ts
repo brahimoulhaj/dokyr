@@ -14,6 +14,8 @@ export const en = {
   pointsElsewhere: (addresses: string, server: string) =>
     `Resolves to ${addresses}, not to this server (${server}). Fine behind a CDN or proxy.`,
   unknown: (addresses: string) => `Resolves to ${addresses}. The server cannot tell whether that is itself.`,
+  cloudflare: 'Cloudflare',
+  viaCloudflare: (addresses: string) => `Resolves to ${addresses}: Cloudflare’s proxy. Cloudflare forwards to the origin set in its DNS record, which the panel cannot see from here.`,
 }
 
 export const fr: typeof en = {
@@ -27,6 +29,8 @@ export const fr: typeof en = {
   pointsElsewhere: (addresses, server) =>
     `Se résout vers ${addresses}, pas vers ce serveur (${server}). Normal derrière un CDN ou un proxy.`,
   unknown: (addresses) => `Se résout vers ${addresses}. Le serveur ne peut pas déterminer s’il s’agit de lui-même.`,
+  cloudflare: 'Cloudflare',
+  viaCloudflare: (addresses) => `Se résout vers ${addresses} : le proxy de Cloudflare. Cloudflare transmet à l’origine définie dans son enregistrement DNS, que le panneau ne peut pas voir d’ici.`,
 }
 
 export const ar: typeof en = {
@@ -40,6 +44,8 @@ export const ar: typeof en = {
   pointsElsewhere: (addresses, server) =>
     `يُحلّ إلى ${ltr(addresses)}، وليس إلى هذا الخادم (${ltr(server)}). لا بأس بذلك خلف CDN أو وسيط.`,
   unknown: (addresses) => `يُحلّ إلى ${ltr(addresses)}. لا يستطيع الخادم معرفة ما إذا كان هذا عنوانه.`,
+  cloudflare: 'Cloudflare',
+  viaCloudflare: (addresses) => `يُحلّ إلى ${ltr(addresses)}: وسيط Cloudflare. يحوّل Cloudflare الطلبات إلى الأصل المحدد في سجل DNS لديه، ولا تستطيع اللوحة رؤيته من هنا.`,
 }
 
 export const es: typeof en = {
@@ -53,4 +59,6 @@ export const es: typeof en = {
   pointsElsewhere: (addresses, server) =>
     `Se resuelve a ${addresses}, no a este servidor (${server}). Es normal detrás de un CDN o un proxy.`,
   unknown: (addresses) => `Se resuelve a ${addresses}. El servidor no puede saber si es él mismo.`,
+  cloudflare: 'Cloudflare',
+  viaCloudflare: (addresses) => `Se resuelve a ${addresses}: el proxy de Cloudflare. Cloudflare reenvía al origen definido en su registro DNS, que el panel no puede ver desde aquí.`,
 }

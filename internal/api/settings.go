@@ -143,7 +143,12 @@ func (s *Server) handlePanelDNS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no panel domain is set")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.dnsHint(r.Context(), domain))
+	mode, _, err := s.store.GetSetting(r.Context(), store.SettingPanelTLS)
+	if err != nil {
+		s.internal(w, "panel settings", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.dnsHint(r.Context(), domain, mode == store.TLSHTTPOnly))
 }
 
 // handleGetOnboarding tells the UI whether to show the onboarding steps.

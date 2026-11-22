@@ -286,6 +286,8 @@ export type DnsHint = {
   server_addresses: string[]
   /** null when the server cannot tell (no public address of its own, e.g. behind NAT). */
   points_here: boolean | null
+  /** The proxy all its addresses belong to; '' when none is recognised (and from an older panel, absent). */
+  cdn?: 'cloudflare' | ''
 }
 
 export type ApiToken = {
