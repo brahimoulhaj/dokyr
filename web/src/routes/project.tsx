@@ -9,11 +9,12 @@ import { Sheet } from '../components/sheet'
 import { EnvironmentEditor } from '../components/environment'
 import { projectDatabasesQuery } from '../lib/databases'
 import { DatabaseStatus, NewDatabase } from './databases'
+import { RoutingBoard } from '../components/routing'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { poll } from '../lib/live'
 import { useCan } from '../lib/roles'
 
-export const projectTabs = ['apps', 'databases', 'environment', 'settings'] as const
+export const projectTabs = ['apps', 'databases', 'routing', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
 
 export function ProjectPage() {
@@ -67,7 +68,7 @@ export function ProjectPage() {
             className={cx('border-b-2 px-3 py-1.5 text-sm whitespace-nowrap', name === tab ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg')}
             aria-current={name === tab ? 'page' : undefined}
           >
-            {{ apps: t.project.apps, databases: t.databases.title, environment: t.project.envTab, settings: t.common.settings }[name]}
+            {{ apps: t.project.apps, databases: t.databases.title, routing: t.routing.title, environment: t.project.envTab, settings: t.common.settings }[name]}
             {name === 'apps' && apps.data && <span className="ms-1.5 text-xs text-muted">{apps.data.length}</span>}
             {name === 'databases' && databases.data && <span className="ms-1.5 text-xs text-muted">{databases.data.length}</span>}
           </Link>
@@ -105,6 +106,7 @@ export function ProjectPage() {
           </li>)}</ul>}
         </Panel>
       </div>}
+      {tab === 'routing' && <RoutingBoard projectId={p.id} intro={t.routing.projectIntro} />}
       {tab === 'environment' && <ProjectEnvironment projectId={p.id} />}
       {tab === 'settings' && (
         <Panel title={t.project.settingsTitle}>
