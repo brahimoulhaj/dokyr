@@ -15,6 +15,32 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.37.0',
+    date: '2026-11-22',
+    changes: {
+      en: [
+        'Fixed: a hostname that sits under a wildcard route (app.example.com beside *.example.com) got no certificate, so opening it failed with an SSL error. It gets its certificate as soon as the panel is updated.',
+        'Routing is one compact list: a line per hostname, a line per path. An app’s Routing tab shows only its own routes, and projects have a Routing tab with the routes of all their apps.',
+        'The Routing page has a filter by hostname, path, app or project once the list grows.',
+      ],
+      fr: [
+        'Corrigé : un nom d’hôte placé sous une route générique (app.example.com à côté de *.example.com) n’obtenait pas de certificat, et son ouverture échouait avec une erreur SSL. Il reçoit son certificat dès la mise à jour du panneau.',
+        'Le Routage est une seule liste compacte : une ligne par nom d’hôte, une ligne par chemin. L’onglet Routage d’une app ne montre que ses propres routes, et les projets ont un onglet Routage avec les routes de toutes leurs apps.',
+        'La page Routage propose un filtre par nom d’hôte, chemin, app ou projet quand la liste s’allonge.',
+      ],
+      ar: [
+        'إصلاح: اسم المضيف الواقع تحت مسار شامل (app.example.com بجانب ‎*.example.com) لم يكن يحصل على شهادة، فكان فتحه يفشل بخطأ SSL. يحصل على شهادته فور تحديث اللوحة.',
+        '«التوجيه» قائمة واحدة مضغوطة: سطر لكل اسم مضيف وسطر لكل مسار. تبويب «التوجيه» في التطبيق يعرض مساراته فقط، وللمشاريع تبويب «التوجيه» بمسارات كل تطبيقاتها.',
+        'في صفحة «التوجيه» تصفية حسب اسم المضيف أو المسار أو التطبيق أو المشروع عندما تطول القائمة.',
+      ],
+      es: [
+        'Corregido: un nombre de host situado bajo una ruta comodín (app.example.com junto a *.example.com) no obtenía certificado, y abrirlo fallaba con un error de SSL. Recibe su certificado en cuanto se actualiza el panel.',
+        'Enrutamiento es una sola lista compacta: una línea por nombre de host, una línea por ruta. La pestaña Enrutamiento de una app muestra solo sus propias rutas, y los proyectos tienen una pestaña Enrutamiento con las rutas de todas sus apps.',
+        'La página Enrutamiento tiene un filtro por nombre de host, ruta, app o proyecto cuando la lista crece.',
+      ],
+    },
+  },
+  {
     version: '0.36.0',
     date: '2026-11-21',
     changes: {
