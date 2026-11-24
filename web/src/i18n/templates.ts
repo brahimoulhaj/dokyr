@@ -14,6 +14,8 @@ export const en = {
   port: (port: number) => `port ${port}`,
   create: (name: string) => `Create ${name}`,
   failed: 'Could not create the app from the template',
+  apps: (n: number) => `${n} apps`,
+  alsoCreates: 'Also creates',
   // Shown instead of the catalog's English description, by template id.
   descriptions: {
   } as Record<string, string>,
@@ -33,10 +35,13 @@ export const fr: typeof en = {
   port: (port) => `port ${port}`,
   create: (name) => `Créer ${name}`,
   failed: "Impossible de créer l'application depuis le modèle",
+  apps: (n) => `${n} applications`,
+  alsoCreates: 'Crée aussi',
   descriptions: {
     wordpress: 'La plateforme de sites et de blogs la plus utilisée, avec sa base MariaDB.',
     jenkins: "Serveur d'automatisation pour les builds, tests et déploiements. Le premier mot de passe admin est dans les journaux de l'application.",
     clickhouse: "Base en colonnes pour l'analytique en temps réel, sur son interface HTTP. Utilisateur default ; le mot de passe est dans les variables de l'application.",
+    signoz: "Traces, métriques et journaux via OpenTelemetry, en quatre applications. Déployez keeper, clickhouse, collector, puis celle-ci. L'OTLP va au collector.",
   },
 }
 
@@ -54,10 +59,13 @@ export const ar: typeof en = {
   port: (port) => `المنفذ ${port}`,
   create: (name) => `إنشاء ${name}`,
   failed: 'تعذر إنشاء التطبيق من القالب',
+  apps: (n) => `${n} تطبيقات`,
+  alsoCreates: 'ينشئ أيضًا',
   descriptions: {
     wordpress: 'أكثر منصات المواقع والمدونات استخدامًا، مع قاعدة بيانات MariaDB.',
     jenkins: 'خادم أتمتة للبناء والاختبار والنشر. كلمة مرور المدير الأولى موجودة في سجلات التطبيق.',
     clickhouse: 'قاعدة بيانات عمودية للتحليلات الفورية، عبر واجهة HTTP. المستخدم default؛ كلمة المرور في متغيرات التطبيق.',
+    signoz: 'تتبعات ومقاييس وسجلات عبر OpenTelemetry، في أربعة تطبيقات. انشر keeper ثم clickhouse ثم collector ثم هذا التطبيق. بيانات OTLP تُرسل إلى collector.',
   },
 }
 
@@ -75,9 +83,12 @@ export const es: typeof en = {
   port: (port) => `puerto ${port}`,
   create: (name) => `Crear ${name}`,
   failed: 'No se pudo crear la app desde la plantilla',
+  apps: (n) => `${n} apps`,
+  alsoCreates: 'También crea',
   descriptions: {
     wordpress: 'La plataforma de sitios y blogs más usada, con su base de datos MariaDB.',
     jenkins: 'Servidor de automatización para builds, pruebas y despliegues. La primera contraseña de administrador está en los registros de la app.',
     clickhouse: 'Base de datos columnar para analítica en tiempo real, en su interfaz HTTP. Usuario default; la contraseña está en las variables de la app.',
+    signoz: 'Trazas, métricas y registros con OpenTelemetry, en cuatro apps. Despliega keeper, clickhouse, collector y luego esta. El OTLP va al collector.',
   },
 }

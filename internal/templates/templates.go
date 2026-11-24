@@ -27,12 +27,39 @@ type Volume struct {
 	Target string `json:"target"`
 }
 
+// File is a file the panel writes into the app's container at each deployment.
+type File struct {
+	Target  string `json:"target"`
+	Content string `json:"-"`
+}
+
+// Service is another app a template creates beside its own, for a product made of several
+// containers. The app is named after the template's app, with Name as a suffix.
+type Service struct {
+	Name         string            `json:"name"`
+	Image        string            `json:"image"`
+	Port         int               `json:"port"`
+	Volumes      []Volume          `json:"volumes"`
+	Files        []File            `json:"-"`
+	Env          map[string]string `json:"-"`
+	StartCommand string            `json:"-"`
+	StartPeriod  int               `json:"-"`
+	// NoProbe is for a service whose port does not answer until the product is set up: it
+	// is healthy when its container stays up.
+	NoProbe bool `json:"-"`
+}
+
 // Template describes one app of the catalog. In Env, ${db.FIELD} refers to the template's
 // own database (HOST, PORT, DATABASE, USERNAME, PASSWORD, URL). ${secret} is replaced by a
 // value generated for the app and ${key} by 32 random bytes in base64 (a Laravel key): both
 // are stored as secret variables, which the panel never shows again, so they are for values
 // only the app reads. ${password} is a generated password its owner signs in with: it stays
 // readable in the app's variables.
+//
+// A template with Services creates one app for each beside its own. In their variables and
+// files, ${stack.HOST} is the internal hostname of the template's own app and
+// ${stack.NAME.HOST} the one of the service NAME; ${stack.secret} is one value generated for
+// the whole stack, for a password its apps share. Files take only these three.
 type Template struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -47,7 +74,9 @@ type Template struct {
 	// StartCommand replaces the image's entrypoint and command, run by /bin/sh -c; "" = the image's own.
 	StartCommand string `json:"-"`
 	// StartPeriod is how long the app may take to accept connections, in seconds; 0 = the default.
-	StartPeriod int `json:"-"`
+	StartPeriod int       `json:"-"`
+	Files       []File    `json:"-"`
+	Services    []Service `json:"services"`
 }
 
 // Shorthands for the catalog.
@@ -218,6 +247,7 @@ var catalog = []Template{
 		Image:       "prom/prometheus:v3", Port: 9090,
 		Volumes: vol("data", "/prometheus"),
 	},
+	signoz,
 	{
 		ID: "gotify", Name: "Gotify", Category: "monitoring", Website: "https://gotify.net",
 		Description: "Push notification server. User admin; the password is in the app's variables.",
@@ -456,47 +486,124 @@ func Get(id string) (Template, bool) {
 // Docker host, so they carry a random part. The variables that come from a database are
 // created empty: the app's owner picks the database, and Connect fills them.
 func (t Template) AppInput(name string) (store.AppInput, error) {
-	suffix, err := random(4)
+	apps, err := t.Stack(name)
 	if err != nil {
 		return store.AppInput{}, err
 	}
-	in := store.AppInput{Name: name, SourceType: store.SourceImage, Image: t.Image, Port: t.Port, StartCommand: t.StartCommand, Template: t.ID,
-		Environment: map[string]string{}, EnvMeta: map[string]store.EnvVarMeta{}, Mounts: []store.AppMount{}}
-	for _, v := range t.Volumes {
-		in.Mounts = append(in.Mounts, store.AppMount{Type: "volume", Source: name + "-" + suffix + "-" + v.Name, Target: v.Target})
+	return apps[0].AppInput, nil
+}
+
+// StackApp is one app of a template: its own, or one of its services.
+type StackApp struct {
+	store.AppInput
+	StartPeriod int
+	NoProbe     bool
+}
+
+// ServiceApp is the name of the app made for a service of a template's app.
+func ServiceApp(name, service string) string { return name + "-" + service }
+
+var stackHost = regexp.MustCompile(`\$\{stack\.(?:([a-z0-9-]+)\.)?HOST\}`)
+
+// Stack is every app the template creates under name: its own first, then its services.
+// A hostname is written as a reference to the app (${app.NAME.HOST}): the deployment
+// resolves it in a variable, and Hosts does in a file once the apps exist.
+func (t Template) Stack(name string) ([]StackApp, error) {
+	suffix, err := random(4)
+	if err != nil {
+		return nil, err
 	}
-	for key, value := range t.Env {
-		if strings.Contains(value, "${db.") {
-			in.Environment[key] = ""
+	shared, err := random(16)
+	if err != nil {
+		return nil, err
+	}
+	parts := append([]Service{{Image: t.Image, Port: t.Port, Volumes: t.Volumes, Files: t.Files, Env: t.Env, StartCommand: t.StartCommand, StartPeriod: t.StartPeriod}}, t.Services...)
+	stack := func(value string) string {
+		value = stackHost.ReplaceAllStringFunc(value, func(ref string) string {
+			if service := stackHost.FindStringSubmatch(ref)[1]; service != "" {
+				return "${app." + ServiceApp(name, service) + ".HOST}"
+			}
+			return "${app." + name + ".HOST}"
+		})
+		return strings.ReplaceAll(value, "${stack.secret}", shared)
+	}
+	out := make([]StackApp, 0, len(parts))
+	for i, part := range parts {
+		appName := name
+		if i > 0 {
+			appName = ServiceApp(name, part.Name)
+		}
+		in := store.AppInput{Name: appName, SourceType: store.SourceImage, Image: part.Image, Port: part.Port, StartCommand: part.StartCommand, Template: t.ID,
+			Environment: map[string]string{}, EnvMeta: map[string]store.EnvVarMeta{}, Mounts: []store.AppMount{}}
+		if i > 0 {
+			in.Template = "" // connecting a database is for the template's own app
+		}
+		for _, v := range part.Volumes {
+			in.Mounts = append(in.Mounts, store.AppMount{Type: "volume", Source: appName + "-" + suffix + "-" + v.Name, Target: v.Target})
+		}
+		for _, f := range part.Files {
+			in.Mounts = append(in.Mounts, store.AppMount{Type: "file", Target: f.Target, ReadOnly: true, Content: stack(f.Content)})
+		}
+		for key, value := range part.Env {
+			if strings.Contains(value, "${db.") {
+				in.Environment[key] = ""
+				continue
+			}
+			if strings.Contains(value, "${stack.secret}") {
+				in.EnvMeta[key] = store.EnvVarMeta{Scope: store.EnvScopeRuntime, Secret: true}
+			}
+			value = stack(value)
+			if strings.Contains(value, "${secret}") {
+				secret, err := random(24)
+				if err != nil {
+					return nil, err
+				}
+				value = strings.ReplaceAll(value, "${secret}", secret)
+				in.EnvMeta[key] = store.EnvVarMeta{Scope: store.EnvScopeRuntime, Secret: true}
+			}
+			if strings.Contains(value, "${password}") {
+				// Not a secret: the app's owner reads it in the variables to sign in.
+				password, err := random(12)
+				if err != nil {
+					return nil, err
+				}
+				value = strings.ReplaceAll(value, "${password}", password)
+			}
+			if strings.Contains(value, "${key}") {
+				raw := make([]byte, 32)
+				if _, err := rand.Read(raw); err != nil {
+					return nil, err
+				}
+				value = strings.ReplaceAll(value, "${key}", base64.StdEncoding.EncodeToString(raw))
+				in.EnvMeta[key] = store.EnvVarMeta{Scope: store.EnvScopeRuntime, Secret: true}
+			}
+			in.Environment[key] = value
+		}
+		out = append(out, StackApp{AppInput: in, StartPeriod: part.StartPeriod, NoProbe: part.NoProbe})
+	}
+	return out, nil
+}
+
+var fileHost = regexp.MustCompile(`\$\{app\.([a-z0-9-]+)\.HOST\}`)
+
+// Hosts writes the internal hostnames into the files of a stack's app: hosts maps an app's
+// name to the name it answers on. A file is not resolved at deployment as a variable is.
+// It reports whether a file changed.
+func Hosts(mounts []store.AppMount, hosts map[string]string) ([]store.AppMount, bool) {
+	out, changed := slices.Clone(mounts), false
+	for i, m := range out {
+		if m.Type != "file" {
 			continue
 		}
-		if strings.Contains(value, "${secret}") {
-			secret, err := random(24)
-			if err != nil {
-				return store.AppInput{}, err
+		out[i].Content = fileHost.ReplaceAllStringFunc(m.Content, func(ref string) string {
+			if host, ok := hosts[fileHost.FindStringSubmatch(ref)[1]]; ok {
+				return host
 			}
-			value = strings.ReplaceAll(value, "${secret}", secret)
-			in.EnvMeta[key] = store.EnvVarMeta{Scope: store.EnvScopeRuntime, Secret: true}
-		}
-		if strings.Contains(value, "${password}") {
-			// Not a secret: the app's owner reads it in the variables to sign in.
-			password, err := random(12)
-			if err != nil {
-				return store.AppInput{}, err
-			}
-			value = strings.ReplaceAll(value, "${password}", password)
-		}
-		if strings.Contains(value, "${key}") {
-			raw := make([]byte, 32)
-			if _, err := rand.Read(raw); err != nil {
-				return store.AppInput{}, err
-			}
-			value = strings.ReplaceAll(value, "${key}", base64.StdEncoding.EncodeToString(raw))
-			in.EnvMeta[key] = store.EnvVarMeta{Scope: store.EnvScopeRuntime, Secret: true}
-		}
-		in.Environment[key] = value
+			return ref
+		})
+		changed = changed || out[i].Content != m.Content
 	}
-	return in, nil
+	return out, changed
 }
 
 // DatabaseVariables names the variables the template fills from its database, sorted.

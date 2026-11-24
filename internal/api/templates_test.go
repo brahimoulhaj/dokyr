@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"panel/internal/auth"
 	"panel/internal/brand"
 	"panel/internal/database"
+	"panel/internal/deploy"
 	"panel/internal/executor/executortest"
 	"panel/internal/secret"
 	"panel/internal/store"
@@ -98,6 +100,50 @@ func TestTemplates(t *testing.T) {
 		t.Fatalf("a template must not create a database: %d", len(dbs))
 	}
 	call("POST", base+"wordpress", map[string]any{}, 409)
+
+	// A template of several apps creates them all, with the hostnames written in their files.
+	out = call("POST", base+"signoz", map[string]any{"name": "obs"}, 201)
+	if main := out["app"].(map[string]any); main["name"] != "obs" || main["template"] != "signoz" {
+		t.Fatalf("created = %v", out)
+	}
+	apps, _ := st.ListApps(ctx, p.ID)
+	hosts := map[string]string{}
+	for _, a := range apps {
+		hosts[a.Name] = deploy.AppHost(a.ID)
+	}
+	if len(apps) != 5 || hosts["obs-keeper"] == "" || hosts["obs-clickhouse"] == "" || hosts["obs-collector"] == "" {
+		t.Fatalf("apps = %v", hosts)
+	}
+	for _, a := range apps {
+		hc, saved, _ := st.AppHealthCheck(ctx, a.ID)
+		switch a.Name {
+		case "obs-clickhouse":
+			if c := a.Mounts[1].Content; !strings.Contains(c, "host: "+hosts["obs-keeper"]+"\n") || !strings.Contains(c, "host: "+hosts["obs-clickhouse"]+"\n") || strings.Contains(c, "${") {
+				t.Fatalf("ClickHouse's file must name the apps by their hostnames: %s", c)
+			}
+		case "obs-collector":
+			if a.Mounts[1].Content != "server_endpoint: ws://"+hosts["obs"]+":4320/v1/opamp\n" || !saved || hc.Type != store.HealthRunning || a.Template != "" {
+				t.Fatalf("collector = %+v, health %+v", a.Mounts[1], hc)
+			}
+		case "obs":
+			if !saved || hc.Type != store.HealthTCP || hc.StartPeriod != 120 {
+				t.Fatalf("health = %+v", hc)
+			}
+		}
+	}
+	// All its apps or none: a name one of them would take is a conflict that leaves nothing.
+	call("POST", "/api/projects/"+p.ID+"/apps", map[string]any{"name": "apm-collector", "source_type": "image", "image": "nginx", "port": 80}, 201)
+	call("POST", base+"signoz", map[string]any{"name": "apm"}, 409)
+	if apps, _ := st.ListApps(ctx, p.ID); len(apps) != 6 {
+		t.Fatalf("a refused template left apps behind: %d", len(apps))
+	}
+	// The rest of the test counts the project's apps from WordPress alone.
+	apps, _ = st.ListApps(ctx, p.ID)
+	for _, a := range apps {
+		if a.Name != "wordpress" {
+			st.DeleteApp(ctx, a.ID)
+		}
+	}
 
 	// Connect a database: the instance's own one by reference.
 	connect := "/api/apps/" + appID + "/database"

@@ -52,8 +52,49 @@ func TestCatalog(t *testing.T) {
 		if err := store.ValidateEnvMeta(in.Environment, in.EnvMeta); err != nil {
 			t.Fatalf("%s environment: %v", tpl.ID, err)
 		}
-		if len(in.Mounts) != len(tpl.Volumes) {
-			t.Fatalf("%s: %d mounts for %d volumes", tpl.ID, len(in.Mounts), len(tpl.Volumes))
+		if len(in.Mounts) != len(tpl.Volumes)+len(tpl.Files) {
+			t.Fatalf("%s: %d mounts for %d volumes and %d files", tpl.ID, len(in.Mounts), len(tpl.Volumes), len(tpl.Files))
+		}
+		// Each service makes an app the panel accepts too, named after the template's own, and
+		// no reference to the stack is left for the deployment to stumble on.
+		stack, err := tpl.Stack(tpl.ID)
+		if err != nil || len(stack) != 1+len(tpl.Services) || stack[0].Name != tpl.ID {
+			t.Fatalf("%s: stack of %d apps for %d services: %v", tpl.ID, len(stack), len(tpl.Services), err)
+		}
+		names := map[string]bool{}
+		for _, app := range stack {
+			names[app.Name] = true
+		}
+		for i, app := range stack {
+			if i > 0 {
+				svc := tpl.Services[i-1]
+				if app.Name != tpl.ID+"-"+svc.Name || !appName.MatchString(app.Name) || !image.MatchString(app.Image) || app.Port < 1 || app.Template != "" {
+					t.Fatalf("%s: service %q makes an app the panel refuses: %+v", tpl.ID, svc.Name, app.AppInput)
+				}
+			}
+			if err := store.ValidateAppMounts(app.Mounts); err != nil {
+				t.Fatalf("%s mounts: %v", app.Name, err)
+			}
+			if err := store.ValidateEnvMeta(app.Environment, app.EnvMeta); err != nil {
+				t.Fatalf("%s environment: %v", app.Name, err)
+			}
+			texts := []string{}
+			for _, v := range app.Environment {
+				texts = append(texts, v)
+			}
+			for _, m := range app.Mounts {
+				texts = append(texts, m.Content)
+			}
+			for _, text := range texts {
+				if strings.Contains(text, "${stack.") {
+					t.Fatalf("%s kept a reference to its stack: %s", app.Name, text)
+				}
+				for _, ref := range fileHost.FindAllStringSubmatch(text, -1) {
+					if !names[ref[1]] {
+						t.Fatalf("%s refers to %s, which the template does not create", app.Name, ref[0])
+					}
+				}
+			}
 		}
 		for key, value := range in.Environment {
 			if strings.Contains(value, "${secret}") || strings.Contains(value, "${password}") || strings.Contains(value, "${key}") || strings.Contains(value, "${db.HOST") {
@@ -109,6 +150,47 @@ func TestAppInput(t *testing.T) {
 	u, _ := um.AppInput("cms")
 	if !u.EnvMeta["SECRET"].Secret || u.EnvMeta["ADMIN_PASSWORD"].Secret || len(u.Environment["SECRET"]) < 32 {
 		t.Fatalf("directus: SECRET is a secret, ADMIN_PASSWORD is readable: %v", u.EnvMeta)
+	}
+}
+
+// A template of several apps: one password for all of them, and hostnames a file can hold.
+func TestStack(t *testing.T) {
+	sz, _ := Get("signoz")
+	stack, err := sz.Stack("obs")
+	if err != nil || len(stack) != 4 {
+		t.Fatalf("stack = %d apps, %v", len(stack), err)
+	}
+	byName := map[string]StackApp{}
+	for _, app := range stack {
+		byName[app.Name] = app
+	}
+	main, collector, ch := byName["obs"], byName["obs-collector"], byName["obs-clickhouse"]
+	dsn := main.Environment["SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN"]
+	if !strings.HasSuffix(dsn, "@${app.obs-clickhouse.HOST}:9000") || dsn != collector.Environment["SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN"] || !main.EnvMeta["SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN"].Secret {
+		t.Fatalf("the apps share one address of ClickHouse, a secret: %q", dsn)
+	}
+	password := strings.TrimSuffix(strings.TrimPrefix(dsn, "tcp://default:"), "@${app.obs-clickhouse.HOST}:9000")
+	other, _ := sz.Stack("obs")
+	if len(password) < 32 || !strings.Contains(ch.Mounts[1].Content, "password: "+password+"\n") || strings.Contains(other[0].Environment["SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN"], password) {
+		t.Fatalf("ClickHouse must ask for the password the other apps send, new for each stack: %q", password)
+	}
+	if !collector.NoProbe || main.NoProbe || main.StartPeriod != 120 || main.Template != "signoz" || ch.Mounts[0].Type != "volume" || !ch.Mounts[1].ReadOnly {
+		t.Fatalf("stack apps = %+v", stack)
+	}
+	// Files get the hostnames once the apps exist; variables keep their references.
+	hosts := map[string]string{"obs": "app-1", "obs-keeper": "app-2", "obs-clickhouse": "app-3"}
+	mounts, changed := Hosts(ch.Mounts, hosts)
+	if !changed || !strings.Contains(mounts[1].Content, "host: app-2\n") || !strings.Contains(mounts[1].Content, "host: app-3\n") || strings.Contains(mounts[1].Content, "${") {
+		t.Fatalf("ClickHouse's file must name its keeper and itself: %s", mounts[1].Content)
+	}
+	if strings.Contains(ch.Mounts[1].Content, "app-2") {
+		t.Fatal("Hosts must not change the mounts it was given")
+	}
+	if opamp, _ := Hosts(collector.Mounts, hosts); opamp[1].Content != "server_endpoint: ws://app-1:4320/v1/opamp\n" {
+		t.Fatalf("opamp = %q", opamp[1].Content)
+	}
+	if _, changed := Hosts(main.Mounts, hosts); changed {
+		t.Fatal("an app without files has nothing to change")
 	}
 }
 
