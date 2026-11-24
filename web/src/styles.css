@@ -77,6 +77,14 @@ body {
   --tst-radius: 0px;
   font-family: var(--font-mono);
 }
+/* Toasts rise above the bar of bulk actions while it floats at the bottom. */
+body:has(.bulk-bar) .tst-viewport {
+  translate: 0 -4.5rem;
+}
+/* And the page keeps room under its last row for that bar. */
+main:has(.bulk-bar) {
+  padding-bottom: 6rem;
+}
 .tst-viewport .tst-action,
 .tst-viewport .tst-close {
   border-radius: 0;

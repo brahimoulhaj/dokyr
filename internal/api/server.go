@@ -32,6 +32,7 @@ type Server struct {
 	updater        Updater
 	hostTerminal   HostTerminal
 	hostUnlocks    hostUnlocks
+	confirmed      confirmations
 	pushes         recentPushes
 	proxyToken     string // what the proxy proves itself with; see clientIP
 	cronJobs       CronJobs
@@ -105,6 +106,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/passkeys/login/finish", s.limit(s.authRate, s.handleFinishPasskeyLogin))
 	mux.HandleFunc("POST /api/auth/passkeys/host-unlock/begin", s.requireAuth(sessionOnly(adminOnly(s.limit(s.authRate, s.handleBeginHostUnlockPasskey)))))
 	mux.HandleFunc("POST /api/auth/passkeys/host-unlock/finish", s.requireAuth(sessionOnly(adminOnly(s.limit(s.authRate, s.handleFinishHostUnlockPasskey)))))
+	mux.HandleFunc("POST /api/auth/passkeys/confirm/begin", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleBeginConfirmPasskey))))
+	mux.HandleFunc("POST /api/auth/passkeys/confirm/finish", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleFinishConfirmPasskey))))
 	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleDeletePasskey))))
 
 	mux.HandleFunc("GET /api/users", s.requireAuth(sessionOnly(ownerOnly(s.handleListUsers))))
@@ -230,6 +233,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{id}/apps", s.requireAuth(s.handleListApps))
 	mux.HandleFunc("GET /api/projects/{id}/databases", s.requireAuth(s.handleProjectDatabases))
 	mux.HandleFunc("POST /api/projects/{id}/apps", s.requireAuth(s.handleCreateApp))
+	// DELETE, so the rule that keeps maintainers from deleting covers it too.
+	mux.HandleFunc("DELETE /api/projects/{id}/apps", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleDeleteApps))))
 	mux.HandleFunc("POST /api/projects/{id}/compose", s.requireAuth(s.handleImportCompose))
 	mux.HandleFunc("GET /api/templates", s.requireAuth(s.handleListTemplates))
 	mux.HandleFunc("POST /api/apps/{id}/database", s.requireAuth(sessionOnly(s.handleConnectDatabase)))

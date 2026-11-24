@@ -768,3 +768,32 @@ func TestNeedsRedeploy(t *testing.T) {
 		t.Fatal("an old fingerprint still sees a changed setting")
 	}
 }
+
+func TestDeleteAppsAtOnce(t *testing.T) {
+	e := newEnv(t)
+	e.signIn()
+	pid := e.must(201, "POST", "/api/projects", map[string]any{"name": "Shop"})["id"].(string)
+	other := e.must(201, "POST", "/api/projects", map[string]any{"name": "Blog"})["id"].(string)
+	apps := "/api/projects/" + pid + "/apps"
+	app := func(project, name string) string {
+		return e.must(201, "POST", "/api/projects/"+project+"/apps", map[string]any{"name": name, "image": "nginx:1", "port": 80})["id"].(string)
+	}
+	web, worker, foreign := app(pid, "web"), app(pid, "worker"), app(other, "blog")
+
+	e.must(422, "DELETE", apps, map[string]any{"app_ids": []string{}, "password": "s3cret-pass"})
+	e.must(401, "DELETE", apps, map[string]any{"app_ids": []string{web, worker}, "password": "wrong"})
+	if got := len(e.list(apps)); got != 2 {
+		t.Fatalf("a wrong password deleted apps: %d left, want 2", got)
+	}
+
+	// An app of another project is refused; the rest still go.
+	m := e.must(200, "DELETE", apps, map[string]any{"app_ids": []string{web, foreign, worker}, "password": "s3cret-pass"})
+	failed := m["failed"].([]any)
+	if m["deleted"] != float64(2) || len(failed) != 1 || failed[0].(map[string]any)["id"] != foreign {
+		t.Fatalf("delete = %v, want 2 deleted and only the foreign app refused", m)
+	}
+	if got := len(e.list(apps)); got != 0 {
+		t.Errorf("%d apps left, want 0", got)
+	}
+	e.must(200, "GET", "/api/apps/"+foreign, nil)
+}

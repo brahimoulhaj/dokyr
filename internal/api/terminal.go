@@ -113,6 +113,53 @@ func (u *hostUnlocks) ok(session string) bool {
 	return session != "" && time.Now().Before(u.until[session])
 }
 
+// confirmedFor is how long a passkey confirmation waits for the action it was given for.
+const confirmedFor = 2 * time.Minute
+
+// confirmations holds the passkey confirmations not yet spent, by browser session. One
+// confirmation allows one action: take spends it.
+type confirmations struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+}
+
+func (c *confirmations) grant(session string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	for k, t := range c.until {
+		if now.After(t) {
+			delete(c.until, k)
+		}
+	}
+	if c.until == nil {
+		c.until = map[string]time.Time{}
+	}
+	c.until[session] = now.Add(confirmedFor)
+}
+
+func (c *confirmations) take(session string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.until[session]
+	delete(c.until, session)
+	return ok && session != "" && time.Now().Before(t)
+}
+
+// handleBeginConfirmPasskey starts a passkey confirmation of one destructive action, for
+// whoever does not have the password at hand.
+func (s *Server) handleBeginConfirmPasskey(w http.ResponseWriter, r *http.Request) {
+	s.beginPasskeyConfirmation(w, r, "passkey-confirm")
+}
+
+// handleFinishConfirmPasskey lets this browser session do one such action, soon.
+func (s *Server) handleFinishConfirmPasskey(w http.ResponseWriter, r *http.Request) {
+	if s.finishPasskeyConfirmation(w, r, "passkey-confirm") {
+		s.confirmed.grant(sessionHash(r))
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // Idle minutes of a host shell: the default, and the longest that can be set.
 const (
 	hostIdleDefault = 30
@@ -447,9 +494,22 @@ func (s *Server) hasPasskey(r *http.Request) bool {
 	return err == nil && len(keys) > 0
 }
 
-// handleBeginHostUnlockPasskey starts a passkey confirmation in place of the password:
-// a challenge for the signed-in user's own passkeys, user verification required.
+// handleBeginHostUnlockPasskey starts a passkey confirmation in place of the password.
 func (s *Server) handleBeginHostUnlockPasskey(w http.ResponseWriter, r *http.Request) {
+	s.beginPasskeyConfirmation(w, r, "passkey-host-unlock")
+}
+
+// handleFinishHostUnlockPasskey unlocks the host terminal as the password does.
+func (s *Server) handleFinishHostUnlockPasskey(w http.ResponseWriter, r *http.Request) {
+	if s.finishPasskeyConfirmation(w, r, "passkey-host-unlock") {
+		s.hostUnlocks.grant(sessionHash(r))
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// beginPasskeyConfirmation answers a challenge for the signed-in user's own passkeys,
+// user verification required. The kind keeps one confirmation from standing for another.
+func (s *Server) beginPasskeyConfirmation(w http.ResponseWriter, r *http.Request, kind string) {
 	origin, err := s.loginOrigin(r)
 	if err != nil {
 		writeError(w, 422, "origin", err.Error())
@@ -474,7 +534,7 @@ func (s *Server) handleBeginHostUnlockPasskey(w http.ResponseWriter, r *http.Req
 		s.internal(w, "passkey confirmation", err)
 		return
 	}
-	if _, err = s.beginLoginFlow(w, loginFlow{Kind: "passkey-host-unlock", Origin: origin, UserID: u.ID, SessionHash: sessionHash(r), Session: *session}); err != nil {
+	if _, err = s.beginLoginFlow(w, loginFlow{Kind: kind, Origin: origin, UserID: u.ID, SessionHash: sessionHash(r), Session: *session}); err != nil {
 		writeError(w, 429, "busy", err.Error())
 		return
 	}
@@ -482,41 +542,40 @@ func (s *Server) handleBeginHostUnlockPasskey(w http.ResponseWriter, r *http.Req
 	writeJSON(w, 200, options)
 }
 
-// handleFinishHostUnlockPasskey checks the assertion against the challenge of this user
-// and this browser session, then unlocks the host terminal as the password does.
-func (s *Server) handleFinishHostUnlockPasskey(w http.ResponseWriter, r *http.Request) {
-	f, err := s.takeLoginFlow(w, r, "passkey-host-unlock")
+// finishPasskeyConfirmation checks the assertion against the challenge of this user and
+// this browser session. It reports whether the passkey confirmed; if not, it has answered.
+func (s *Server) finishPasskeyConfirmation(w http.ResponseWriter, r *http.Request, kind string) bool {
+	f, err := s.takeLoginFlow(w, r, kind)
 	if err != nil {
 		writeError(w, 400, "challenge", err.Error())
-		return
+		return false
 	}
 	s.loginFlows.passkeyMu.Lock()
 	defer s.loginFlows.passkeyMu.Unlock()
 	rp, err := passkeyRP(f.Origin)
 	if err != nil {
 		s.internal(w, "passkey RP", err)
-		return
+		return false
 	}
 	u, err := s.passkeyUser(r.Context(), userFrom(r.Context()), rp.Config.RPID)
 	if err != nil {
 		s.internal(w, "passkey user", err)
-		return
+		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	cred, err := rp.FinishLogin(u, f.Session, r)
 	if err != nil || cred.Authenticator.CloneWarning {
 		writeError(w, 401, "invalid_credentials", "could not verify this passkey; use your password or try another passkey")
-		return
+		return false
 	}
 	data, err := json.Marshal(cred)
 	if err != nil {
 		s.internal(w, "passkey credential", err)
-		return
+		return false
 	}
 	if err = s.store.UsePasskey(r.Context(), u.ID, rp.Config.RPID, base64.RawURLEncoding.EncodeToString(cred.ID), data); err != nil {
 		writeError(w, 401, "invalid_credentials", "this passkey is no longer registered")
-		return
+		return false
 	}
-	s.hostUnlocks.grant(sessionHash(r))
-	w.WriteHeader(http.StatusNoContent)
+	return true
 }
