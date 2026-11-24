@@ -74,3 +74,24 @@ export async function unlockHostWithPasskey() {
   if (!credential) throw new Error('Passkey confirmation was cancelled.')
   await api('/auth/passkeys/host-unlock/finish', { method: 'POST', body: credentialJSON(credential) })
 }
+
+/** Confirms one destructive action with one of the signed-in user's passkeys, in place of the password. The action follows at once, without a password. */
+export async function confirmWithPasskey() {
+  const { publicKey: options } = await api<{ publicKey: RequestJSON }>('/auth/passkeys/confirm/begin', { method: 'POST', body: {} })
+  const credential = await navigator.credentials.get({ publicKey: {
+    ...options, challenge: decode(options.challenge),
+    allowCredentials: options.allowCredentials?.map((c) => ({ ...c, id: decode(c.id) })),
+  } }) as PublicKeyCredential | null
+  if (!credential) throw new Error('Passkey confirmation was cancelled.')
+  await api('/auth/passkeys/confirm/finish', { method: 'POST', body: credentialJSON(credential) })
+}
+
+/** Whether the signed-in user has a passkey this browser, at this address, can use. */
+export const ownPasskeyQuery = {
+  queryKey: ['auth', 'security', 'own-passkey'] as const,
+  queryFn: async () => {
+    if (!passkeysSupported()) return false
+    const { passkeys } = await api<{ passkeys: { rp_id: string }[] }>('/auth/security')
+    return passkeys.some((k) => k.rp_id === location.hostname)
+  },
+}

@@ -168,6 +168,24 @@ func TestPasskeyRegistrationAndLogin(t *testing.T) {
 	confirmed := assertion(opts, e.url, true)
 	mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/finish", confirmed, 204)
 	mustStatus(t, e, "POST", "/api/auth/passkeys/host-unlock/finish", confirmed, 400) // consumed challenge
+	// A passkey also confirms one deletion of several apps, in place of the password.
+	pid := mustStatus(t, e, "POST", "/api/projects", map[string]any{"name": "Shop"}, 201)["id"].(string)
+	newApp := func(name string) string {
+		return mustStatus(t, e, "POST", "/api/projects/"+pid+"/apps", map[string]any{"name": name, "image": "nginx:1", "port": 80}, 201)["id"].(string)
+	}
+	web, worker := newApp("web"), newApp("worker")
+	// Unlocking the host is not a confirmation of anything else.
+	mustStatus(t, e, "DELETE", "/api/projects/"+pid+"/apps", map[string]any{"app_ids": []string{web}}, 401)
+	opts = mustStatus(t, e, "POST", "/api/auth/passkeys/confirm/begin", map[string]any{}, 200)["publicKey"].(map[string]any)
+	if opts["userVerification"] != "required" {
+		t.Fatal("a confirmation must require user verification")
+	}
+	mustStatus(t, e, "POST", "/api/auth/passkeys/confirm/finish", assertion(opts, e.url, true), 204)
+	if got := mustStatus(t, e, "DELETE", "/api/projects/"+pid+"/apps", map[string]any{"app_ids": []string{web}}, 200); got["deleted"] != float64(1) {
+		t.Fatalf("delete after a passkey confirmation = %v", got)
+	}
+	// One confirmation, one action.
+	mustStatus(t, e, "DELETE", "/api/projects/"+pid+"/apps", map[string]any{"app_ids": []string{worker}}, 401)
 	if got := mustStatus(t, e, "GET", "/api/host/terminal/settings", nil, 200); got["unlocked"] != true {
 		t.Fatalf("host settings after the confirmation = %v", got)
 	}

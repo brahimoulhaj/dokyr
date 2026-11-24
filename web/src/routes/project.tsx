@@ -13,6 +13,11 @@ import { RoutingBoard } from '../components/routing'
 import { ContextBreadcrumb } from '../components/context-breadcrumb'
 import { poll } from '../lib/live'
 import { useCan } from '../lib/roles'
+import { confirmWithPasskey, ownPasskeyQuery } from '../lib/passkeys'
+import { toast } from '@yusufceng1z/ding-react'
+import { X } from '@phosphor-icons/react'
+import { ConfirmModal } from '../components/confirm-dialog'
+import { PasswordConfirmDialog } from '../components/password-confirm-dialog'
 
 export const projectTabs = ['apps', 'databases', 'routing', 'environment', 'settings'] as const
 export type ProjectTab = (typeof projectTabs)[number]
@@ -82,11 +87,7 @@ export function ProjectPage() {
             (apps.data.length === 0 ? (
               <Empty title={t.project.emptyTitle}>{t.project.emptyHint}</Empty>
             ) : (
-              <ul className="divide-y divide-line">
-                {apps.data.map((a) => (
-                  <AppRow key={a.id} app={a} routes={routes.filter((r) => r.app_id === a.id)} />
-                ))}
-              </ul>
+              <AppList projectId={p.id} apps={apps.data} routes={routes} />
             ))}
         </Panel>
       )}
@@ -121,13 +122,186 @@ export function ProjectPage() {
   )
 }
 
+type BulkAction = 'deploy' | 'start' | 'stop' | 'restart' | 'delete'
+
+/** The project's apps, with checkboxes to act on several at once. */
+function AppList({ projectId, apps, routes }: { projectId: string; apps: App[]; routes: Route[] }) {
+  const t = useT()
+  const can = useCan()
+  const queryClient = useQueryClient()
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  // An app deleted meanwhile leaves the selection with the list.
+  const chosen = apps.filter((a) => picked.has(a.id))
+  const running = chosen.filter((a) => a.current_deployment_id && a.desired_state === 'running')
+  // What each action applies to: an app never deployed has nothing to start or stop.
+  const targets: Record<BulkAction, App[]> = {
+    deploy: chosen,
+    restart: running,
+    stop: running,
+    start: chosen.filter((a) => a.current_deployment_id && a.desired_state === 'stopped'),
+    delete: chosen,
+  }
+
+  /** Refreshes what the action touched, whether or not some of it failed. */
+  async function refresh(name: BulkAction, list: App[]) {
+    await queryClient.invalidateQueries({ queryKey: appsQuery(projectId).queryKey, exact: true })
+    for (const a of list) {
+      if (name === 'delete') queryClient.removeQueries({ queryKey: appQuery(a.id).queryKey })
+      else queryClient.invalidateQueries({ queryKey: appQuery(a.id).queryKey })
+    }
+    if (name === 'delete') {
+      queryClient.invalidateQueries({ queryKey: projectQuery(projectId).queryKey, exact: true })
+      queryClient.invalidateQueries({ queryKey: routesQuery.queryKey })
+    }
+  }
+  /** Says how it went; the apps that failed stay selected, to try again. */
+  function report(name: BulkAction, total: number, failed: string[]) {
+    const m = t.project.bulk[name]
+    if (failed.length > 0) return void toast.error(m.fail(failed.length, total), { description: failed.join('\n') })
+    toast.success(m.done(total))
+    setPicked(new Set())
+  }
+
+  const run = useMutation({
+    mutationFn: async (name: Exclude<BulkAction, 'delete'>) => {
+      const list = targets[name]
+      const results = await Promise.allSettled(list.map((a) => api<unknown>(`/apps/${a.id}/${name}`, { method: 'POST' })))
+      const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${list[i].name}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`] : []))
+      await refresh(name, list)
+      report(name, list.length, failed)
+    },
+  })
+  // Deleting asks for the password; a wrong one fails here, inside the dialog.
+  // Without one, a passkey confirmation was made just before and the server holds it.
+  async function remove(password?: string) {
+    const list = targets.delete
+    const out = await api<{ failed: { id: string; name: string; error: string }[] }>(`/projects/${projectId}/apps`, { method: 'DELETE', body: { app_ids: list.map((a) => a.id), password } })
+    await refresh('delete', list)
+    report('delete', list.length, out.failed.map((f) => `${f.name || f.id}: ${f.error}`))
+  }
+
+  const [asking, setAsking] = useState<BulkAction | null>(null)
+  const passkey = useQuery({ ...ownPasskeyQuery, enabled: asking === 'delete' })
+  const toggle = (id: string, on: boolean) =>
+    setPicked((old) => {
+      const next = new Set(old)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  const all = chosen.length === apps.length
+  const busy = run.isPending
+  const names = (list: App[]) => (
+    <span dir="ltr" className="mt-3 block max-h-40 overflow-y-auto border-s-2 border-line-strong ps-3 text-fg">
+      {list.map((a) => <span key={a.id} className="block truncate">{a.name}</span>)}
+    </span>
+  )
+  const act = (name: BulkAction, label: string) => (
+    <button
+      type="button"
+      disabled={busy || targets[name].length === 0}
+      onClick={() => setAsking(name)}
+      className={cx(
+        'h-11 shrink-0 px-3.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-35',
+        name === 'delete' ? 'text-danger enabled:hover:bg-danger enabled:hover:text-bg' : 'text-muted enabled:hover:bg-raised enabled:hover:text-fg',
+      )}
+    >
+      {label}
+    </button>
+  )
+  const ask = asking && asking !== 'delete' ? asking : null
+
+  return (
+    <>
+      <label className="flex cursor-pointer items-center gap-3 border-b border-line px-4 py-2.5 text-xs text-muted">
+        <input
+          type="checkbox"
+          className="accent-[var(--color-accent)]"
+          checked={all}
+          ref={(el) => {
+            if (el) el.indeterminate = chosen.length > 0 && !all
+          }}
+          onChange={(e) => setPicked(new Set(e.target.checked ? apps.map((a) => a.id) : []))}
+        />
+        {chosen.length > 0 ? t.project.selected(chosen.length) : t.project.selectAll}
+      </label>
+      <ul className="divide-y divide-line">
+        {apps.map((a) => (
+          <AppRow key={a.id} app={a} routes={routes.filter((r) => r.app_id === a.id)} picked={picked.has(a.id)} onPick={(on) => toggle(a.id, on)} />
+        ))}
+      </ul>
+
+      {chosen.length > 0 && (
+        <div className="bulk-bar pointer-events-none fixed inset-x-0 bottom-5 z-30 flex justify-center px-4">
+          <div
+            role="toolbar"
+            aria-label={t.project.bulkActions}
+            className="pointer-events-auto flex max-w-full animate-[stack-in_220ms_cubic-bezier(.2,.8,.3,1)] items-stretch border border-line-strong bg-surface shadow-[5px_5px_0_0_rgb(0_0_0/0.3)] motion-reduce:animate-none"
+          >
+            <span className="flex shrink-0 items-center gap-2.5 bg-accent ps-3 pe-3.5 text-accent-fg" aria-live="polite">
+              <span className="font-pixel text-base leading-none tabular-nums">{String(chosen.length).padStart(2, '0')}</span>
+              <span className="font-pixel text-[10px] uppercase leading-none">{busy ? t.common.working : t.project.selectedLabel}</span>
+            </span>
+            <div className="flex min-w-0 items-stretch divide-x divide-line overflow-x-auto">
+              {act('deploy', chosen.every((a) => a.current_deployment_id) ? t.app.redeploy : t.app.deploy)}
+              {act('restart', t.app.restart)}
+              {act('stop', t.app.stop)}
+              {act('start', t.app.start)}
+              {can.remove && act('delete', t.project.bulkDelete)}
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setPicked(new Set())}
+              aria-label={t.project.clearSelection}
+              title={t.project.clearSelection}
+              className="flex w-11 shrink-0 items-center justify-center border-s border-line-strong text-muted transition-colors hover:bg-raised hover:text-fg disabled:opacity-35"
+            >
+              <X size={15} aria-hidden />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {ask && (
+        <ConfirmModal
+          open
+          onOpenChange={(open) => { if (!open) setAsking(null) }}
+          title={t.project.bulkConfirm[ask].title(targets[ask].length)}
+          message={<>{t.project.bulkConfirm[ask].hint}{names(targets[ask])}</>}
+          confirm={ask === 'deploy' ? (chosen.every((a) => a.current_deployment_id) ? t.app.redeploy : t.app.deploy) : t.app[ask]}
+          tone={ask === 'stop' ? 'danger' : 'primary'}
+          onConfirm={() => run.mutate(ask)}
+        />
+      )}
+      {asking === 'delete' && (
+        <PasswordConfirmDialog
+          action={{
+            title: t.project.bulkDeleteTitle(targets.delete.length),
+            confirm: t.project.bulkDeleteConfirm(targets.delete.length),
+            detail: `${t.project.bulkDeleteHint} ${targets.delete.map((a) => a.name).join(', ')}`,
+            tone: 'danger',
+            onConfirm: remove,
+            onPasskey: passkey.data ? async () => { await confirmWithPasskey(); await remove() } : undefined,
+          }}
+          onClose={() => setAsking(null)}
+          onComplete={() => setAsking(null)}
+        />
+      )}
+    </>
+  )
+}
+
 /** One app in the list. It asks for the app on its own to learn what the container is doing. */
-function AppRow({ app, routes }: { app: App; routes: Route[] }) {
+function AppRow({ app, routes, picked, onPick }: { app: App; routes: Route[]; picked: boolean; onPick: (on: boolean) => void }) {
   const live = useQuery({ ...appQuery(app.id), refetchInterval: poll(10_000) })
   const t = useT()
   const status = appStatus(live.data ?? app, false)
   return (
-    <li className="flex items-center gap-2 pe-4">
+    <li className={cx('flex items-center gap-2 pe-4', picked && 'bg-raised')}>
+      <label className="flex cursor-pointer items-center self-stretch ps-4">
+        <input type="checkbox" className="accent-[var(--color-accent)]" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={t.project.selectApp(app.name)} />
+      </label>
       <Link
         to="/projects/$projectId/apps/$appId"
         params={{ projectId: app.project_id, appId: app.id }}

@@ -130,7 +130,7 @@ function DeployStack({
     <ol
       aria-label={t.overview.toasts}
       aria-live="polite"
-      className="pointer-events-none fixed bottom-4 left-1/2 z-40 flex w-[26rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2 transition-[bottom] duration-200 [body:has(.tst-slot)_&]:bottom-24"
+      className="pointer-events-none fixed bottom-4 left-1/2 z-40 flex w-[26rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2 transition-[bottom] duration-200 [body:has(.tst-slot)_&]:bottom-24 [body:has(.bulk-bar)_&]:bottom-24"
     >
       {cards.map((card) => {
         if (card.kind === 'database') return <DatabaseOperationCard key={card.op.id} op={card.op} onView={onViewDatabase} onDismiss={onDismissDatabase} />

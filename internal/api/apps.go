@@ -751,6 +751,69 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteApps deletes several apps of one project at once. Being so much at a time,
+// it asks for the password again, or a passkey. It answers 200 with the apps it could not delete: one
+// failure does not stop the others.
+func (s *Server) handleDeleteApps(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		AppIDs   []string `json:"app_ids"`
+		Password string   `json:"password"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if len(in.AppIDs) == 0 || len(in.AppIDs) > 200 {
+		writeError(w, http.StatusUnprocessableEntity, "validation_failed", "app_ids must name between 1 and 200 apps")
+		return
+	}
+	// No password: a passkey confirmation made just before stands in for it, once.
+	if in.Password == "" {
+		if !s.confirmed.take(sessionHash(r)) {
+			writeError(w, http.StatusUnauthorized, "confirm_required", "confirm with your password or a passkey")
+			return
+		}
+	} else if !s.confirmLoginPassword(w, r, in.Password) {
+		return
+	}
+	type failure struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Error string `json:"error"`
+	}
+	failed := []failure{}
+	deleted := 0
+	for _, id := range in.AppIDs {
+		a, err := s.store.GetApp(r.Context(), id)
+		// An app of another project is not found here: the list is this project's.
+		if err != nil || a.ProjectID != r.PathValue("id") {
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				s.log.Error("get app", "error", err)
+			}
+			failed = append(failed, failure{ID: id, Error: "not found"})
+			continue
+		}
+		if s.deployer != nil {
+			// Containers first: if this fails the app is still there to retry on.
+			if err := s.deployer.Remove(r.Context(), a.ID); err != nil {
+				s.log.Error("remove app containers", "error", err)
+				failed = append(failed, failure{ID: a.ID, Name: a.Name, Error: "the container host could not remove its containers; see the panel log"})
+				continue
+			}
+		}
+		if err := s.store.DeleteApp(r.Context(), a.ID); err != nil {
+			s.log.Error("delete app", "error", err)
+			failed = append(failed, failure{ID: a.ID, Name: a.Name, Error: "could not be deleted; see the panel log"})
+			continue
+		}
+		s.audit(r, "app.delete", "app", a.ID, a.Name, "")
+		deleted++
+	}
+	if deleted > 0 {
+		s.applyProxy(r.Context()) // drops the apps' routes; a failure is retried by the proxy supervisor
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted, "failed": failed})
+}
+
 // ---- runtime: deploy, start, stop, restart ----
 
 // deployError answers failures of the deploy service and reports whether it wrote a response.

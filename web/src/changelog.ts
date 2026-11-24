@@ -15,6 +15,28 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.39.0',
+    date: '2026-11-24',
+    changes: {
+      en: [
+        'Act on several apps at once: tick apps in a project\'s list, and a bar at the bottom deploys, restarts, stops, starts or deletes them together.',
+        'Each of these asks before it runs and names the apps. Deleting several apps asks for your password, or a passkey if you have one.',
+      ],
+      fr: [
+        'Agissez sur plusieurs applications à la fois : cochez-les dans la liste d’un projet, et une barre en bas les déploie, redémarre, arrête, démarre ou supprime ensemble.',
+        'Chaque action demande confirmation et nomme les applications. Supprimer plusieurs applications demande votre mot de passe, ou une clé d’accès si vous en avez une.',
+      ],
+      ar: [
+        'نفّذ إجراءً على عدة تطبيقات دفعة واحدة: حدّدها في قائمة المشروع، فيظهر شريط في الأسفل لنشرها أو إعادة تشغيلها أو إيقافها أو تشغيلها أو حذفها معًا.',
+        'كل إجراء يطلب التأكيد ويذكر أسماء التطبيقات. حذف عدة تطبيقات يطلب كلمة المرور، أو مفتاح مرور إن كان لديك واحد.',
+      ],
+      es: [
+        'Actúa sobre varias apps a la vez: márcalas en la lista de un proyecto y una barra inferior las despliega, reinicia, detiene, inicia o elimina juntas.',
+        'Cada acción pide confirmación y nombra las apps. Eliminar varias apps pide tu contraseña, o una passkey si tienes una.',
+      ],
+    },
+  },
+  {
     version: '0.38.0',
     date: '2026-11-24',
     changes: {
