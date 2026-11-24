@@ -13,7 +13,7 @@ const engineNames: Record<string, string> = { postgres: 'PostgreSQL', mariadb: '
 
 /**
  * The new app form with a template as the source: pick one, name it, and the app is created
- * with its volumes and variables, not deployed. A template that needs a database
+ * with its volumes and variables, not deployed, beside the other apps of a template made of several. A template that needs a database
  * leaves its variables empty: the app page asks to connect one. onSource leaves for another source.
  */
 export function NewFromTemplate({ projectId, onDone, onSource }: { projectId: string; onDone: () => void; onSource: (v: SourceForm['source_type'] | OtherSource) => void }) {
@@ -32,13 +32,13 @@ export function NewFromTemplate({ projectId, onDone, onSource }: { projectId: st
   // Every word typed must be somewhere in the template: its name, what it is, its category or image.
   const shown = (templates.data ?? []).filter((x) => {
     if (category && x.category !== category) return false
-    const text = fold([x.name, x.id, t.templates.descriptions[x.id] ?? x.description, categoryLabel(x.category), x.image, x.database?.engine ?? ''].join(' '))
+    const text = fold([x.name, x.id, t.templates.descriptions[x.id] ?? x.description, categoryLabel(x.category), x.image, x.database?.engine ?? '', ...(x.services ?? []).map((y) => y.image)].join(' '))
     return words.every((w) => text.includes(w))
   })
   // The pick stays while it is in view; otherwise the first one shown is picked.
   const found = shown.find((x) => x.id === picked) ?? shown[0]
   // Lists a panel of another version may leave out.
-  const template = found && { ...found, volumes: found.volumes ?? [], variables: found.variables ?? [] }
+  const template = found && { ...found, volumes: found.volumes ?? [], variables: found.variables ?? [], services: found.services ?? [] }
 
   const create = useMutation({
     mutationFn: (tpl: Template) =>
@@ -62,6 +62,8 @@ export function NewFromTemplate({ projectId, onDone, onSource }: { projectId: st
     { label: t.databases.title, value: template && (template.database ? t.connectDb.afterCreate(engineNames[template.database.engine] ?? template.database.engine) : t.newApp.none) },
     { label: t.app.settingsSections.volumes, value: template && (template.volumes.length ? <NameList names={template.volumes.map((v) => v.target)} /> : t.newApp.none) },
     { label: t.app.environment, value: template && (template.variables.length ? <NameList names={template.variables} /> : t.newApp.none) },
+    // Only for a template of several apps: the others, as they will be named.
+    ...(template?.services.length ? [{ label: t.templates.alsoCreates, value: <NameList names={template.services.map((x) => `${name || template.id}-${x.name}`)} /> }] : []),
   ]
 
   return (
@@ -119,7 +121,7 @@ export function NewFromTemplate({ projectId, onDone, onSource }: { projectId: st
                       <span className="min-w-0">
                         <span className="block truncate text-sm">{x.name}</span>
                         <span className="block truncate text-xs text-muted">
-                          {[categoryLabel(x.category), x.database && (engineNames[x.database.engine] ?? x.database.engine)].filter(Boolean).join(' · ')}
+                          {[categoryLabel(x.category), x.database && (engineNames[x.database.engine] ?? x.database.engine), x.services?.length && t.templates.apps(1 + x.services.length)].filter(Boolean).join(' · ')}
                         </span>
                       </span>
                     </span>

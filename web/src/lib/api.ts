@@ -364,6 +364,8 @@ export type Template = {
   port: number
   database?: { engine: string; version: string; name: string }
   volumes: { name: string; target: string }[]
+  /** The other apps the template creates, each named after its own app with this name as a suffix. */
+  services?: { name: string; image: string; port: number; volumes: { name: string; target: string }[] }[]
   /** Names of the variables the template sets. */
   variables: string[]
   /** The ones left empty until a database is connected to the app. */

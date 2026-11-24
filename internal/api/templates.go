@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"panel/internal/database"
+	"panel/internal/deploy"
 	"panel/internal/store"
 	"panel/internal/templates"
 )
@@ -24,11 +25,17 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 		// Never null in JSON: a template may set no variable or keep no volume.
 		out := templateJSON{Template: t, Variables: append([]string{}, slices.Sorted(maps.Keys(t.Env))...)}
 		out.Volumes, out.DatabaseVariables = append([]templates.Volume{}, t.Volumes...), t.DatabaseVariables()
+		out.Services = make([]templates.Service, 0, len(t.Services))
+		for _, svc := range t.Services {
+			svc.Volumes = append([]templates.Volume{}, svc.Volumes...)
+			out.Services = append(out.Services, svc)
+		}
 		return out
 	}))
 }
 
-// handleCreateFromTemplate creates a template's app with its volumes and variables. Nothing
+// handleCreateFromTemplate creates a template's app with its volumes and variables, and
+// the apps of its services, named after it, when it has some. Nothing
 // is deployed, and no database is created: the variables a database fills are left empty
 // for the app's owner to connect one (handleConnectDatabase) or to write them.
 func (s *Server) handleCreateFromTemplate(w http.ResponseWriter, r *http.Request) {
@@ -51,27 +58,65 @@ func (s *Server) handleCreateFromTemplate(w http.ResponseWriter, r *http.Request
 	if s.storeError(w, "get project", err, "") {
 		return
 	}
-	input, err := tpl.AppInput(name)
+	stack, err := tpl.Stack(name)
 	if err != nil {
 		s.internal(w, "template", err)
 		return
 	}
-	if !validApp(w, input) {
-		return
+	for _, app := range stack {
+		if msg := appProblem(app.AppInput); msg != "" {
+			invalid(w, app.Name+": "+msg)
+			return
+		}
 	}
-	a, err := s.store.CreateApp(r.Context(), p.ID, input)
-	if s.storeError(w, "create app", err, "an app with this name already exists in the project") {
-		return
+	var created []store.App
+	// All the apps or none: a product with a part missing would not work.
+	undo := func() {
+		for _, c := range created {
+			if err := s.store.DeleteApp(r.Context(), c.ID); err != nil {
+				s.log.Error("template cleanup", "app", c.ID, "error", err)
+			}
+		}
 	}
-	hc := store.DefaultHealthCheck()
-	if tpl.StartPeriod > 0 {
-		hc.StartPeriod = tpl.StartPeriod
+	hosts := map[string]string{}
+	for _, app := range stack {
+		a, err := s.store.CreateApp(r.Context(), p.ID, app.AppInput)
+		if err != nil {
+			undo()
+			s.storeError(w, "create app", err, "an app named "+app.Name+" already exists in the project")
+			return
+		}
+		created = append(created, a)
+		hosts[a.Name] = deploy.AppHost(a.ID)
+		hc := store.DefaultHealthCheck()
+		if app.NoProbe {
+			hc = store.LegacyHealthCheck()
+		} else if app.StartPeriod > 0 {
+			hc.StartPeriod = app.StartPeriod
+		}
+		if err := s.store.SetAppHealthCheck(r.Context(), a.ID, hc); err != nil {
+			s.log.Error("default health check", "app", a.ID, "error", err)
+		}
 	}
-	if err := s.store.SetAppHealthCheck(r.Context(), a.ID, hc); err != nil {
-		s.log.Error("default health check", "app", a.ID, "error", err)
+	// A file names the other apps by their hostnames, known now that they exist.
+	for i, app := range stack {
+		mounts, changed := templates.Hosts(app.Mounts, hosts)
+		if !changed {
+			continue
+		}
+		app.Mounts = mounts
+		a, err := s.store.UpdateApp(r.Context(), created[i].ID, app.AppInput)
+		if err != nil {
+			undo()
+			s.storeError(w, "update app", err, "")
+			return
+		}
+		created[i] = a
 	}
-	s.audit(r, "app.create", "app", a.ID, a.Name, "template "+tpl.ID)
-	writeJSON(w, http.StatusCreated, map[string]any{"app": toAppJSON(a)})
+	for _, a := range created {
+		s.audit(r, "app.create", "app", a.ID, a.Name, "template "+tpl.ID)
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"app": toAppJSON(created[0])})
 }
 
 // handleConnectDatabase fills the database variables of an app made from a template. With
