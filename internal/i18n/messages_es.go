@@ -281,6 +281,8 @@ func init() {
 		"the connection check failed: %s":                                                                   "la comprobación de la conexión falló: %s",
 		"the container host could not complete the action; see the panel log":                               "el host de contenedores no pudo completar la acción; consulta el registro del panel",
 		"the current password is incorrect":                                                                 "la contraseña actual es incorrecta",
+		"app_ids must name between 1 and 200 apps":                                                          "app_ids debe nombrar entre 1 y 200 aplicaciones",
+		"confirm with your password or a passkey":                                                           "confirma con tu contraseña o una clave de acceso",
 		"the database already has an operation in progress":                                                 "la base de datos ya tiene una operación en curso",
 		"the database operation failed; check Docker and try again":                                         "la operación de base de datos falló; comprueba Docker e inténtalo de nuevo",
 		"the deploy service is not running":                                                                 "el servicio de despliegue no está en marcha",

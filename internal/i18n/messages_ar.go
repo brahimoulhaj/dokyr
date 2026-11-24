@@ -281,6 +281,8 @@ func init() {
 		"the connection check failed: %s":                                                                   "فشل فحص الاتصال: %s",
 		"the container host could not complete the action; see the panel log":                               "تعذر على مضيف الحاويات إتمام الإجراء؛ راجع سجل اللوحة",
 		"the current password is incorrect":                                                                 "كلمة المرور الحالية غير صحيحة",
+		"app_ids must name between 1 and 200 apps":                                                          "يجب أن يسمّي app_ids ما بين 1 و200 تطبيق",
+		"confirm with your password or a passkey":                                                           "أكّد بكلمة مرورك أو بمفتاح مرور",
 		"the database already has an operation in progress":                                                 "لقاعدة البيانات عملية قيد التنفيذ",
 		"the database operation failed; check Docker and try again":                                         "فشلت عملية قاعدة البيانات؛ تحقق من Docker وحاول مجددًا",
 		"the deploy service is not running":                                                                 "خدمة النشر لا تعمل",
