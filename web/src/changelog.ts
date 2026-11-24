@@ -15,6 +15,28 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.38.0',
+    date: '2026-11-24',
+    changes: {
+      en: [
+        'New template: SigNoz, for traces, metrics and logs over OpenTelemetry. It creates four apps: SigNoz, its collector, ClickHouse and its keeper. Deploy them in this order: keeper, ClickHouse, collector, then SigNoz.',
+        'A template can now create several apps at once. Its card says how many, and the summary lists them before you create.',
+      ],
+      fr: [
+        'Nouveau modèle : SigNoz, pour les traces, métriques et journaux via OpenTelemetry. Il crée quatre applications : SigNoz, son collector, ClickHouse et son keeper. Déployez-les dans cet ordre : keeper, ClickHouse, collector, puis SigNoz.',
+        'Un modèle peut maintenant créer plusieurs applications à la fois. Sa carte indique combien, et le résumé les liste avant la création.',
+      ],
+      ar: [
+        'قالب جديد: SigNoz للتتبعات والمقاييس والسجلات عبر OpenTelemetry. ينشئ أربعة تطبيقات: SigNoz و collector و ClickHouse و keeper. انشرها بهذا الترتيب: keeper ثم ClickHouse ثم collector ثم SigNoz.',
+        'يمكن للقالب الآن إنشاء عدة تطبيقات دفعة واحدة. بطاقته تذكر عددها، والملخص يسردها قبل الإنشاء.',
+      ],
+      es: [
+        'Nueva plantilla: SigNoz, para trazas, métricas y registros con OpenTelemetry. Crea cuatro apps: SigNoz, su collector, ClickHouse y su keeper. Despliégalas en este orden: keeper, ClickHouse, collector y luego SigNoz.',
+        'Una plantilla ahora puede crear varias apps a la vez. Su tarjeta indica cuántas, y el resumen las lista antes de crear.',
+      ],
+    },
+  },
+  {
     version: '0.37.1',
     date: '2026-11-22',
     changes: {
