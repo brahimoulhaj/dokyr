@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@yusufceng1z/ding-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
+import { ConfirmModal } from '../components/confirm-dialog'
 import { Sheet, SheetActions } from '../components/sheet'
 import { Button, CheckOption, Empty, ErrorNote, Field, Panel, QueryState } from '../components/ui'
 import { api, meQuery, metaQuery, s3ConnectionsQuery } from '../lib/api'
@@ -289,6 +290,7 @@ function RestoreBackup({ backup, onDone }: { backup: BackupObject; onDone: () =>
   const [passphrase, setPassphrase] = useState('')
   const [info, setInfo] = useState<RestoreInfo | null>(null)
   const [done, setDone] = useState<RestoreInfo | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const url = `/settings/panel-backup/backups/${encodeURIComponent(backup.name)}`
   const inspect = useMutation({
     mutationFn: () => api<RestoreInfo>(`${url}/inspect`, { method: 'POST', body: { passphrase } }),
@@ -329,7 +331,7 @@ function RestoreBackup({ backup, onDone }: { backup: BackupObject; onDone: () =>
   const error = restore.error ?? inspect.error
   function submit(e: FormEvent) {
     e.preventDefault()
-    if (info) restore.mutate()
+    if (info) setConfirming(true) // the consequences are spelled out in a dialog, not in the form
     else inspect.mutate()
   }
   return (
@@ -342,17 +344,11 @@ function RestoreBackup({ backup, onDone }: { backup: BackupObject; onDone: () =>
       <Field name="restore-passphrase" type="password" autoComplete="off" required autoFocus disabled={restore.isPending}
         label={tb.restorePassphrase} hint={tb.restorePassphraseHint} hintTooltip
         value={passphrase} onChange={(e) => { setPassphrase(e.target.value); setInfo(null); inspect.reset() }} />
-      {info && (
-        <div className="space-y-2 border border-danger/60 p-3 text-xs">
-          <p className="text-danger">{tb.restoreLoses(timeAgo(info.created_at))}</p>
-          <p className="text-muted">{tb.restoreSafety}</p>
-        </div>
-      )}
       {error && <ErrorNote>{error.message}</ErrorNote>}
       <SheetActions>
         {info ? (
           <Button type="submit" variant="danger" disabled={restore.isPending}>
-            {restore.isPending ? tb.restoreWorking : tb.restoreConfirm}
+            {restore.isPending ? tb.restoreWorking : tb.restoreAction}
           </Button>
         ) : (
           <Button type="submit" disabled={!passphrase || inspect.isPending}>
@@ -361,6 +357,14 @@ function RestoreBackup({ backup, onDone }: { backup: BackupObject; onDone: () =>
         )}
         <Button type="button" variant="ghost" disabled={restore.isPending} onClick={onDone}>{t.common.cancel}</Button>
       </SheetActions>
+      {info && (
+        <ConfirmModal open={confirming} onOpenChange={setConfirming} title={tb.restoreSheetTitle} confirm={tb.restoreConfirm}
+          onConfirm={() => restore.mutate()}
+          message={<>
+            <span className="block">{tb.restoreLoses(timeAgo(info.created_at))}</span>
+            <span className="mt-3 block">{tb.restoreSafety}</span>
+          </>} />
+      )}
     </form>
   )
 }

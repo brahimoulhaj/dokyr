@@ -134,8 +134,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/panel-backup/run", s.requireAuth(adminOnly(s.handleRunPanelBackup)))
 	mux.HandleFunc("GET /api/settings/panel-backup/backups", s.requireAuth(adminOnly(s.handleListPanelBackups)))
 	mux.HandleFunc("GET /api/settings/panel-backup/backups/{name}", s.requireAuth(sessionOnly(adminOnly(s.handleDownloadPanelBackup))))
-	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/inspect", s.requireAuth(sessionOnly(s.handleInspectPanelBackup)))
-	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/restore", s.requireAuth(sessionOnly(s.handleRestorePanelBackup)))
+	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/inspect", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleInspectPanelBackup))))
+	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/restore", s.requireAuth(sessionOnly(s.limit(s.authRate, s.handleRestorePanelBackup))))
 
 	mux.HandleFunc("GET /api/onboarding", s.requireAuth(s.handleGetOnboarding))
 	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))

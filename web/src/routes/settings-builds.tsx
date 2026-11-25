@@ -121,6 +121,9 @@ function BuildSettingsForm({ current, onDone }: { current: BuildSettings; onDone
           onChange={(e) => setConcurrent(e.target.value)}
         />
       </div>
+      {input.cpus > 0 && input.concurrent > input.cpus && (
+        <p className="text-xs text-warn">{tb.sharedCap(input.concurrent, input.cpus)}</p>
+      )}
       <div className="space-y-1 text-xs text-muted">
         <p>{tb.defaults(...describe(current.defaults))}</p>
         <p>{tb.applies}</p>

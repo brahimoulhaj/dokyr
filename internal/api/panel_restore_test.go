@@ -47,6 +47,7 @@ func (b *restoreStub) Download(context.Context, string) (io.ReadCloser, error) {
 // panel back; the panel then restarts.
 func TestPanelRestore(t *testing.T) {
 	e := newEnv(t)
+	e.srv.authRate.max = 1000 // the routes hold this limiter; the test makes many attempts
 	stub := &restoreStub{}
 	e.srv.SetPanelBackups(stub)
 	restarted := make(chan struct{}, 1)
@@ -82,4 +83,15 @@ func TestPanelRestore(t *testing.T) {
 	if stub.restored.Load() != 1 {
 		t.Fatalf("restores = %d", stub.restored.Load())
 	}
+}
+
+// TestPanelRestoreRateLimited: guesses at a backup's passphrase are counted like sign-ins.
+func TestPanelRestoreRateLimited(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetPanelBackups(&restoreStub{})
+	e.signIn()
+	e.srv.authRate.max = 0
+	const base = "/api/settings/panel-backup/backups/dokyr-1.tar.gz.age"
+	e.must(429, "POST", base+"/inspect", map[string]any{"passphrase": "wrong"})
+	e.must(429, "POST", base+"/restore", map[string]any{"passphrase": "wrong"})
 }
