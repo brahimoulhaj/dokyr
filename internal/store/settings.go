@@ -23,6 +23,7 @@ const (
 	SettingUpdateSeen   = "update_seen"           // finished_at of the last update result recorded as an event
 	SettingBuildCPUs    = "build_cpus"            // CPU cap shared by Git builds; "0" = none; absent = the environment's default
 	SettingBuildMemory  = "build_memory_mb"       // memory cap (MB) shared by Git builds; "0" = none; absent = the environment's default
+	SettingBuildMax     = "build_concurrent"      // how many Git builds run at once; absent = the environment's default
 	SettingRegistry     = "registry"              // JSON RegistrySettings of the built-in registry
 	SettingRegistryS3   = "registry_s3"           // id of the S3 connection the registry stores in; absent = a Docker volume
 	SettingHostTermOff  = "host_terminal_off"     // "true": nobody can open the host terminal
@@ -30,10 +31,12 @@ const (
 	SettingHostTermIdle = "host_terminal_idle"    // minutes without input before a host shell is closed; "0" = never; absent = 30
 )
 
-// BuildLimits caps the CPU and memory that Git builds share. Zero leaves a resource uncapped.
+// BuildLimits caps the CPU and memory that Git builds share, and how many of them run at
+// once. A zero CPU or memory leaves that resource uncapped.
 type BuildLimits struct {
-	CPUs     float64 `json:"cpus"`
-	MemoryMB int64   `json:"memory_mb"`
+	CPUs       float64 `json:"cpus"`
+	MemoryMB   int64   `json:"memory_mb"`
+	Concurrent int     `json:"concurrent"` // builds running at once, at least 1
 }
 
 // GetBuildLimits returns the build limits saved in Settings; a limit never saved there
@@ -50,15 +53,27 @@ func (s *Store) GetBuildLimits(ctx context.Context, def BuildLimits) (BuildLimit
 	} else if n, perr := strconv.ParseInt(v, 10, 64); ok && perr == nil && n >= 0 {
 		out.MemoryMB = n
 	}
+	if v, ok, err := s.GetSetting(ctx, SettingBuildMax); err != nil {
+		return def, err
+	} else if n, perr := strconv.Atoi(v); ok && perr == nil && n >= 1 {
+		out.Concurrent = n
+	}
 	return out, nil
 }
 
-// SetBuildLimits saves both build limits, overriding the environment's defaults.
+// SetBuildLimits saves the build limits, overriding the environment's defaults. A
+// Concurrent below 1 leaves the saved count as it is.
 func (s *Store) SetBuildLimits(ctx context.Context, l BuildLimits) error {
 	if err := s.SetSetting(ctx, SettingBuildCPUs, strconv.FormatFloat(l.CPUs, 'f', -1, 64)); err != nil {
 		return err
 	}
-	return s.SetSetting(ctx, SettingBuildMemory, strconv.FormatInt(l.MemoryMB, 10))
+	if err := s.SetSetting(ctx, SettingBuildMemory, strconv.FormatInt(l.MemoryMB, 10)); err != nil {
+		return err
+	}
+	if l.Concurrent < 1 {
+		return nil
+	}
+	return s.SetSetting(ctx, SettingBuildMax, strconv.Itoa(l.Concurrent))
 }
 
 // GetSetting returns the value and whether the key exists.

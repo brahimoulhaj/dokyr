@@ -46,7 +46,7 @@ In the project, add an app and pick its source.
   build command) can be chosen explicitly. Images built without a Dockerfile listen on
   `$PORT`, which the panel sets to the app's container port.
 
-Builds run on the server, one at a time by default; see `DOKYR_MAX_BUILDS` and the build
+Builds run on the server, two at a time by default; see `DOKYR_MAX_BUILDS` and the build
 limits in [Configuration](configuration.md).
 
 ### From a template or a Compose file

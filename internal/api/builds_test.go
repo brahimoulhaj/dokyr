@@ -10,7 +10,7 @@ import (
 
 func TestBuildSettings(t *testing.T) {
 	e := newEnv(t)
-	e.srv.SetBuildDefaults(store.BuildLimits{CPUs: 1, MemoryMB: 1024})
+	e.srv.SetBuildDefaults(store.BuildLimits{CPUs: 1, MemoryMB: 1024, Concurrent: 2})
 	if code, _ := e.call("GET", "/api/settings/builds", nil); code != 401 {
 		t.Fatalf("signed out GET = %d", code)
 	}
@@ -18,7 +18,7 @@ func TestBuildSettings(t *testing.T) {
 
 	// Nothing saved: the environment's defaults.
 	code, m := e.call("GET", "/api/settings/builds", nil)
-	if code != 200 || m["cpus"] != 1.0 || m["memory_mb"] != 1024.0 || m["host_cpus"] != float64(runtime.NumCPU()) {
+	if code != 200 || m["cpus"] != 1.0 || m["memory_mb"] != 1024.0 || m["host_cpus"] != float64(runtime.NumCPU()) || m["concurrent"] != 2.0 {
 		t.Fatalf("defaults = %d %v", code, m)
 	}
 
@@ -29,6 +29,8 @@ func TestBuildSettings(t *testing.T) {
 		{"cpus": 0, "memory_mb": 100},
 		{"cpus": 0, "memory_mb": -5},
 		{"cpus": 1, "memory_mb": 512, "extra": true},
+		{"cpus": 1, "memory_mb": 512, "concurrent": 0},
+		{"cpus": 1, "memory_mb": 512, "concurrent": 17},
 	} {
 		if code, m := e.call("PUT", "/api/settings/builds", bad); code != 422 && code != 400 {
 			t.Errorf("PUT %v = %d %v", bad, code, m)
@@ -37,8 +39,8 @@ func TestBuildSettings(t *testing.T) {
 
 	// Saved values win over the defaults, including 0 (no cap).
 	code, m = e.call("PUT", "/api/settings/builds", map[string]any{"cpus": 0.333, "memory_mb": 0})
-	if code != 200 || m["cpus"] != 0.33 || m["memory_mb"] != 0.0 {
-		t.Fatalf("PUT = %d %v", code, m)
+	if code != 200 || m["cpus"] != 0.33 || m["memory_mb"] != 0.0 || m["concurrent"] != 2.0 {
+		t.Fatalf("PUT = %d %v", code, m) // no "concurrent": the count is unchanged
 	}
 	l, err := e.srv.store.GetBuildLimits(context.Background(), store.BuildLimits{CPUs: 1, MemoryMB: 1024})
 	if err != nil || l != (store.BuildLimits{CPUs: 0.33, MemoryMB: 0}) {
@@ -48,9 +50,18 @@ func TestBuildSettings(t *testing.T) {
 		t.Errorf("defaults after PUT = %v", m["defaults"])
 	}
 
+	// The count of builds at once is saved with the caps.
+	code, m = e.call("PUT", "/api/settings/builds", map[string]any{"cpus": 0.33, "memory_mb": 0, "concurrent": 4})
+	if code != 200 || m["concurrent"] != 4.0 {
+		t.Fatalf("PUT concurrent = %d %v", code, m)
+	}
+	if l, err := e.srv.store.GetBuildLimits(context.Background(), store.BuildLimits{}); err != nil || l.Concurrent != 4 {
+		t.Fatalf("stored concurrent = %v, %v", l, err)
+	}
+
 	// Reset: back to the environment's defaults.
 	code, m = e.call("DELETE", "/api/settings/builds", nil)
-	if code != 200 || m["cpus"] != 1.0 || m["memory_mb"] != 1024.0 {
+	if code != 200 || m["cpus"] != 1.0 || m["memory_mb"] != 1024.0 || m["concurrent"] != 2.0 {
 		t.Fatalf("reset = %d %v", code, m)
 	}
 }

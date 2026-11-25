@@ -23,6 +23,7 @@ services:
       DOKYR_PUBLIC_URL: http://localhost:5173
       DOKYR_PROXY_HTTP_PORT: "8880"
       DOKYR_PROXY_HTTPS_PORT: "8443"
+      DOKYR_WEAK_PASSWORDS: "true" # development only: passwords and backup passphrases of any length
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /proc:/host/proc:ro

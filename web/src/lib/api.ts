@@ -46,7 +46,7 @@ async function request<T>(path: string, init?: { method?: string; body?: unknown
   return { data: data as T, res }
 }
 
-export type Meta = { name: string; slug: string; version: string; setup_required: boolean }
+export type Meta = { name: string; slug: string; version: string; setup_required: boolean; weak_passwords?: boolean }
 export type HostMemory = { total: number; used: number; available: number; percent: number }
 export type HostInterface = { name: string; received: number; sent: number; receive_rate: number | null; send_rate: number | null; errors: number; drops: number }
 export type HostMetrics = {
@@ -577,7 +577,7 @@ export const updatesQuery = {
   refetchInterval: 5 * 60_000,
 }
 
-export type BuildLimits = { cpus: number; memory_mb: number }
+export type BuildLimits = { cpus: number; memory_mb: number; concurrent: number }
 export type BuildSettings = BuildLimits & { defaults: BuildLimits; host_cpus: number }
 
 export const buildSettingsQuery = {

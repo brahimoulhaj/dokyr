@@ -40,6 +40,8 @@ type Server struct {
 	metrics        HostMetrics
 	dockerMetrics  DockerMetrics
 	buildDefaults  store.BuildLimits
+	restart        func() // restarts the panel; nil = it cannot restart itself
+	weakPasswords  bool   // development: the UI drops its minimum password lengths too
 	registryCheck  RegistryChecker
 	s3Test         S3Tester
 	registry       BuiltinRegistry
@@ -132,6 +134,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/panel-backup/run", s.requireAuth(adminOnly(s.handleRunPanelBackup)))
 	mux.HandleFunc("GET /api/settings/panel-backup/backups", s.requireAuth(adminOnly(s.handleListPanelBackups)))
 	mux.HandleFunc("GET /api/settings/panel-backup/backups/{name}", s.requireAuth(sessionOnly(adminOnly(s.handleDownloadPanelBackup))))
+	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/inspect", s.requireAuth(sessionOnly(s.handleInspectPanelBackup)))
+	mux.HandleFunc("POST /api/settings/panel-backup/backups/{name}/restore", s.requireAuth(sessionOnly(s.handleRestorePanelBackup)))
 
 	mux.HandleFunc("GET /api/onboarding", s.requireAuth(s.handleGetOnboarding))
 	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))
@@ -334,6 +338,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"slug":           brand.Slug,
 		"version":        s.version,
 		"setup_required": required,
+		"weak_passwords": s.weakPasswords,
 	})
 }
 

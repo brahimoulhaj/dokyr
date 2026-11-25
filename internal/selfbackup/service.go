@@ -68,6 +68,8 @@ type Service struct {
 	started time.Time
 	mu      sync.Mutex // one backup at a time
 	running atomic.Bool
+	// restoring: a restore is being staged, or is staged and waits for the restart.
+	restoring atomic.Bool
 
 	// Open returns the objects of a storage connection and the folder for backups;
 	// tests replace it.

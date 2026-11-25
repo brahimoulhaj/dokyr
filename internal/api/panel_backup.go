@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"panel/internal/account"
 	"panel/internal/brand"
 	"panel/internal/selfbackup"
 	"panel/internal/store"
@@ -20,9 +21,17 @@ type PanelBackups interface {
 	Download(ctx context.Context, name string) (io.ReadCloser, error)
 	NextRun(ctx context.Context) *time.Time
 	Running() bool
+	// Inspect decrypts and checks a backup in storage without keeping anything.
+	Inspect(ctx context.Context, name, passphrase string) (selfbackup.Manifest, error)
+	// Restore stages a backup to replace the database and key at the next start.
+	Restore(ctx context.Context, name, passphrase, actor string) (selfbackup.Manifest, error)
 }
 
 func (s *Server) SetPanelBackups(b PanelBackups) { s.panelBackups = b }
+
+// SetRestart gives the server a way to restart the panel, which finishes a restore.
+// Without one, a restore is staged and the answer says a restart is still needed.
+func (s *Server) SetRestart(restart func()) { s.restart = restart }
 
 type panelBackupJSON struct {
 	Enabled        bool                    `json:"enabled"`
@@ -183,4 +192,104 @@ func (s *Server) handleDownloadPanelBackup(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.Copy(w, rc)
+}
+
+type panelRestoreJSON struct {
+	Name          string    `json:"name"`
+	CreatedAt     time.Time `json:"created_at"`
+	PanelVersion  string    `json:"panel_version"`
+	SchemaVersion int       `json:"schema_version"`
+	// Restarting: the panel restarts on its own to finish; false = restart it by hand.
+	Restarting bool `json:"restarting"`
+}
+
+// panelRestoreInput reads the passphrase of a restore request. Rolling the panel back
+// replaces every account, secret and setting, so only the owner may, signed in (no
+// token), and only with the passphrase of that backup.
+func (s *Server) panelRestoreInput(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if !s.requirePanelBackups(w) {
+		return "", false
+	}
+	if userFrom(r.Context()).Role != account.RoleOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "only the owner can restore the panel")
+		return "", false
+	}
+	var in struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if !readJSON(w, r, &in) {
+		return "", false
+	}
+	if in.Passphrase == "" {
+		writeError(w, http.StatusUnprocessableEntity, "passphrase_required", "enter the passphrase of this backup")
+		return "", false
+	}
+	return in.Passphrase, true
+}
+
+func (s *Server) panelRestoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "no such backup")
+	case errors.Is(err, selfbackup.ErrPassphrase):
+		writeError(w, http.StatusUnprocessableEntity, "wrong_passphrase", "wrong passphrase, or not a panel backup")
+	case errors.Is(err, selfbackup.ErrNewer), errors.Is(err, selfbackup.ErrForeign):
+		writeError(w, http.StatusUnprocessableEntity, "incompatible", err.Error())
+	case errors.Is(err, selfbackup.ErrRestoring), errors.Is(err, selfbackup.ErrBusy):
+		writeError(w, http.StatusConflict, "busy", err.Error())
+	default:
+		s.log.Warn("panel restore", "error", err)
+		writeError(w, http.StatusBadGateway, "restore_failed", "the backup could not be restored: "+err.Error())
+	}
+}
+
+// handleInspectPanelBackup checks a backup in storage with its passphrase and tells what
+// it holds, before the owner decides to restore it.
+func (s *Server) handleInspectPanelBackup(w http.ResponseWriter, r *http.Request) {
+	passphrase, ok := s.panelRestoreInput(w, r)
+	if !ok {
+		return
+	}
+	name := r.PathValue("name")
+	m, err := s.panelBackups.Inspect(r.Context(), name, passphrase)
+	if err != nil {
+		s.panelRestoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, panelRestoreJSON{Name: name, CreatedAt: m.CreatedAt, PanelVersion: m.PanelVersion, SchemaVersion: m.SchemaVersion})
+}
+
+// handleRestorePanelBackup rolls the panel back to a backup in storage: the backup is
+// checked, the current state is backed up, the backup is staged, and the panel restarts
+// on it. Refused while a deployment runs, which the restart would cut off.
+func (s *Server) handleRestorePanelBackup(w http.ResponseWriter, r *http.Request) {
+	passphrase, ok := s.panelRestoreInput(w, r)
+	if !ok {
+		return
+	}
+	if n, err := s.store.CountActiveDeployments(r.Context()); err != nil {
+		s.internal(w, "panel restore", err)
+		return
+	} else if n > 0 {
+		writeError(w, http.StatusConflict, "busy", "a deployment is in progress; restore once it has ended")
+		return
+	}
+	name := r.PathValue("name")
+	// Not cut short by a closed tab: it ends staged, or with nothing changed.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Hour)
+	defer cancel()
+	m, err := s.panelBackups.Restore(ctx, name, passphrase, userFrom(r.Context()).Email)
+	if err != nil {
+		s.panelRestoreError(w, err)
+		return
+	}
+	s.log.Warn("panel restore staged", "backup", name, "by", userFrom(r.Context()).Email)
+	out := panelRestoreJSON{Name: name, CreatedAt: m.CreatedAt, PanelVersion: m.PanelVersion, SchemaVersion: m.SchemaVersion, Restarting: s.restart != nil}
+	writeJSON(w, http.StatusAccepted, out)
+	if s.restart != nil {
+		go func() {
+			time.Sleep(time.Second) // let the answer reach the browser
+			s.restart()
+		}()
+	}
 }

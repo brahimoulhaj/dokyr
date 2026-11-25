@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
 import { Sheet, SheetActions } from '../components/sheet'
 import { Button, CheckOption, Empty, ErrorNote, Field, Panel, QueryState } from '../components/ui'
-import { api, metaQuery, s3ConnectionsQuery } from '../lib/api'
+import { api, meQuery, metaQuery, s3ConnectionsQuery } from '../lib/api'
 import { dateTime, formatBytes, timeAgo } from '../lib/format'
 import { useT } from '../lib/i18n'
 import { poll } from '../lib/live'
@@ -23,9 +23,12 @@ type PanelBackup = {
   running: boolean
 }
 type BackupObject = { key: string; name: string; size: number; last_modified: string }
+type RestoreInfo = { name: string; created_at: string; panel_version: string; schema_version: number; restarting: boolean }
 
 const settingsKey = ['settings', 'panel-backup'] as const
 const toastId = 'panel-backup'
+const restoreToastId = 'panel-restore'
+const restoredKey = 'panel-restored' // session storage: the backup a restore reloaded the page for
 const presets = { daily: '0 3 * * *', sixHours: '0 */6 * * *', weekly: '0 3 * * 0' } as const
 type Preset = keyof typeof presets | 'custom'
 
@@ -51,6 +54,8 @@ export function PanelBackupSettings() {
   })
   const [editing, setEditing] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [restoreTarget, setRestoreTarget] = useState<BackupObject | null>(null)
+  const isOwner = useQuery(meQuery).data?.role === 'owner' // rolling the panel back is the owner's alone
 
   const run = useMutation({
     mutationFn: () => api<void>('/settings/panel-backup/run', { method: 'POST' }),
@@ -76,6 +81,16 @@ export function PanelBackupSettings() {
     else toast.success(tb.doneToast, { id: toastId, description: `${status.last_key.split('/').pop()} · ${formatBytes(status.last_size)}` })
     void qc.invalidateQueries({ queryKey: [...settingsKey, 'backups'] })
   }, [status, settings.data?.running, tb, qc])
+
+  // After a restore the page reloads on the restored panel: say it worked.
+  useEffect(() => {
+    let name: string | null = null
+    try {
+      name = sessionStorage.getItem(restoredKey)
+      sessionStorage.removeItem(restoredKey)
+    } catch { /* storage blocked: no toast */ }
+    if (name) toast.success(tb.restoredToast, { id: restoreToastId, description: name })
+  }, [tb])
 
   const data = settings.data
   const connection = storage.data?.find((s) => s.id === data?.s3_connection_id)
@@ -154,6 +169,7 @@ export function PanelBackupSettings() {
                       <td className="px-4 py-2 text-end">
                         <ActionsMenu label={tb.actions} ariaLabel={`${tb.actions}: ${b.name}`} items={[
                           { label: tb.download, onSelect: () => { window.location.href = `/api/settings/panel-backup/backups/${encodeURIComponent(b.name)}` } },
+                          ...(isOwner ? [{ label: tb.restoreAction, danger: true, onSelect: () => setRestoreTarget(b) }] : []),
                         ]} />
                       </td>
                     </tr>
@@ -171,6 +187,9 @@ export function PanelBackupSettings() {
       <Sheet open={restoring} onOpenChange={setRestoring} title={tb.restoreTitle} description={tb.restoreDescription}>
         <RestoreSteps example={backups.data?.[0]?.name} />
       </Sheet>
+      <Sheet open={!!restoreTarget} onOpenChange={(open) => { if (!open) setRestoreTarget(null) }} title={tb.restoreSheetTitle} description={tb.restoreSheetDescription}>
+        {restoreTarget && <RestoreBackup key={restoreTarget.key} backup={restoreTarget} onDone={() => setRestoreTarget(null)} />}
+      </Sheet>
     </>
   )
 }
@@ -184,6 +203,7 @@ function BackupForm({ current, onDone }: { current: PanelBackup; onDone: () => v
   const tb = t.settingsBackup
   const qc = useQueryClient()
   const storage = useQuery(s3ConnectionsQuery)
+  const weak = useQuery(metaQuery).data?.weak_passwords // development: any length
   const initialPreset = (Object.entries(presets).find(([, cron]) => cron === current.schedule)?.[0] ?? 'custom') as Preset
   const [enabled, setEnabled] = useState(current.configured ? current.enabled : true)
   const [connection, setConnection] = useState(current.s3_connection_id)
@@ -235,8 +255,8 @@ function BackupForm({ current, onDone }: { current: PanelBackup; onDone: () => v
       )}
       <Field name="backup-keep" type="number" dir="ltr" min={1} max={365} required label={tb.keepLabel} hint={tb.keepHint} hintTooltip
         value={keep} onChange={(e) => setKeep(e.target.value)} />
-      <Field name="backup-passphrase" type="password" autoComplete="new-password" minLength={12} required={!current.has_passphrase}
-        label={current.has_passphrase ? tb.passphraseNew : tb.passphrase} hint={tb.passphraseHint} hintTooltip
+      <Field name="backup-passphrase" type="password" autoComplete="new-password" minLength={weak ? 1 : 12} required={!current.has_passphrase}
+        label={current.has_passphrase ? tb.passphraseNew : tb.passphrase} hint={weak ? tb.passphraseHintWeak : tb.passphraseHint} hintTooltip
         value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
       {passphrase !== '' && (
         <Field name="backup-passphrase-confirm" type="password" autoComplete="new-password" required label={tb.passphraseConfirm}
@@ -252,6 +272,94 @@ function BackupForm({ current, onDone }: { current: PanelBackup; onDone: () => v
       <SheetActions>
         <Button type="submit" disabled={save.isPending || mismatch || !connection}>{save.isPending ? t.common.saving : t.common.save}</Button>
         <Button type="button" variant="ghost" onClick={onDone}>{t.common.cancel}</Button>
+      </SheetActions>
+    </form>
+  )
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Rolls the panel back to one backup in storage: the passphrase opens and checks it,
+ * what it holds and what is lost are shown, then the panel restores it and restarts.
+ */
+function RestoreBackup({ backup, onDone }: { backup: BackupObject; onDone: () => void }) {
+  const t = useT()
+  const tb = t.settingsBackup
+  const [passphrase, setPassphrase] = useState('')
+  const [info, setInfo] = useState<RestoreInfo | null>(null)
+  const [done, setDone] = useState<RestoreInfo | null>(null)
+  const url = `/settings/panel-backup/backups/${encodeURIComponent(backup.name)}`
+  const inspect = useMutation({
+    mutationFn: () => api<RestoreInfo>(`${url}/inspect`, { method: 'POST', body: { passphrase } }),
+    onSuccess: setInfo,
+  })
+  const restore = useMutation({
+    mutationFn: () => api<RestoreInfo>(`${url}/restore`, { method: 'POST', body: { passphrase } }),
+    onMutate: () => { toast.loading(tb.restoreWorking, { id: restoreToastId }) },
+    onError: (e) => { toast.error(tb.restoreFailedToast, { id: restoreToastId, description: e.message }) },
+    onSuccess: (r) => {
+      setDone(r)
+      if (!r.restarting) return void toast.success(tb.restoreManualRestart, { id: restoreToastId })
+      toast.loading(tb.restoreRestarting, { id: restoreToastId })
+      try { sessionStorage.setItem(restoredKey, r.name) } catch { /* no toast after the reload */ }
+    },
+  })
+
+  // The panel goes away, then comes back on the restored database: reload once it answers.
+  const restarting = !!done?.restarting
+  useEffect(() => {
+    if (!restarting) return
+    let stop = false
+    void (async () => {
+      await sleep(4000)
+      while (!stop) {
+        try {
+          if ((await fetch('/api/meta', { cache: 'no-store' })).ok) return window.location.reload()
+        } catch { /* still down */ }
+        await sleep(1500)
+      }
+    })()
+    return () => { stop = true }
+  }, [restarting])
+
+  if (done) {
+    return <div className="p-5 text-sm">{done.restarting ? tb.restoreRestarting : tb.restoreManualRestart}</div>
+  }
+  const error = restore.error ?? inspect.error
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (info) restore.mutate()
+    else inspect.mutate()
+  }
+  return (
+    <form onSubmit={submit} className="space-y-5 p-5">
+      <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+        <div className="min-w-0 sm:col-span-2"><dt className="text-xs text-muted">{tb.name}</dt><dd className="mt-0.5 truncate"><code dir="ltr" className="text-xs">{backup.name}</code></dd></div>
+        {info && <Row label={tb.created}>{dateTime(info.created_at)}</Row>}
+        {info && <Row label={tb.restoreVersion}><span dir="ltr">{info.panel_version || '—'}</span></Row>}
+      </dl>
+      <Field name="restore-passphrase" type="password" autoComplete="off" required autoFocus disabled={restore.isPending}
+        label={tb.restorePassphrase} hint={tb.restorePassphraseHint} hintTooltip
+        value={passphrase} onChange={(e) => { setPassphrase(e.target.value); setInfo(null); inspect.reset() }} />
+      {info && (
+        <div className="space-y-2 border border-danger/60 p-3 text-xs">
+          <p className="text-danger">{tb.restoreLoses(timeAgo(info.created_at))}</p>
+          <p className="text-muted">{tb.restoreSafety}</p>
+        </div>
+      )}
+      {error && <ErrorNote>{error.message}</ErrorNote>}
+      <SheetActions>
+        {info ? (
+          <Button type="submit" variant="danger" disabled={restore.isPending}>
+            {restore.isPending ? tb.restoreWorking : tb.restoreConfirm}
+          </Button>
+        ) : (
+          <Button type="submit" disabled={!passphrase || inspect.isPending}>
+            {inspect.isPending ? tb.restoreChecking : tb.restoreCheck}
+          </Button>
+        )}
+        <Button type="button" variant="ghost" disabled={restore.isPending} onClick={onDone}>{t.common.cancel}</Button>
       </SheetActions>
     </form>
   )

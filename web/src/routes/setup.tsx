@@ -49,7 +49,7 @@ export function SetupPage() {
     <AuthCard product={meta.name} title={t.auth.createOwnerTitle} subtitle={t.auth.createOwnerSubtitle}>
       <form onSubmit={submit} className="space-y-4">
         <Field label={t.common.email} name="email" type="email" dir="ltr" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Field label={t.common.password} name="password" type="password" dir="ltr" autoComplete="new-password" required minLength={8} hint={t.auth.passwordHint} value={password} onChange={(e) => setPassword(e.target.value)} />
+        <Field label={t.common.password} name="password" type="password" dir="ltr" autoComplete="new-password" required minLength={meta.weak_passwords ? 1 : 8} hint={meta.weak_passwords ? undefined : t.auth.passwordHint} value={password} onChange={(e) => setPassword(e.target.value)} />
         <Field label={t.auth.confirmPassword} name="confirm" type="password" dir="ltr" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         {mismatch && <ErrorNote>{t.auth.mismatch}</ErrorNote>}
         {setup.error && !mismatch && <ErrorNote>{setup.error.message}</ErrorNote>}

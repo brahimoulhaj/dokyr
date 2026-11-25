@@ -121,7 +121,7 @@ type Options struct {
 	// StopGrace is how long a container gets to exit before it is killed.
 	StopGrace time.Duration
 	// MaxBuilds is how many Git builds run at once; 0 = 1. Further Git deploys stay queued
-	// until a build slot frees. Image pulls do not take a slot.
+	// until a build slot frees. Image pulls do not take a slot. SetMaxBuilds changes it.
 	MaxBuilds int
 	// MaxAttempts is how many times a deployment may start; 0 = 3. A deployment the panel
 	// restarted under starts again from the beginning, up to this many times in all.
@@ -141,7 +141,7 @@ type Service struct {
 	opts Options
 	ctx  context.Context // lifetime of background deploys
 
-	builds chan struct{} // one token per running build
+	builds buildSlots
 
 	mu      sync.Mutex
 	busy    map[string]bool         // app ids with an operation in progress
@@ -182,8 +182,52 @@ func New(ctx context.Context, opts Options) *Service {
 		opts.RetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
 	}
 	return &Service{opts: opts, ctx: ctx, busy: map[string]bool{}, mon: monitor{apps: map[string]*appWatch{}}, pending: map[string]string{}, running: map[string]*cancellable{},
-		builds: make(chan struct{}, opts.MaxBuilds)}
+		builds: buildSlots{limit: opts.MaxBuilds, wake: make(chan struct{})}}
 }
+
+// buildSlots lets a limited number of builds run at once; the limit can change while
+// builds run and wait.
+type buildSlots struct {
+	mu      sync.Mutex
+	limit   int
+	running int
+	wake    chan struct{} // closed, then replaced, whenever a slot may have become free
+}
+
+// tryAcquire takes a slot if one is free. Otherwise it returns the limit and a channel
+// closed when it is worth trying again.
+func (b *buildSlots) tryAcquire() (ok bool, limit int, wake <-chan struct{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.running < b.limit {
+		b.running++
+		return true, b.limit, nil
+	}
+	return false, b.limit, b.wake
+}
+
+func (b *buildSlots) release() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.running--
+	b.notify()
+}
+
+func (b *buildSlots) setLimit(n int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.limit = max(n, 1)
+	b.notify()
+}
+
+func (b *buildSlots) notify() {
+	close(b.wake)
+	b.wake = make(chan struct{})
+}
+
+// SetMaxBuilds changes how many Git builds run at once (at least 1). Builds already
+// running go on; waiting ones start as soon as the new count allows.
+func (s *Service) SetMaxBuilds(n int) { s.builds.setLimit(n) }
 
 // Cancel stops an unfinished deployment: a queued one never starts, a running one is
 // interrupted (the build or pull is killed, a new container removed) and the previous
@@ -561,12 +605,17 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 	// exists. Pulls need none.
 	rollback := dep.RollbackOf != ""
 	if app.SourceType == store.SourceGit && !rollback {
-		select {
-		case s.builds <- struct{}{}:
-		default:
-			logw.printf("Waiting for a running build to finish (%d at a time)", cap(s.builds))
+		for said := false; ; {
+			ok, limit, wake := s.builds.tryAcquire()
+			if ok {
+				break
+			}
+			if !said {
+				said = true
+				logw.printf("Waiting for a running build to finish (%d at a time)", limit)
+			}
 			select {
-			case s.builds <- struct{}{}:
+			case <-wake:
 			case <-ctx.Done():
 				fail("", ctx.Err())
 				return
@@ -576,7 +625,7 @@ func (s *Service) run(ctx context.Context, app store.App, dep store.Deployment) 
 		releaseSlot := func() {
 			if held {
 				held = false
-				<-s.builds
+				s.builds.release()
 			}
 		}
 		defer releaseSlot()

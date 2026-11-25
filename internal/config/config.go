@@ -19,12 +19,16 @@ type Config struct {
 	// container with its data in a named volume. Containers the panel starts then mount
 	// from that volume; otherwise they bind-mount host paths under DataDir.
 	DataVolume string
-	// MaxBuilds is how many Git builds run at once; more deploys wait, queued.
+	// MaxBuilds is how many Git builds run at once until Settings says otherwise; more
+	// deploys wait, queued.
 	MaxBuilds int
 	// BuildCPUs and BuildMemoryMB cap the CPU and memory all Git builds share; zero leaves
 	// that resource uncapped.
 	BuildCPUs     float64
 	BuildMemoryMB int64
+	// WeakPasswords accepts account passwords and backup passphrases of any length. For
+	// local development only.
+	WeakPasswords bool
 	Proxy         Proxy
 	RegistryImage string // image of the built-in registry
 	// RegistryPort publishes the built-in registry on 127.0.0.1 of the host, for a panel
@@ -46,16 +50,17 @@ type Proxy struct {
 	PanelUpstream string // how Caddy reaches the panel, host:port
 }
 
-// Load reads <PREFIX>REGISTRY_IMAGE, <PREFIX>REGISTRY_PORT, <PREFIX>DATA_DIR, <PREFIX>DATA_VOLUME, <PREFIX>MAX_BUILDS, <PREFIX>BUILD_CPUS, <PREFIX>BUILD_MEMORY_MB, <PREFIX>ADDR, <PREFIX>PUBLIC_URL and the <PREFIX>PROXY_* variables.
+// Load reads <PREFIX>REGISTRY_IMAGE, <PREFIX>REGISTRY_PORT, <PREFIX>DATA_DIR, <PREFIX>DATA_VOLUME, <PREFIX>MAX_BUILDS, <PREFIX>BUILD_CPUS, <PREFIX>BUILD_MEMORY_MB, <PREFIX>WEAK_PASSWORDS, <PREFIX>ADDR, <PREFIX>PUBLIC_URL and the <PREFIX>PROXY_* variables.
 func Load() Config {
 	return Config{
 		DataDir:       env("DATA_DIR", brand.DataDir()),
 		Addr:          env("ADDR", ":8080"),
 		PublicURL:     env("PUBLIC_URL", ""),
 		DataVolume:    env("DATA_VOLUME", ""),
-		MaxBuilds:     envInt("MAX_BUILDS", 1),
+		MaxBuilds:     envInt("MAX_BUILDS", 2),
 		BuildCPUs:     envFloat("BUILD_CPUS", 0),
 		BuildMemoryMB: int64(envInt("BUILD_MEMORY_MB", 0)),
+		WeakPasswords: env("WEAK_PASSWORDS", "") == "true",
 		RegistryImage: env("REGISTRY_IMAGE", "registry:3.0.0"),
 		RegistryPort:  envInt("REGISTRY_PORT", 0),
 		S3Image:       env("S3_IMAGE", "rustfs/rustfs:1.0.0-rc.6"),

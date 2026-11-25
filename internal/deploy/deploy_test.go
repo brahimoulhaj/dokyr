@@ -998,6 +998,34 @@ func TestMaxBuildsRunsInParallel(t *testing.T) {
 	e.svc.Wait()
 }
 
+// TestSetMaxBuilds raises the build count while a deploy waits for a slot: it starts
+// without the running build ending.
+func TestSetMaxBuilds(t *testing.T) {
+	e := newEnv(t)
+	b := &fakeBuilder{commit: strings.Repeat("a", 40), gate: make(chan struct{}), started: make(chan string, 4)}
+	e.useGit(b)
+	other := e.gitApp("api")
+	for _, id := range []string{e.app.ID, other.ID} {
+		if _, err := e.svc.Deploy(context.Background(), id, "manual"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-b.started
+	select {
+	case <-b.started:
+		t.Fatal("two builds ran at once with one slot")
+	case <-time.After(100 * time.Millisecond):
+	}
+	e.svc.SetMaxBuilds(2)
+	select {
+	case <-b.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiting build did not start once a second slot was allowed")
+	}
+	close(b.gate)
+	e.svc.Wait()
+}
+
 func TestCancelDeployment(t *testing.T) {
 	e := newEnv(t)
 	good := e.deploy() // the image deploy that keeps serving

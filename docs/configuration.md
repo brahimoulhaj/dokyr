@@ -6,12 +6,15 @@ Back to the [docs index](README.md).
 
 Configuration is by environment: `DOKYR_DATA_DIR` (default `/var/lib/dokyr`), `DOKYR_ADDR`
 (default `:8080`), `DOKYR_PUBLIC_URL` (base URL for printed links), `DOKYR_MAX_BUILDS` (Git builds
-run at once, default 1; further Git deploys wait, queued, and can be cancelled; queued and interrupted deploys
+run at once, default 2, changeable in Settings → Builds; further Git deploys wait, queued, and can be cancelled; queued and interrupted deploys
 start again after a panel restart, at most 3 times),
 `DOKYR_BUILD_CPUS` and `DOKYR_BUILD_MEMORY_MB` (default CPU and memory all builds share, e.g.
 `1.5` and `2048`; unset means no cap; Settings → Builds overrides them without a restart). Capped builds run in a BuildKit container of their own
 (`moby/buildkit`, created on the first build, about 100 MB to download) because Docker's
 built-in BuildKit ignores per-build limits; a build step over the memory cap is killed.
+
+`DOKYR_WEAK_PASSWORDS=true` accepts account passwords and backup passphrases of any length.
+It is for local development (the development stack sets it); never set it on a server.
 
 Host metrics also read `DOKYR_HOST_PROC`; see [Monitoring](monitoring.md).
 
