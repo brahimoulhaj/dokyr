@@ -54,7 +54,7 @@ export function InvitePage() {
     <AuthCard product={meta.name} title={t.users.joinTitle} subtitle={t.users.joinSubtitle(t.users.roles[invite.data.role] ?? invite.data.role)}>
       <form onSubmit={submit} className="space-y-4">
         <Field label={t.common.email} name="email" type="email" dir="ltr" autoComplete="username" readOnly value={invite.data.email} />
-        <Field label={t.common.password} name="password" type="password" dir="ltr" autoComplete="new-password" required autoFocus minLength={8} hint={t.auth.passwordHint} value={password} onChange={(e) => setPassword(e.target.value)} />
+        <Field label={t.common.password} name="password" type="password" dir="ltr" autoComplete="new-password" required autoFocus minLength={meta.weak_passwords ? 1 : 8} hint={meta.weak_passwords ? undefined : t.auth.passwordHint} value={password} onChange={(e) => setPassword(e.target.value)} />
         <Field label={t.auth.confirmPassword} name="confirm" type="password" dir="ltr" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         {mismatch && <ErrorNote>{t.auth.mismatch}</ErrorNote>}
         {accept.error && !mismatch && <ErrorNote>{accept.error.message}</ErrorNote>}

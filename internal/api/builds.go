@@ -10,8 +10,17 @@ import (
 )
 
 // SetBuildDefaults sets the build limits that apply until they are changed in Settings
-// (DOKYR_BUILD_CPUS and DOKYR_BUILD_MEMORY_MB).
-func (s *Server) SetBuildDefaults(l store.BuildLimits) { s.buildDefaults = l }
+// (DOKYR_BUILD_CPUS, DOKYR_BUILD_MEMORY_MB and DOKYR_MAX_BUILDS).
+func (s *Server) SetBuildDefaults(l store.BuildLimits) {
+	l.Concurrent = max(l.Concurrent, 1)
+	s.buildDefaults = l
+}
+
+// SetWeakPasswords tells the UI that passwords of any length are accepted (development).
+func (s *Server) SetWeakPasswords(on bool) { s.weakPasswords = on }
+
+// maxConcurrentBuilds bounds the builds that may run at once.
+const maxConcurrentBuilds = 16
 
 // minBuildMemoryMB keeps BuildKit itself alive under a memory cap.
 const minBuildMemoryMB = 256
@@ -36,12 +45,26 @@ func (s *Server) handleGetBuildSettings(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handlePutBuildSettings saves the CPU and memory caps that Git builds share. They apply
-// from the next build on; a build already running keeps the limits it started with.
+// handlePutBuildSettings saves the CPU and memory caps that Git builds share, and how many
+// builds run at once. The caps apply from the next build on; a build already running
+// keeps the limits it started with. The count applies at once: running builds go on,
+// waiting ones start as soon as it allows. Without "concurrent" the count is unchanged.
 func (s *Server) handlePutBuildSettings(w http.ResponseWriter, r *http.Request) {
-	var in store.BuildLimits
-	if !readJSON(w, r, &in) {
+	var body struct {
+		CPUs       float64 `json:"cpus"`
+		MemoryMB   int64   `json:"memory_mb"`
+		Concurrent *int    `json:"concurrent"`
+	}
+	if !readJSON(w, r, &body) {
 		return
+	}
+	in := store.BuildLimits{CPUs: body.CPUs, MemoryMB: body.MemoryMB}
+	if body.Concurrent != nil {
+		if *body.Concurrent < 1 || *body.Concurrent > maxConcurrentBuilds {
+			invalid(w, fmt.Sprintf("concurrent must be between 1 and %d", maxConcurrentBuilds))
+			return
+		}
+		in.Concurrent = *body.Concurrent
 	}
 	cpus := runtime.NumCPU()
 	switch {
@@ -60,18 +83,36 @@ func (s *Server) handlePutBuildSettings(w http.ResponseWriter, r *http.Request) 
 		s.internal(w, "build settings", err)
 		return
 	}
-	s.audit(r, "settings.builds", "settings", "builds", "", fmt.Sprintf("cpus=%g memory_mb=%d", in.CPUs, in.MemoryMB))
-	s.handleGetBuildSettings(w, r)
+	detail := fmt.Sprintf("cpus=%g memory_mb=%d", in.CPUs, in.MemoryMB)
+	if in.Concurrent > 0 {
+		detail += fmt.Sprintf(" concurrent=%d", in.Concurrent)
+	}
+	s.audit(r, "settings.builds", "settings", "builds", "", detail)
+	s.applyMaxBuilds(w, r)
+}
+
+// applyMaxBuilds gives the deploy service the build count now in force, then answers
+// with the settings.
+func (s *Server) applyMaxBuilds(w http.ResponseWriter, r *http.Request) {
+	out, err := s.buildSettings(r)
+	if err != nil {
+		s.internal(w, "build settings", err)
+		return
+	}
+	if s.deployer != nil {
+		s.deployer.SetMaxBuilds(out.Concurrent)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleResetBuildSettings forgets the limits saved here: the environment's defaults apply again.
 func (s *Server) handleResetBuildSettings(w http.ResponseWriter, r *http.Request) {
-	for _, key := range []string{store.SettingBuildCPUs, store.SettingBuildMemory} {
+	for _, key := range []string{store.SettingBuildCPUs, store.SettingBuildMemory, store.SettingBuildMax} {
 		if err := s.store.DeleteSetting(r.Context(), key); err != nil {
 			s.internal(w, "build settings", err)
 			return
 		}
 	}
 	s.audit(r, "settings.builds", "settings", "builds", "", "reset to defaults")
-	s.handleGetBuildSettings(w, r)
+	s.applyMaxBuilds(w, r)
 }

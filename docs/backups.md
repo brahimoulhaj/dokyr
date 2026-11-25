@@ -41,6 +41,22 @@ manifest, packed as `age(passphrase) → gzip → tar`. Not included: Caddy's ce
 
 ## Restore the panel
 
+### From the panel
+
+For a backup still listed in Settings → Backup, on a panel that works: open the backup's
+menu and choose **Restore…**. Only the owner sees it. Enter the passphrase and check the
+backup: the panel downloads it, verifies it and shows when it was made and by which
+version. Confirming takes a backup of the current state first (it stays in the bucket, so
+the restore can be undone by restoring that one), stages the chosen backup and restarts
+the panel, which takes a few seconds. Everything changed in the panel since the backup
+was made is lost; apps and databases keep running, and those created since stay on the
+server without the panel knowing them.
+
+A backup made by a newer version is refused, and so is a restore while a deployment is
+running. Backups in the bucket are not touched: newer ones stay listed after the restore.
+
+### From the command line
+
 On the same server or a new one. The current database and key are moved aside first,
 never deleted.
 

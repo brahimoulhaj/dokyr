@@ -17,7 +17,6 @@ import (
 const (
 	SetupTokenTTL = 15 * time.Minute
 	SessionTTL    = 30 * 24 * time.Hour
-	MinPassword   = 8
 	MaxPassword   = 256
 
 	InviteTTL = 7 * 24 * time.Hour
@@ -315,6 +314,10 @@ func normalizeEmail(email string) (string, error) {
 	}
 	return strings.ToLower(email), nil
 }
+
+// MinPassword is the shortest password accepted. Development lowers it
+// (DOKYR_WEAK_PASSWORDS); set it before the service is used.
+var MinPassword = 8
 
 func checkPassword(p string) error {
 	if len(p) < MinPassword || len(p) > MaxPassword {

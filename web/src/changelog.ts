@@ -15,6 +15,28 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.40.0',
+    date: '2026-11-25',
+    changes: {
+      en: [
+        'Restore the panel from Settings → Backup: the owner picks a backup, enters its passphrase and confirms. The panel backs up its current state first, then restarts on the chosen backup.',
+        'Settings → Builds sets how many builds run at once. The default is now two.',
+      ],
+      fr: [
+        'Restaurez le panneau depuis Paramètres → Sauvegarde : le propriétaire choisit une sauvegarde, saisit sa phrase secrète et confirme. Le panneau sauvegarde d’abord son état actuel, puis redémarre sur la sauvegarde choisie.',
+        'Paramètres → Builds règle le nombre de builds exécutés en même temps. La valeur par défaut est maintenant deux.',
+      ],
+      ar: [
+        'استعد اللوحة من الإعدادات ← النسخ الاحتياطي: يختار المالك نسخة، يُدخل عبارة المرور الخاصة بها ثم يؤكد. تحفظ اللوحة حالتها الحالية أولًا، ثم تعيد التشغيل على النسخة المختارة.',
+        'الإعدادات ← عمليات البناء تحدد عدد عمليات البناء التي تعمل في الوقت نفسه. القيمة الافتراضية الآن اثنتان.',
+      ],
+      es: [
+        'Restaura el panel desde Ajustes → Copia de seguridad: el propietario elige una copia, escribe su frase de contraseña y confirma. El panel guarda primero su estado actual y luego se reinicia con la copia elegida.',
+        'Ajustes → Builds define cuántos builds se ejecutan a la vez. El valor predeterminado ahora es dos.',
+      ],
+    },
+  },
+  {
     version: '0.39.0',
     date: '2026-11-24',
     changes: {

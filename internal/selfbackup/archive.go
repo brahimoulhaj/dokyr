@@ -30,12 +30,14 @@ const (
 	dbName        = "panel.db"
 	keyName       = "secret.key"
 	// Extension of backup files, after the timestamped name.
-	Extension = ".tar.gz.age"
-	// MinPassphrase is the shortest passphrase accepted.
-	MinPassphrase = 12
-	maxManifest   = 1 << 20
-	maxKey        = 1 << 10
+	Extension   = ".tar.gz.age"
+	maxManifest = 1 << 20
+	maxKey      = 1 << 10
 )
+
+// MinPassphrase is the shortest passphrase accepted. Development lowers it
+// (DOKYR_WEAK_PASSWORDS); set it before the service is used.
+var MinPassphrase = 12
 
 // Manifest describes a backup.
 type Manifest struct {

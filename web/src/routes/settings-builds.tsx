@@ -9,10 +9,14 @@ import { useT } from '../lib/i18n'
 function useDescribe() {
   const tb = useT().settingsBuilds
   return (l: BuildLimits) =>
-    [l.cpus > 0 ? tb.cpuValue(l.cpus) : tb.cpuNoCap, l.memory_mb > 0 ? tb.memoryValue(l.memory_mb) : tb.memoryNoCap] as const
+    [
+      l.cpus > 0 ? tb.cpuValue(l.cpus) : tb.cpuNoCap,
+      l.memory_mb > 0 ? tb.memoryValue(l.memory_mb) : tb.memoryNoCap,
+      tb.concurrentValue(l.concurrent),
+    ] as const
 }
 
-/** CPU and memory caps shared by Git builds: the caps in force, edited in a sheet. */
+/** CPU and memory caps shared by Git builds, and how many run at once: the values in force, edited in a sheet. */
 export function BuildSettingsSection() {
   const settings = useQuery(buildSettingsQuery)
   const t = useT()
@@ -47,6 +51,7 @@ function BuildSettingsForm({ current, onDone }: { current: BuildSettings; onDone
   const tb = t.settingsBuilds
   const [cpus, setCpus] = useState(String(current.cpus))
   const [memory, setMemory] = useState(String(current.memory_mb))
+  const [concurrent, setConcurrent] = useState(String(current.concurrent))
   const describe = useDescribe()
 
   const onSuccess = (s: BuildSettings) => {
@@ -63,9 +68,10 @@ function BuildSettingsForm({ current, onDone }: { current: BuildSettings; onDone
     onSuccess,
   })
 
-  const input: BuildLimits = { cpus: Number(cpus), memory_mb: Number(memory) }
-  const dirty = input.cpus !== current.cpus || input.memory_mb !== current.memory_mb
-  const atDefaults = current.cpus === current.defaults.cpus && current.memory_mb === current.defaults.memory_mb
+  const input: BuildLimits = { cpus: Number(cpus), memory_mb: Number(memory), concurrent: Number(concurrent) }
+  const same = (a: BuildLimits, b: BuildLimits) => a.cpus === b.cpus && a.memory_mb === b.memory_mb && a.concurrent === b.concurrent
+  const dirty = !same(input, current)
+  const atDefaults = same(current, current.defaults)
   const error = save.error ?? reset.error
 
   function submit(e: FormEvent) {
@@ -100,6 +106,19 @@ function BuildSettingsForm({ current, onDone }: { current: BuildSettings; onDone
           hint={tb.memoryHint}
           value={memory}
           onChange={(e) => setMemory(e.target.value)}
+        />
+        <Field
+          label={tb.concurrent}
+          name="build-concurrent"
+          dir="ltr"
+          type="number"
+          min={1}
+          max={16}
+          step="1"
+          hintTooltip
+          hint={tb.concurrentHint}
+          value={concurrent}
+          onChange={(e) => setConcurrent(e.target.value)}
         />
       </div>
       <div className="space-y-1 text-xs text-muted">

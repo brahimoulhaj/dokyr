@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -51,11 +52,29 @@ import (
 // version is set at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
 
+// restartRequested: the panel asked to be started again once it has shut down (a restore
+// staged from the UI is applied at start).
+var restartRequested atomic.Bool
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, brand.Slug+":", err)
 		os.Exit(1)
 	}
+	if restartRequested.Load() {
+		// Start again in place: same process id, so Docker and `go run` see no exit.
+		if exe, err := os.Executable(); err == nil {
+			err = syscall.Exec(exe, os.Args, os.Environ())
+			fmt.Fprintln(os.Stderr, brand.Slug+": restart in place:", err)
+		}
+		os.Exit(1) // the container's restart policy starts the panel again
+	}
+}
+
+// requestRestart shuts the panel down like a stop signal does, then starts it again.
+func requestRestart() {
+	restartRequested.Store(true)
+	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 }
 
 func usage() {
@@ -94,6 +113,10 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	cfg := config.Load()
+	if cfg.WeakPasswords { // local development: any length
+		account.MinPassword = 1
+		selfbackup.MinPassphrase = 1
+	}
 
 	switch args[0] {
 	case "serve":
@@ -133,10 +156,13 @@ func open(ctx context.Context, cfg config.Config, log *slog.Logger) (*store.Stor
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("data dir: %w", err)
 	}
-	// A restore staged with `restore` replaces the database and key before either opens.
+	// A restore staged with `restore`, or from the panel, replaces the database and key
+	// before either opens.
+	restored := false
 	if aside, err := selfbackup.ApplyPending(cfg.DataDir, cfg.DBPath(), cfg.KeyPath(), cfg.BackupDir()); err != nil {
 		return nil, fmt.Errorf("apply staged restore: %w", err)
 	} else if aside != "" {
+		restored = true
 		msg := "restored the panel from a backup; the previous database and key were moved to " + aside
 		if log != nil {
 			log.Info(msg)
@@ -167,6 +193,20 @@ func open(ctx context.Context, cfg config.Config, log *slog.Logger) (*store.Stor
 	}
 	if sealed > 0 && log != nil {
 		log.Info("app environments encrypted", "apps", sealed)
+	}
+	if restored { // recorded in the restored database: the one it was asked in is gone
+		e := store.Event{Action: "panel.restored", Actor: "system", TargetType: "panel", TargetName: brand.Name}
+		if note, ok := selfbackup.TakeRestored(cfg.DataDir); ok {
+			e.Actor, e.Detail = note.Actor, note.Backup
+			if note.Status != nil { // the restored database does not know the newest backups
+				if err := st.SetPanelBackupStatus(ctx, *note.Status); err != nil && log != nil {
+					log.Warn("carry the backup status over the restore", "error", err)
+				}
+			}
+		}
+		if err := st.AddEvent(ctx, e); err != nil && log != nil {
+			log.Warn("record the restore", "error", err)
+		}
 	}
 	return st, nil
 }
@@ -267,7 +307,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 
 	// Build limits: the environment gives the defaults, Settings can change them; read at
 	// the start of every build.
-	buildDefaults := store.BuildLimits{CPUs: cfg.BuildCPUs, MemoryMB: cfg.BuildMemoryMB}
+	buildDefaults := store.BuildLimits{CPUs: cfg.BuildCPUs, MemoryMB: cfg.BuildMemoryMB, Concurrent: max(cfg.MaxBuilds, 1)}
 	builds := &builder.Local{
 		LimitsFunc: func(ctx context.Context) (builder.Limits, error) {
 			l, err := st.GetBuildLimits(ctx, buildDefaults)
@@ -306,8 +346,12 @@ func serve(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	go objects.Supervise(ctx, 30*time.Second)
+	buildLimits, err := st.GetBuildLimits(ctx, buildDefaults)
+	if err != nil {
+		return err
+	}
 	deployer := deploy.New(ctx, deploy.Options{
-		DataVolume: cfg.DataVolume, MaxBuilds: cfg.MaxBuilds,
+		DataVolume: cfg.DataVolume, MaxBuilds: buildLimits.Concurrent,
 		Store: st, Executor: ex, Router: px, Builder: builds, GitAuth: git, DataDir: cfg.DataDir, Log: log,
 		Ready: proxyReady, OutsideNetwork: !inContainer(), Registry: reg,
 	})
@@ -335,8 +379,13 @@ func serve(ctx context.Context, cfg config.Config) error {
 	panelBackups := selfbackup.New(st, log, version, cfg.DataDir, cfg.KeyPath())
 	go panelBackups.Watch(schedulerCtx)
 	apiSrv.SetPanelBackups(panelBackups)
+	apiSrv.SetRestart(requestRestart)
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
+	apiSrv.SetWeakPasswords(cfg.WeakPasswords)
+	if cfg.WeakPasswords {
+		log.Warn("weak passwords are accepted (" + brand.EnvPrefix() + "WEAK_PASSWORDS): for development only")
+	}
 	apiSrv.SetRegistryChecker(ex)
 	metrics := hostmetrics.New(hostmetrics.Options{DataDir: cfg.DataDir, ProcRoot: os.Getenv(brand.EnvPrefix() + "HOST_PROC"), History: containermetrics.HostHistory(st)})
 	go metrics.Run(ctx)

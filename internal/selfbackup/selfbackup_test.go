@@ -259,3 +259,100 @@ func TestSchedule(t *testing.T) {
 		t.Fatal("disabled schedule runs")
 	}
 }
+
+// TestRestoreFromStorage restores an older backup the way the panel does: checked,
+// the current state backed up first, staged for the next start, and noted for it.
+func TestRestoreFromStorage(t *testing.T) {
+	svc, st, bucket, dir := setup(t)
+	ctx := context.Background()
+	if err := st.SetPanelBackupConfig(ctx, store.PanelBackupConfig{S3ConnectionID: "s3", Schedule: "0 3 * * *", Keep: 5, Passphrase: passphrase}); err != nil {
+		t.Fatal(err)
+	}
+	old, err := svc.Run(ctx, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	later, err := st.CreateProject(ctx, "Later", "made after the backup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond) // names have one-second resolution
+
+	if _, err := svc.Inspect(ctx, old.Name, "not the passphrase"); !errors.Is(err, ErrPassphrase) {
+		t.Fatalf("inspect with a wrong passphrase = %v", err)
+	}
+	if _, err := svc.Restore(ctx, old.Name, "not the passphrase", "owner@example.com"); !errors.Is(err, ErrPassphrase) {
+		t.Fatalf("restore with a wrong passphrase = %v", err)
+	}
+	if _, err := svc.Inspect(ctx, "dokyr-missing"+Extension, passphrase); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("inspect of a missing backup = %v", err)
+	}
+	m, err := svc.Inspect(ctx, old.Name, passphrase)
+	if err != nil || m.PanelVersion != "v-test" {
+		t.Fatalf("inspect = %+v, %v", m, err)
+	}
+	if Pending(dir) || len(bucket.objects) != 1 {
+		t.Fatalf("inspecting or a refused restore left something: pending %v, %d objects", Pending(dir), len(bucket.objects))
+	}
+
+	// A backup of another product, or of a newer schema, is refused.
+	for name, change := range map[string]func(*Manifest){
+		"foreign": func(m *Manifest) { m.Product = "other" },
+		"newer":   func(m *Manifest) { m.SchemaVersion += 1 },
+	} {
+		snapshot := filepath.Join(t.TempDir(), "panel.db")
+		if err := st.Snapshot(ctx, snapshot); err != nil {
+			t.Fatal(err)
+		}
+		bad := m
+		change(&bad)
+		var buf bytes.Buffer
+		if err := Write(&buf, passphrase, bad, snapshot, filepath.Join(dir, "secret.key")); err != nil {
+			t.Fatal(err)
+		}
+		key := "prefix/panel-backups/dokyr-" + name + Extension
+		bucket.objects[key] = buf.Bytes()
+		if _, err := svc.Restore(ctx, filepath.Base(key), passphrase, "owner@example.com"); !errors.Is(err, ErrForeign) && !errors.Is(err, ErrNewer) {
+			t.Fatalf("restore of a %s backup = %v", name, err)
+		}
+		delete(bucket.objects, key)
+	}
+	if Pending(dir) {
+		t.Fatal("a refused restore was staged")
+	}
+
+	if _, err := svc.Restore(ctx, old.Name, passphrase, "owner@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if !Pending(dir) {
+		t.Fatal("restore not staged")
+	}
+	if len(bucket.objects) != 2 {
+		t.Fatalf("the current state was not backed up before the restore: %d objects", len(bucket.objects))
+	}
+	if _, err := svc.Restore(ctx, old.Name, passphrase, "owner@example.com"); !errors.Is(err, ErrRestoring) {
+		t.Fatalf("second restore = %v", err)
+	}
+	st.Close()
+
+	dbPath, keyPath := filepath.Join(dir, "panel.db"), filepath.Join(dir, "secret.key")
+	if aside, err := ApplyPending(dir, dbPath, keyPath, filepath.Join(dir, "backups")); err != nil || aside == "" {
+		t.Fatalf("apply = %q, %v", aside, err)
+	}
+	note, ok := TakeRestored(dir)
+	if !ok || note.Backup != old.Name || note.Actor != "owner@example.com" ||
+		note.Status == nil || note.Status.LastSuccessAt == nil || note.Status.LastKey == old.Key || note.Status.LastKey == "" {
+		t.Fatalf("note = %+v, %v", note, ok)
+	}
+	if _, again := TakeRestored(dir); again {
+		t.Fatal("the note is taken once")
+	}
+	restored, err := store.Open(dbPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if _, err := restored.GetProject(ctx, later.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a project made after the backup survived the restore: %v", err)
+	}
+}

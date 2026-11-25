@@ -49,6 +49,8 @@ type Deployer interface {
 	// NeedsRedeploy tells whether the app's settings, or a value its variables take from
 	// the project, a database or another app, changed since the running deployment.
 	NeedsRedeploy(ctx context.Context, app store.App) bool
+	// SetMaxBuilds changes how many Git builds run at once.
+	SetMaxBuilds(n int)
 }
 
 // SetDeployer connects the deploy service; without one, runtime actions answer 503.
