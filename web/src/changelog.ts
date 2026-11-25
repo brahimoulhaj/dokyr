@@ -15,6 +15,32 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.40.1',
+    date: '2026-11-25',
+    changes: {
+      en: [
+        'Restoring the panel now asks in a confirmation dialog, which says what is lost and what stays safe.',
+        'Settings → Builds warns when more builds run at once than the CPU cap has cores: they share the cap, so each build gets slower.',
+        'Attempts at a backup\'s passphrase are limited, like sign-in attempts.',
+      ],
+      fr: [
+        'La restauration du panneau demande maintenant confirmation dans une boîte de dialogue, qui indique ce qui est perdu et ce qui reste à l’abri.',
+        'Paramètres → Builds avertit quand plus de builds tournent en même temps que le plafond CPU n’a de cœurs : ils se partagent le plafond, chaque build ralentit.',
+        'Les essais de phrase secrète d’une sauvegarde sont limités, comme les tentatives de connexion.',
+      ],
+      ar: [
+        'استعادة اللوحة تطلب الآن التأكيد في مربع حوار يوضح ما سيُفقد وما يبقى آمنًا.',
+        'الإعدادات ← عمليات البناء تحذّر عندما يتجاوز عدد عمليات البناء المتزامنة عدد أنوية حد المعالج: تتقاسم الحد فيصبح كل بناء أبطأ.',
+        'محاولات إدخال عبارة مرور النسخة الاحتياطية محدودة، مثل محاولات تسجيل الدخول.',
+      ],
+      es: [
+        'Restaurar el panel ahora pide confirmación en un diálogo que dice qué se pierde y qué queda a salvo.',
+        'Ajustes → Builds avisa cuando hay más builds a la vez que núcleos en el límite de CPU: comparten el límite y cada build va más lento.',
+        'Los intentos de frase de contraseña de una copia están limitados, como los de inicio de sesión.',
+      ],
+    },
+  },
+  {
     version: '0.40.0',
     date: '2026-11-25',
     changes: {
