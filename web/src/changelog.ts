@@ -15,6 +15,28 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.41.0',
+    date: '2026-11-26',
+    changes: {
+      en: [
+        'The Backup page lists the containers the panel no longer knows, which a restore of an older backup can leave running, and lets an admin remove them. Their volumes stay.',
+        'Restoring the panel no longer removes an old backup: the copy taken before the restore is not counted against the number kept.',
+      ],
+      fr: [
+        'La page Sauvegarde liste les conteneurs que le panneau ne connaît plus, qu’une restauration d’une sauvegarde ancienne peut laisser tourner, et permet à un administrateur de les supprimer. Leurs volumes restent.',
+        'Restaurer le panneau ne supprime plus d’ancienne sauvegarde : la copie faite avant la restauration ne compte pas dans le nombre conservé.',
+      ],
+      ar: [
+        'صفحة النسخ الاحتياطي تسرد الحاويات التي لم تعد اللوحة تعرفها، والتي قد تتركها استعادة نسخة قديمة قيد التشغيل، وتتيح للمسؤول حذفها. تبقى وحدات تخزينها.',
+        'استعادة اللوحة لم تعد تحذف نسخة قديمة: النسخة المأخوذة قبل الاستعادة لا تُحتسب ضمن العدد المحتفظ به.',
+      ],
+      es: [
+        'La página Copia de seguridad lista los contenedores que el panel ya no conoce, que restaurar una copia antigua puede dejar en marcha, y permite a un administrador eliminarlos. Sus volúmenes se conservan.',
+        'Restaurar el panel ya no elimina una copia antigua: la copia hecha antes de restaurar no cuenta para el número conservado.',
+      ],
+    },
+  },
+  {
     version: '0.40.1',
     date: '2026-11-25',
     changes: {
