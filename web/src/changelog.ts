@@ -15,6 +15,36 @@ export type Release = {
 
 export const changelog: Release[] = [
   {
+    version: '0.42.0',
+    date: '2026-11-26',
+    changes: {
+      en: [
+        'Redirects on the Routing page: send www.example.com to example.com, or an old name to a new one, with the path kept.',
+        'Volume backups in an app\'s Settings → Volumes: copy a named volume to S3 storage, restore it, delete it. On demand for now, not on a schedule.',
+        'Invites can be sent by email, through the mail server of an email notification channel.',
+        'The owner can hand the panel over to another member, after confirming their password.',
+      ],
+      fr: [
+        'Redirections sur la page Routage : envoyez www.example.com vers example.com, ou un ancien nom vers un nouveau, chemin conservé.',
+        'Sauvegardes de volumes dans Paramètres → Volumes d’une app : copiez un volume nommé vers un stockage S3, restaurez-le, supprimez-le. À la demande pour l’instant, sans planification.',
+        'Les invitations peuvent être envoyées par e-mail, via le serveur de messagerie d’un canal de notification par e-mail.',
+        'Le propriétaire peut céder le panneau à un autre membre, après confirmation de son mot de passe.',
+      ],
+      ar: [
+        'إعادات التوجيه في صفحة التوجيه: أرسل www.example.com إلى example.com، أو اسمًا قديمًا إلى اسم جديد، مع الإبقاء على المسار.',
+        'نسخ وحدات التخزين في الإعدادات ← وحدات التخزين للتطبيق: انسخ وحدة تخزين مسمّاة إلى تخزين S3، استعدها، احذفها. عند الطلب حاليًا، بلا جدولة.',
+        'يمكن إرسال الدعوات بالبريد الإلكتروني عبر خادم بريد قناة إشعارات بالبريد.',
+        'يستطيع المالك تسليم اللوحة إلى عضو آخر بعد تأكيد كلمة مروره.',
+      ],
+      es: [
+        'Redirecciones en la página Enrutamiento: envía www.example.com a example.com, o un nombre antiguo a uno nuevo, con la ruta conservada.',
+        'Copias de volúmenes en Ajustes → Volúmenes de una app: copia un volumen con nombre a un almacenamiento S3, restáuralo, elimínalo. Bajo demanda por ahora, sin programación.',
+        'Las invitaciones pueden enviarse por correo, mediante el servidor de correo de un canal de notificación por correo.',
+        'El propietario puede ceder el panel a otro miembro, tras confirmar su contraseña.',
+      ],
+    },
+  },
+  {
     version: '0.41.0',
     date: '2026-11-26',
     changes: {
