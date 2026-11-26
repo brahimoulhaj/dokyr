@@ -41,6 +41,7 @@ var (
 	ErrInvalidRole        = errors.New("choose the admin or maintainer role")
 	ErrBadInvite          = errors.New("this invite link is invalid or has expired")
 	ErrOwnerProtected     = errors.New("the owner's account cannot be changed or removed")
+	ErrAlreadyOwner       = errors.New("this account is already the owner")
 )
 
 type Service struct {
@@ -224,6 +225,21 @@ func (s *Service) SetRole(ctx context.Context, userID, role string) (store.User,
 	}
 	u.Role = role
 	return u, s.store.UpdateUserRole(ctx, userID, role)
+}
+
+// TransferOwnership hands the panel to another member: they become the owner and the
+// owner becomes an admin. There is one owner at a time, so the two change together.
+func (s *Service) TransferOwnership(ctx context.Context, ownerID, userID string) (store.User, error) {
+	if ownerID == userID {
+		return store.User{}, ErrAlreadyOwner
+	}
+	if _, err := s.store.GetUserByID(ctx, userID); err != nil {
+		return store.User{}, err
+	}
+	if err := s.store.TransferOwnership(ctx, ownerID, userID); err != nil {
+		return store.User{}, err
+	}
+	return s.store.GetUserByID(ctx, userID)
 }
 
 // RemoveUser deletes a member and everything that signs them in. Owners are never removed.

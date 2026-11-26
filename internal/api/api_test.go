@@ -97,7 +97,7 @@ func TestSetupLoginFlow(t *testing.T) {
 	e := newEnv(t)
 	creds := map[string]any{"email": "Owner@Example.com", "password": "s3cret-pass"}
 
-	if code, m := e.call("GET", "/api/meta", nil); code != 200 || m["setup_required"] != true || m["name"] != brand.Name {
+	if code, m := e.call("GET", "/api/meta", nil); code != 200 || m["setup_required"] != true || m["name"] != brand.Name || m["api_version"] != float64(APIVersion) {
 		t.Fatalf("meta = %d %v", code, m)
 	}
 	if code, _ := e.call("GET", "/api/auth/me", nil); code != 401 {

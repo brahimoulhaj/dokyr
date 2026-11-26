@@ -46,6 +46,7 @@ import (
 	"panel/internal/selfbackup"
 	"panel/internal/store"
 	"panel/internal/update"
+	"panel/internal/volumebackup"
 	"panel/internal/webui"
 )
 
@@ -381,6 +382,14 @@ func serve(ctx context.Context, cfg config.Config) error {
 	apiSrv.SetPanelBackups(panelBackups)
 	apiSrv.SetRestart(requestRestart)
 	apiSrv.SetOrphans(executor.Orphans{Ex: ex, Known: knownResource(st)})
+	// A restart ends the backups in flight: say so instead of leaving them "running".
+	if n, err := st.FailRunningVolumeBackups(ctx, "interrupted by a restart of the panel"); err != nil {
+		log.Warn("volume backups", "error", err)
+	} else if n > 0 {
+		log.Warn("volume backups interrupted by the restart", "count", n)
+	}
+	// The proxy's image is on every server already and has the sh, tar and find the helper needs.
+	apiSrv.SetVolumeBackups(volumebackup.New(st, ex, cfg.Proxy.Image, log, volumebackup.OpenS3(st)))
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetWeakPasswords(cfg.WeakPasswords)
@@ -541,7 +550,7 @@ func proxySource(st *store.Store, registryUpstream, s3Upstream string) func(cont
 			ACMEEmail:       email,
 		}
 		for _, site := range sites {
-			ps := proxy.Site{Host: site.Host, HTTPOnly: site.HTTPOnly}
+			ps := proxy.Site{Host: site.Host, HTTPOnly: site.HTTPOnly, RedirectTo: site.RedirectTo}
 			for _, p := range site.Paths {
 				path := proxy.Path{ID: p.RouteID, AppID: p.AppID, Prefix: p.Path, Strip: p.Strip}
 				if p.Upstream != "" {

@@ -19,14 +19,15 @@ import (
 
 // sources says, per package, which calls carry a message for people and in which argument.
 var sources = map[string]map[string]int{
-	"api":         {"writeError": 3, "invalid": 1, "storeError": 3, "tr": 1},
-	"gitsource":   {"invalidf": 0},
-	"deploy":      {"printf": 0},
-	"database":    {},
-	"notify":      {},
-	"objectstore": {},
-	"hostcron":    {},
-	"account":     {},
+	"api":          {"writeError": 3, "invalid": 1, "storeError": 3, "tr": 1},
+	"gitsource":    {"invalidf": 0},
+	"deploy":       {"printf": 0},
+	"database":     {},
+	"notify":       {},
+	"objectstore":  {},
+	"hostcron":     {},
+	"account":      {},
+	"volumebackup": {},
 }
 
 // messageOf turns the expression of a message into a catalog key: a literal as it is, a

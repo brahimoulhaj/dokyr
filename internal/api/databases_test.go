@@ -383,4 +383,6 @@ func TestDatabaseAPI(t *testing.T) {
 
 type testNotifier func(string) error
 
-func (f testNotifier) Test(_ context.Context, id string) error { return f(id) }
+func (f testNotifier) Test(_ context.Context, id string) error            { return f(id) }
+func (f testNotifier) Mailer(context.Context) (string, bool)              { return "", false }
+func (f testNotifier) Mail(context.Context, string, string, string) error { return nil }

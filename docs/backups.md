@@ -8,7 +8,8 @@ Three things hold state on a Dokyr server, and each is backed up differently:
 |---|---|---|
 | The panel: projects, apps, settings, users, encrypted secrets | `/var/lib/dokyr/dokyr.db` and `/var/lib/dokyr/secret.key` | Panel backup, below |
 | Database contents | each instance's Docker volume | Database backups ([Databases](databases.md#backups-and-restore)) |
-| App volumes and host paths | Docker volumes, host folders | Not backed up by the panel: use your own tool (restic, snapshots of the disk) |
+| App volumes | Docker volumes | Volume backups, below; on demand, not on a schedule |
+| Host paths mounted into apps | host folders | Not backed up by the panel: use your own tool (restic, snapshots of the disk) |
 
 The database file is useless without `secret.key`: every stored secret (tokens,
 passwords, environment values) is encrypted with it. A panel backup always carries both.
@@ -116,6 +117,30 @@ age -d dokyr-20261120T030000Z.tar.gz.age | tar -xz
 ```
 
 It yields `manifest.json`, `panel.db` and `secret.key`.
+
+## Volume backups
+
+An app's **Settings → Volumes** lists its named volumes under "Volume backups". **Back up
+now** copies one volume, compressed, to an S3 storage connection:
+`<prefix>/volume-backups/<volume>/<volume>-<time>-<id>.tar.gz`. It is a plain archive,
+readable without the panel:
+
+```sh
+gunzip < web-data-20261126T220000Z-….tar.gz | tar -x -C /somewhere
+```
+
+The files are read from a short-lived helper container that mounts the volume read-only,
+so the app's image needs no `tar` and a stopped app is backed up like a running one. A
+backup taken while the app writes may catch files half written: stop the app first when
+that matters, and for a database prefer its own backups.
+
+**Restore…** (owner and admins) empties the volume and unpacks the backup into it. The
+app must be stopped; the result appears in Activity, then start the app. Backups stay
+listed after the app is stopped, and their objects stay in the bucket if the app is
+deleted.
+
+Not there yet: a schedule, retention, and host paths. To run backups on a schedule, call
+`POST /api/apps/{id}/volume-backups` with an API token from your own scheduler.
 
 ## What to check now and then
 

@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"panel/internal/account"
+	"panel/internal/brand"
 	"panel/internal/store"
 )
 
@@ -16,6 +19,10 @@ type inviteJSON struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 	Expired   bool      `json:"expired"`
+	// Emailed says the link was sent to the invited address; EmailError why it was not,
+	// when sending was asked for. Both only in the response that creates the invite.
+	Emailed    bool   `json:"emailed,omitempty"`
+	EmailError string `json:"email_error,omitempty"`
 	// Token is the secret of the invite link, present only in the response that creates it.
 	Token string `json:"token,omitempty"`
 }
@@ -32,6 +39,8 @@ func (s *Server) userError(w http.ResponseWriter, what string, err error) bool {
 	case errors.Is(err, account.ErrInvalidEmail), errors.Is(err, account.ErrWeakPassword), errors.Is(err, account.ErrInvalidRole):
 		invalid(w, err.Error())
 	case errors.Is(err, account.ErrEmailTaken):
+		writeError(w, http.StatusConflict, "conflict", err.Error())
+	case errors.Is(err, account.ErrAlreadyOwner):
 		writeError(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, account.ErrOwnerProtected):
 		writeError(w, http.StatusForbidden, "forbidden", err.Error())
@@ -93,14 +102,50 @@ func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleCreateInvite returns the link token once; the owner passes the link on themselves.
+// handleInviteMail says whether the panel can email an invitation itself: it needs an
+// email notification channel for its mail server and a panel address to put in the link.
+func (s *Server) handleInviteMail(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"available": false, "channel": ""}
+	if s.notifier != nil {
+		if name, ok := s.notifier.Mailer(r.Context()); ok {
+			_, err := s.loginOrigin(r)
+			out["available"], out["channel"] = err == nil, name
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleCreateInvite returns the link token once; the owner passes the link on
+// themselves, or with send the panel emails it to the invited address. The invite stands
+// even when the mail fails: the answer says so and still carries the link.
 func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email string `json:"email"`
 		Role  string `json:"role"`
+		Send  bool   `json:"send"`
 	}
 	if !readJSON(w, r, &in) {
 		return
+	}
+	origin := ""
+	if in.Send {
+		// Checked before the invite is made: asking for a mail the panel cannot send is a
+		// mistake to report, not an invite to create quietly without it.
+		if s.notifier == nil {
+			invalid(w, "add an email notification channel before sending invites by email")
+			return
+		}
+		if _, ok := s.notifier.Mailer(r.Context()); !ok {
+			invalid(w, "add an email notification channel before sending invites by email")
+			return
+		}
+		// The link goes into a mail: only an address the panel is configured to answer on.
+		o, err := s.loginOrigin(r)
+		if err != nil {
+			invalid(w, "open the panel on its own HTTPS domain before sending invites by email")
+			return
+		}
+		origin = o
 	}
 	inv, token, err := s.accounts.Invite(r.Context(), userFrom(r.Context()).ID, in.Email, in.Role)
 	if s.userError(w, "create invite", err) {
@@ -109,7 +154,48 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "user.invite", "user", inv.ID, inv.Email, inv.Role)
 	out := toInviteJSON(inv)
 	out.Token = token
+	if in.Send {
+		inviter := userFrom(r.Context()).Email
+		text := inviter + " invites you to " + brand.Name + " as " + inv.Role + ".\n\n" +
+			"Open this link to choose a password and join:\n" + origin + "/invite?token=" + url.QueryEscape(token) + "\n\n" +
+			"The link works once and expires on " + inv.ExpiresAt.UTC().Format("2 January 2006, 15:04 UTC") + ". If you did not expect it, ignore this message."
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if err := s.notifier.Mail(ctx, inv.Email, "You are invited to "+brand.Name, text); err != nil {
+			s.log.Warn("invite mail", "to", inv.Email, "error", err)
+			out.EmailError = err.Error()
+		} else {
+			out.Emailed = true
+		}
+	}
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// handleTransferOwnership makes another member the owner and the caller an admin. It asks
+// for the caller's password again, or a passkey confirmation made just before: the panel
+// changes hands, and a session left open must not be enough for that.
+func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Password == "" {
+		if !s.confirmed.take(sessionHash(r)) {
+			writeError(w, http.StatusUnauthorized, "confirm_required", "confirm with your password or a passkey")
+			return
+		}
+	} else if !s.confirmLoginPassword(w, r, in.Password) {
+		return
+	}
+	me := userFrom(r.Context())
+	u, err := s.accounts.TransferOwnership(r.Context(), me.ID, r.PathValue("id"))
+	if s.userError(w, "transfer ownership", err) {
+		return
+	}
+	s.audit(r, "user.ownership", "user", u.ID, u.Email, "from "+me.Email)
+	writeJSON(w, http.StatusOK, toUserJSON(u))
 }
 
 func (s *Server) handleDeleteInvite(w http.ResponseWriter, r *http.Request) {

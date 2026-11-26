@@ -95,6 +95,24 @@ func (s *Store) UpdateUserRole(ctx context.Context, userID, role string) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE users SET role = ?, updated_at = ? WHERE id = ?`, role, now(), userID))
 }
 
+// TransferOwnership makes toID the owner and the owner fromID an admin, both or neither.
+// ErrNotFound when fromID is not the owner or toID is not another existing user.
+func (s *Store) TransferOwnership(ctx context.Context, fromID, toID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	ts := now()
+	if err := affected(tx.ExecContext(ctx, `UPDATE users SET role = 'admin', updated_at = ? WHERE id = ? AND role = 'owner'`, ts, fromID)); err != nil {
+		return err
+	}
+	if err := affected(tx.ExecContext(ctx, `UPDATE users SET role = 'owner', updated_at = ? WHERE id = ? AND id <> ?`, ts, toID, fromID)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // DeleteUser removes a user; their sessions, API tokens and login methods go with them.
 func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID))

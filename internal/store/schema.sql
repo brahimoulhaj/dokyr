@@ -269,6 +269,15 @@ CREATE TABLE projects (
     updated_at  TEXT NOT NULL
 , environment TEXT NOT NULL DEFAULT '{}', env_inherit INTEGER NOT NULL DEFAULT 0 CHECK (env_inherit IN (0, 1)), environment_order TEXT NOT NULL DEFAULT '[]');
 
+CREATE TABLE redirects (
+    id         TEXT PRIMARY KEY,
+    hostname   TEXT NOT NULL UNIQUE,
+    target     TEXT NOT NULL,
+    tls_mode   TEXT NOT NULL DEFAULT 'auto',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE registries (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -363,6 +372,20 @@ CREATE TABLE users (
     updated_at    TEXT NOT NULL
 );
 
+CREATE TABLE volume_backups (
+    id               TEXT PRIMARY KEY,
+    app_id           TEXT REFERENCES apps(id) ON DELETE SET NULL,
+    app_name         TEXT NOT NULL,
+    volume           TEXT NOT NULL,
+    s3_connection_id TEXT NOT NULL REFERENCES s3_connections(id) ON DELETE RESTRICT,
+    object_key       TEXT NOT NULL,
+    size_bytes       INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'ready', 'failed')),
+    error            TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL,
+    finished_at      TEXT
+);
+
 CREATE INDEX alert_rules_event ON alert_rules(event);
 
 CREATE INDEX api_tokens_user_id ON api_tokens(user_id);
@@ -403,6 +426,8 @@ CREATE INDEX s3_access_keys_bucket ON s3_access_keys(bucket);
 CREATE INDEX sessions_expires_at ON sessions(expires_at);
 
 CREATE INDEX sessions_user_id ON sessions(user_id);
+
+CREATE INDEX volume_backups_app ON volume_backups(app_id, id);
 
 CREATE TRIGGER alert_rules_app_deleted AFTER DELETE ON apps
 BEGIN DELETE FROM alert_rules WHERE target_id = OLD.id; END;

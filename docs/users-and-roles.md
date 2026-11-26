@@ -12,7 +12,19 @@ link and send it yourself; the invited person opens it, picks a password and is 
 | Host terminal, cron jobs, panel backups, GitHub sign-in configuration | yes | yes | no |
 | Invite and remove users, change roles | yes | no | no |
 
-There is one owner, who cannot be changed or removed. A role change applies at once;
+There is one owner, who cannot be removed or given another role by anyone else. The owner
+can hand the panel over: **Make owner…** in a member's actions asks for the owner's
+password, then that member becomes the owner and the former owner an admin. Only the new
+owner can hand it back.
+
+An invite is a link that works once and expires. The owner passes it on, or ticks **Send
+the link by email**: the panel then mails it to the invited address through the mail
+server of the first email notification channel (Settings → Notifications). This needs
+that channel and the panel opened on its own HTTPS domain, so the link in the mail is
+one the panel answers on. If the mail fails the invite stands and the link is still
+shown.
+
+A role change applies at once;
 removing a user ends their sessions and API tokens, and what they created stays. An API
 token carries the role of its user. A maintainer cannot reach the
 host through an app either: mounting a host path and choosing a Buildpacks builder image

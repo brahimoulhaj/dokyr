@@ -449,3 +449,37 @@ func TestBuildPanelToken(t *testing.T) {
 		t.Fatalf("no token, yet the header is set: %v", err)
 	}
 }
+
+// TestBuildRedirect: a redirected hostname answers 308 to https://<target> with the path
+// and query kept, over HTTPS with its own certificate, or over plain HTTP when HTTP-only.
+func TestBuildRedirect(t *testing.T) {
+	cfg := build(t, Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", Sites: []Site{
+		{Host: "www.example.com", RedirectTo: "example.com"},
+		{Host: "old.example.com", RedirectTo: "example.com", HTTPOnly: true},
+	}})
+	h := dig(t, cfg, "apps", "http", "servers", "https", "routes", 0, "handle", 0, "routes", 0, "handle", 0)
+	if dig(t, h, "status_code") != float64(308) || dig(t, h, "headers", "Location", 0) != "https://example.com{http.request.uri}" {
+		t.Errorf("redirect handler = %v", h)
+	}
+	if got := dig(t, cfg, "apps", "http", "servers", "https", "routes", 0, "match", 0, "host", 0); got != "www.example.com" {
+		t.Errorf("https host = %v", got)
+	}
+	found := false
+	for _, r := range dig(t, cfg, "apps", "http", "servers", "http", "routes").([]any) {
+		m, _ := r.(map[string]any)
+		match, _ := m["match"].([]any)
+		if len(match) == 0 {
+			continue
+		}
+		if hosts, _ := match[0].(map[string]any)["host"].([]any); len(hosts) == 1 && hosts[0] == "old.example.com" {
+			h := dig(t, r, "handle", 0, "routes", 0, "handle", 0)
+			found = dig(t, h, "headers", "Location", 0) == "https://example.com{http.request.uri}"
+		}
+	}
+	if !found {
+		t.Error("the HTTP-only redirect is not served on the HTTP server")
+	}
+	if _, err := Build(Config{AdminListen: ":2019", PanelUpstream: "dokyr:8080", Sites: []Site{{Host: "www.example.com", RedirectTo: "not a host"}}}); err == nil {
+		t.Error("an invalid target was accepted")
+	}
+}

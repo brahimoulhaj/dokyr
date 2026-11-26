@@ -304,6 +304,15 @@ type Project struct {
 	EnvironmentOrder string
 }
 
+type Redirect struct {
+	ID        string
+	Hostname  string
+	Target    string
+	TlsMode   string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type Registry struct {
 	ID        string
 	Name      string
@@ -398,4 +407,18 @@ type UserInvite struct {
 	ExpiresAt string
 	CreatedAt string
 	UpdatedAt string
+}
+
+type VolumeBackup struct {
+	ID             string
+	AppID          sql.NullString
+	AppName        string
+	Volume         string
+	S3ConnectionID string
+	ObjectKey      string
+	SizeBytes      int64
+	Status         string
+	Error          string
+	CreatedAt      string
+	FinishedAt     sql.NullString
 }

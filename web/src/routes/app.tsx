@@ -1,6 +1,7 @@
 import { ResourceMetrics } from '../components/resource-metrics'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { MountSettings } from '../components/mounts'
+import { VolumeBackupsPanel } from '../components/volume-backups'
 import { ProcessSettings } from '../components/processes'
 import { EnvironmentSettings } from '../components/environment'
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
@@ -661,6 +662,7 @@ function Settings({ app }: { app: App }) {
         {section === 'resources' && <ResourceSettings key={app.id} app={app} />}
         {section === 'environment' && <EnvironmentSettings key={app.id} app={app} />}
         {section === 'volumes' && <MountSettings key={`mounts-${app.id}`} app={app} />}
+        {section === 'volumes' && <VolumeBackupsPanel key={`volume-backups-${app.id}`} app={app} />}
         {section === 'processes' && <ProcessSettings key={`processes-${app.id}`} app={app} />}
         {section === 'health' && <HealthCheckPanel app={app} />}
         {section === 'webhook' && <div className="space-y-4"><DeployHookPanel app={app} /><PushDeployPanel app={app} /></div>}
