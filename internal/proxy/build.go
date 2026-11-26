@@ -42,6 +42,9 @@ type Site struct {
 	Host     string
 	HTTPOnly bool // plain HTTP only, no certificate or redirect (a CDN terminates TLS)
 	Paths    []Path
+	// RedirectTo, when set, makes the site answer every request with a permanent redirect
+	// to https://<RedirectTo>, path and query kept; Paths is ignored.
+	RedirectTo string
 }
 
 // Path sends a path prefix ("/" or "/api", matching /api and /api/...) to an app.
@@ -282,6 +285,17 @@ func Build(c Config) ([]byte, error) {
 		}
 		if !catchAll {
 			sub = append(sub, object{"handle": []object{{"handler": "static_response", "status_code": 404}}})
+		}
+		if site.RedirectTo != "" {
+			if err := ValidHost(site.RedirectTo); err != nil {
+				return nil, fmt.Errorf("proxy config: redirect of %s: %w", site.Host, err)
+			}
+			// 308 keeps the method and the body, as the HTTP to HTTPS redirect does.
+			sub = []object{{"handle": []object{{
+				"handler":     "static_response",
+				"status_code": 308,
+				"headers":     object{"Location": []string{"https://" + site.RedirectTo + "{http.request.uri}"}},
+			}}}}
 		}
 		siteRoute := object{
 			"match":    []object{{"host": []string{site.Host}}},

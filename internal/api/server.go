@@ -42,6 +42,7 @@ type Server struct {
 	buildDefaults  store.BuildLimits
 	restart        func() // restarts the panel; nil = it cannot restart itself
 	orphans        OrphanContainers
+	volumeBackups  VolumeBackups
 	weakPasswords  bool // development: the UI drops its minimum password lengths too
 	registryCheck  RegistryChecker
 	s3Test         S3Tester
@@ -119,6 +120,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/invites", s.requireAuth(sessionOnly(ownerOnly(s.handleListInvites))))
 	mux.HandleFunc("POST /api/invites", s.requireAuth(sessionOnly(ownerOnly(s.handleCreateInvite))))
 	mux.HandleFunc("DELETE /api/invites/{id}", s.requireAuth(sessionOnly(ownerOnly(s.handleDeleteInvite))))
+	mux.HandleFunc("GET /api/invites/mail", s.requireAuth(sessionOnly(ownerOnly(s.handleInviteMail))))
+	mux.HandleFunc("POST /api/users/{id}/make-owner", s.requireAuth(sessionOnly(ownerOnly(s.limit(s.authRate, s.handleTransferOwnership)))))
 	mux.HandleFunc("POST /api/invites/lookup", s.limit(s.authRate, s.handleLookupInvite))
 	mux.HandleFunc("POST /api/invites/accept", s.limit(s.authRate, s.handleAcceptInvite))
 
@@ -141,6 +144,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/onboarding", s.requireAuth(s.handleGetOnboarding))
 	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))
 
+	mux.HandleFunc("GET /api/apps/{id}/volume-backups", s.requireAuth(s.handleAppVolumeBackups))
+	mux.HandleFunc("POST /api/apps/{id}/volume-backups", s.requireAuth(s.handleStartVolumeBackup))
+	mux.HandleFunc("POST /api/volume-backups/{id}/restore", s.requireAuth(sessionOnly(adminOnly(s.handleRestoreVolumeBackup))))
+	mux.HandleFunc("DELETE /api/volume-backups/{id}", s.requireAuth(adminOnly(s.handleDeleteVolumeBackup)))
 	mux.HandleFunc("GET /api/orphans", s.requireAuth(adminOnly(s.handleListOrphans)))
 	mux.HandleFunc("DELETE /api/orphans/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleRemoveOrphan))))
 	mux.HandleFunc("GET /api/updates", s.requireAuth(s.handleGetUpdates))
@@ -288,6 +295,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/routes", s.requireAuth(s.handleCreateRoute))
 	mux.HandleFunc("PATCH /api/routes/{id}", s.requireAuth(s.handleUpdateRoute))
 	mux.HandleFunc("DELETE /api/routes/{id}", s.requireAuth(s.handleDeleteRoute))
+	mux.HandleFunc("GET /api/redirects", s.requireAuth(s.handleListRedirects))
+	mux.HandleFunc("POST /api/redirects", s.requireAuth(s.handleCreateRedirect))
+	mux.HandleFunc("DELETE /api/redirects/{id}", s.requireAuth(s.handleDeleteRedirect))
 
 	mux.HandleFunc("GET /api/apps/{id}/health-check", s.requireAuth(s.handleGetHealthCheck))
 	mux.HandleFunc("PUT /api/apps/{id}/health-check", s.requireAuth(s.handleSetHealthCheck))
@@ -340,6 +350,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"name":           brand.Name,
 		"slug":           brand.Slug,
 		"version":        s.version,
+		"api_version":    APIVersion,
 		"setup_required": required,
 		"weak_passwords": s.weakPasswords,
 	})

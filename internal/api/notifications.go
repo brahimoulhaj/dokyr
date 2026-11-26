@@ -15,6 +15,10 @@ import (
 // Notifier sends test messages; the store's event hook does the rest.
 type Notifier interface {
 	Test(ctx context.Context, channelID string) error
+	// Mailer names the email channel the panel sends its own mail through, if any.
+	Mailer(ctx context.Context) (name string, ok bool)
+	// Mail sends one message to one address through that channel's mail server.
+	Mail(ctx context.Context, to, subject, text string) error
 }
 
 func (s *Server) SetNotifier(n Notifier) { s.notifier = n }

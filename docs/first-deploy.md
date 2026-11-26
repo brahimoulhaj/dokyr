@@ -94,6 +94,12 @@ the same project or not. **Routing** in the main menu lists every route of the p
 The certificate is issued on the first request; plain HTTP is redirected to HTTPS. Behind
 a CDN that terminates TLS itself, switch the hostname to **HTTP only** from its Actions.
 
+To send `www.example.com` to `example.com` (or an old name to a new one), add a
+**redirect** on the Routing page: a hostname that serves nothing itself and answers every
+request with a permanent redirect (308) to `https://<target>`, path and query kept. Point
+its DNS record at this server too; it gets its own certificate. A hostname is either
+routed or redirected, never both, and a redirect cannot point at another redirect.
+
 ## 6. Keep it deployed
 
 - **Deploy on push**: a webhook URL per app, or the GitHub App's own webhook, with optional

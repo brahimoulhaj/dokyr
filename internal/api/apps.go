@@ -1121,6 +1121,13 @@ func (s *Server) validRoute(w http.ResponseWriter, r *http.Request, in *routeInp
 		if s.hostReserved(w, r, host) {
 			return false
 		}
+		if _, err := s.store.HostRedirect(r.Context(), host); err == nil {
+			writeError(w, http.StatusConflict, "conflict", "this hostname redirects to another; remove the redirect first")
+			return false
+		} else if !errors.Is(err, store.ErrNotFound) {
+			s.internal(w, "check hostname", err)
+			return false
+		}
 		// A hostname the panel used to answer on still receives its old session cookies.
 		wildcard := proxy.IsWildcard(host)
 		if msg, err := s.retiredHostProblem(r, strings.TrimPrefix(host, "*."), wildcard); err != nil {

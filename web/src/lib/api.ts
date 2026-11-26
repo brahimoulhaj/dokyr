@@ -46,7 +46,7 @@ async function request<T>(path: string, init?: { method?: string; body?: unknown
   return { data: data as T, res }
 }
 
-export type Meta = { name: string; slug: string; version: string; setup_required: boolean; weak_passwords?: boolean }
+export type Meta = { name: string; slug: string; version: string; api_version?: number; setup_required: boolean; weak_passwords?: boolean }
 export type HostMemory = { total: number; used: number; available: number; percent: number }
 export type HostInterface = { name: string; received: number; sent: number; receive_rate: number | null; send_rate: number | null; errors: number; drops: number }
 export type HostMetrics = {
@@ -100,7 +100,8 @@ export const dockerMetricsQuery = {
 export type Role = 'owner' | 'admin' | 'maintainer'
 export type User = { id: string; email: string; role: Role; created_at: string }
 /** A pending invitation; `token` (the secret of its link) only in the response that creates it. */
-export type Invite = { id: string; email: string; role: Role; expires_at: string; created_at: string; expired: boolean; token?: string }
+export type Invite = { id: string; email: string; role: Role; expires_at: string; created_at: string; expired: boolean; token?: string; emailed?: boolean; email_error?: string }
+export const inviteMailQuery = { queryKey: ['invites', 'mail'] as const, queryFn: () => api<{ available: boolean; channel: string }>('/invites/mail') }
 export const usersQuery = { queryKey: ['users'] as const, queryFn: () => api<User[]>('/users') }
 export const invitesQuery = { queryKey: ['invites'] as const, queryFn: () => api<Invite[]>('/invites') }
 

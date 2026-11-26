@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
 import { ConfirmModal } from '../components/confirm-dialog'
+import { PasswordConfirmDialog } from '../components/password-confirm-dialog'
 import { Sheet, SheetActions } from '../components/sheet'
-import { Badge, Button, cx, ErrorNote, Field, Panel, QueryState } from '../components/ui'
-import { api, invitesQuery, meQuery, usersQuery, type Invite, type Role, type User } from '../lib/api'
+import { Badge, Button, CheckOption, cx, ErrorNote, Field, Panel, QueryState } from '../components/ui'
+import { api, inviteMailQuery, invitesQuery, meQuery, usersQuery, type Invite, type Role, type User } from '../lib/api'
 import { dateTime, timeAgo } from '../lib/format'
 import { rich, useT } from '../lib/i18n'
 
@@ -63,6 +64,7 @@ function UserRow({ user, self }: { user: User; self: boolean }) {
   const queryClient = useQueryClient()
   const t = useT()
   const [removing, setRemoving] = useState(false)
+  const [handing, setHanding] = useState(false)
   const done = () => queryClient.invalidateQueries({ queryKey: usersQuery.queryKey })
   const setRole = useMutation({
     mutationFn: (role: MemberRole) => api<User>(`/users/${user.id}`, { method: 'PATCH', body: { role } }),
@@ -90,11 +92,30 @@ function UserRow({ user, self }: { user: User; self: boolean }) {
           disabled={setRole.isPending || remove.isPending}
           items={[
             { label: t.users.makeRole(t.users.roles[other]), onSelect: () => setRole.mutate(other) },
+            { label: t.users.makeOwner, danger: true, onSelect: () => setHanding(true) },
             { label: t.users.remove, danger: true, onSelect: () => setRemoving(true) },
           ]}
         />
       )}
       <ConfirmModal open={removing} onOpenChange={setRemoving} title={t.users.removeTitle} message={t.users.removeMessage(user.email)} confirm={t.users.yesRemove} onConfirm={() => remove.mutate()} />
+      {handing && (
+        <PasswordConfirmDialog
+          action={{
+            title: t.users.makeOwnerTitle,
+            confirm: t.users.makeOwnerConfirm,
+            detail: t.users.makeOwnerDetail(user.email),
+            tone: 'danger',
+            onConfirm: (password) => api<User>(`/users/${user.id}/make-owner`, { method: 'POST', body: { password } }),
+          }}
+          onClose={() => setHanding(false)}
+          onComplete={() => {
+            setHanding(false)
+            // The page is the owner's: once handed over, what this account may see changes.
+            void queryClient.invalidateQueries({ queryKey: meQuery.queryKey })
+            void done()
+          }}
+        />
+      )}
     </li>
   )
 }
@@ -146,8 +167,10 @@ function InviteForm({ created, onDone }: { created: Invite | null; onDone: () =>
   const t = useT()
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<MemberRole>('maintainer')
+  const [send, setSend] = useState(false)
+  const mail = useQuery(inviteMailQuery).data
   const create = useMutation({
-    mutationFn: () => api<Invite>('/invites', { method: 'POST', body: { email, role } }),
+    mutationFn: () => api<Invite>('/invites', { method: 'POST', body: { email, role, send: send && !!mail?.available } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: invitesQuery.queryKey }),
   })
   const invite = created ?? create.data
@@ -173,6 +196,11 @@ function InviteForm({ created, onDone }: { created: Invite | null; onDone: () =>
           </label>
         ))}
       </fieldset>
+      {mail?.available ? (
+        <CheckOption checked={send} onChange={setSend} label={t.users.sendEmail} hint={t.users.sendEmailHint(mail.channel)} />
+      ) : mail && (
+        <p className="text-xs text-muted">{t.users.sendEmailUnavailable}</p>
+      )}
       {create.error && <ErrorNote>{create.error.message}</ErrorNote>}
       <SheetActions>
         <Button type="submit" disabled={!email.trim() || create.isPending}>
@@ -202,6 +230,8 @@ function InviteLink({ invite, onDone }: { invite: Invite; onDone: () => void }) 
 
   return (
     <div className="space-y-4 p-5">
+      {invite.emailed && <p className="text-sm">{t.users.emailed(invite.email)}</p>}
+      {invite.email_error && <p className="text-sm text-warn">{t.users.emailFailed(invite.email_error)}</p>}
       <p className="text-sm">
         {rich(t.users.linkReady, {
           email: () => <span dir="ltr" className="text-accent">{invite.email}</span>,

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -91,6 +92,45 @@ func (s *Service) deliver(ctx context.Context, channelID string, m Message) erro
 		s.log.Error("record notification", "error", rerr)
 	}
 	return err
+}
+
+// ErrNoMailer: no email channel is set up, so the panel has no mail server to send through.
+var ErrNoMailer = errors.New("no email notification channel is set up")
+
+// mailer is the email channel the panel sends its own mail through: the oldest one.
+func (s *Service) mailer(ctx context.Context) (store.NotificationChannel, error) {
+	list, err := s.st.ListNotificationChannels(ctx)
+	if err != nil {
+		return store.NotificationChannel{}, err
+	}
+	for _, c := range list {
+		if c.Kind == "email" {
+			return c, nil
+		}
+	}
+	return store.NotificationChannel{}, ErrNoMailer
+}
+
+// Mailer names the email channel whose mail server the panel sends its own mail through
+// (an invitation); false when there is none.
+func (s *Service) Mailer(ctx context.Context) (string, bool) {
+	c, err := s.mailer(ctx)
+	return c.Name, err == nil
+}
+
+// Mail sends one message to one address through that channel's mail server, from its
+// sender address. The channel's own recipients do not receive it.
+func (s *Service) Mail(ctx context.Context, to, subject, text string) error {
+	c, err := s.mailer(ctx)
+	if err != nil {
+		return err
+	}
+	cfg := make(map[string]string, len(c.Config))
+	for k, v := range c.Config {
+		cfg[k] = v
+	}
+	cfg["to"] = to
+	return s.sender.Send(ctx, "email", cfg, Message{Title: subject, Text: text, Level: "info", At: time.Now()})
 }
 
 // Test sends a test message to a channel and returns the delivery error.

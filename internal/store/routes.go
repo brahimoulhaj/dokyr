@@ -128,11 +128,12 @@ func (s *Store) HostRoutes(ctx context.Context, hostname string) ([]Route, error
 	return s.listRoutes(ctx, `r.hostname = ?`, hostname)
 }
 
-// HostRouted reports whether a route answers on exactly this hostname. A wildcard route
-// takes no name: "shop.example.com" is free while only "*.example.com" is routed.
+// HostRouted reports whether a route or a redirect answers on exactly this hostname. A
+// wildcard route takes no name: "shop.example.com" is free while only "*.example.com" is
+// routed.
 func (s *Store) HostRouted(ctx context.Context, hostname string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM routes WHERE hostname = ?`, hostname).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM routes WHERE hostname = ?1) + (SELECT COUNT(*) FROM redirects WHERE hostname = ?1)`, hostname).Scan(&n)
 	return n > 0, err
 }
 
@@ -160,6 +161,8 @@ type ProxySite struct {
 	Host     string
 	HTTPOnly bool
 	Paths    []ProxyPath
+	// RedirectTo, when set, is the hostname every request is sent on to; Paths is empty.
+	RedirectTo string
 }
 
 // ProxyPath is one route as the proxy needs it.
@@ -172,7 +175,7 @@ type ProxyPath struct {
 }
 
 // ProxySites is what the proxy's app routing is built from: every routed hostname with
-// its routes.
+// its routes, then every redirected hostname.
 func (s *Store) ProxySites(ctx context.Context) ([]ProxySite, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.hostname, r.tls_mode, r.id, r.path, r.strip_prefix, a.id, a.desired_state, COALESCE(dp.container_name, ''), COALESCE(dp.port, 0)
@@ -201,10 +204,20 @@ func (s *Store) ProxySites(ctx context.Context) ([]ProxySite, error) {
 		}
 		out[len(out)-1].Paths = append(out[len(out)-1].Paths, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	for i := range out {
 		SortPaths(out[i].Paths)
 	}
-	return out, rows.Err()
+	redirects, err := s.ListRedirects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range redirects {
+		out = append(out, ProxySite{Host: r.Hostname, HTTPOnly: r.TLSMode == TLSHTTPOnly, RedirectTo: r.Target})
+	}
+	return out, nil
 }
 
 // SortPaths orders routes the way they are matched: the longest path first, "/" last.
