@@ -81,7 +81,7 @@ export const en = {
   orphansTitle: 'Containers the panel does not know',
   orphansIntro: 'These containers belong to apps or databases that are not in the panel, usually after restoring a backup older than them. They keep running and using the server. Remove the ones you do not need; create the app or database again if you want one back.',
   orphanContainer: 'Container',
-  orphanKind: (kind: string) => (kind === 'database' ? 'Database' : 'App'),
+  orphanKind: (kind: string): string => (kind === 'database' ? 'Database' : 'App'),
   orphanState: 'State',
   orphanRemove: 'Remove',
   orphanRemoveTitle: 'Remove this container?',
