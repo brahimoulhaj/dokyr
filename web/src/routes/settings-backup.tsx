@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@yusufceng1z/ding-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ActionsMenu } from '../components/actions-menu'
-import { ConfirmModal } from '../components/confirm-dialog'
+import { ConfirmDialog, ConfirmModal } from '../components/confirm-dialog'
 import { Sheet, SheetActions } from '../components/sheet'
 import { Button, CheckOption, Empty, ErrorNote, Field, Panel, QueryState } from '../components/ui'
 import { api, meQuery, metaQuery, s3ConnectionsQuery } from '../lib/api'
@@ -182,6 +182,8 @@ export function PanelBackupSettings() {
         </Panel>
       )}
 
+      <OrphanContainers />
+
       <Sheet open={editing} onOpenChange={setEditing} title={tb.sheetTitle} description={tb.sheetDescription}>
         {data && <BackupForm current={data} onDone={() => setEditing(false)} />}
       </Sheet>
@@ -192,6 +194,62 @@ export function PanelBackupSettings() {
         {restoreTarget && <RestoreBackup key={restoreTarget.key} backup={restoreTarget} onDone={() => setRestoreTarget(null)} />}
       </Sheet>
     </>
+  )
+}
+
+type Orphan = { id: string; name: string; image: string; kind: string; resource_id: string; state: string; running: boolean; created_at: string }
+
+const orphansKey = ['orphans'] as const
+
+/** Containers of apps and databases the panel has forgotten; nothing is shown when there are none. */
+function OrphanContainers() {
+  const tb = useT().settingsBackup
+  const qc = useQueryClient()
+  const role = useQuery(meQuery).data?.role
+  const orphans = useQuery({
+    queryKey: orphansKey,
+    queryFn: () => api<Orphan[]>('/orphans'),
+    enabled: role === 'owner' || role === 'admin',
+  })
+  const remove = useMutation({
+    mutationFn: (id: string) => api<void>(`/orphans/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    onSuccess: () => { toast.success(tb.orphanRemoved) },
+    onError: (e) => { toast.error(e.message) },
+    onSettled: () => { void qc.invalidateQueries({ queryKey: orphansKey }) },
+  })
+  if (!orphans.data?.length) return null
+  return (
+    <Panel title={tb.orphansTitle}>
+      <p className="border-b border-line px-4 py-3 text-xs text-muted">{tb.orphansIntro}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-start text-xs text-muted">
+            <tr className="border-b border-line">
+              <th className="px-4 py-2 text-start font-normal">{tb.orphanContainer}</th>
+              <th className="px-4 py-2 text-start font-normal">{tb.orphanState}</th>
+              <th className="px-4 py-2 text-start font-normal">{tb.created}</th>
+              <th className="px-4 py-2"><span className="sr-only">{tb.actions}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {orphans.data.map((c) => (
+              <tr key={c.id} className="border-b border-line last:border-0">
+                <td className="max-w-[18rem] px-4 py-2 sm:max-w-md">
+                  <code dir="ltr" className="block truncate text-xs" title={c.name}>{c.name}</code>
+                  <div className="mt-0.5 truncate text-xs text-muted" title={c.image}>{tb.orphanKind(c.kind)} · <span dir="ltr">{c.image.startsWith('sha256:') ? c.image.slice(0, 19) : c.image}</span></div>
+                </td>
+                <td className="px-4 py-2 text-muted" dir="ltr">{c.state}</td>
+                <td className="px-4 py-2 text-muted" title={dateTime(c.created_at)}>{timeAgo(c.created_at)}</td>
+                <td className="px-4 py-2 text-end">
+                  <ConfirmDialog label={tb.orphanRemove} title={tb.orphanRemoveTitle} message={tb.orphanRemoveMessage(c.name)} confirm={tb.orphanRemove}
+                    pending={remove.isPending && remove.variables === c.id} disabled={remove.isPending} onConfirm={() => remove.mutate(c.id)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   )
 }
 

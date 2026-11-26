@@ -346,6 +346,7 @@ func init() {
 		"use a non-reserved name starting with a lowercase letter, followed by lowercase letters, digits or underscores (maximum 48 characters)": "استخدم اسمًا غير محجوز يبدأ بحرف صغير، تليه أحرف صغيرة أو أرقام أو شرطات سفلية (48 حرفًا على الأكثر)",
 		"concurrent must be between 1 and %d":                                         "يجب أن يكون concurrent بين 1 و %d",
 		"only the owner can restore the panel":                                        "المالك وحده يستطيع استعادة اللوحة",
+		"the container could not be removed":                                          "تعذّر حذف الحاوية",
 		"enter the passphrase of this backup":                                         "أدخل عبارة مرور هذه النسخة",
 		"wrong passphrase, or not a panel backup":                                     "عبارة المرور خاطئة، أو ليست نسخة احتياطية للوحة",
 		"the backup could not be restored: %s":                                        "تعذّرت استعادة النسخة: %s",

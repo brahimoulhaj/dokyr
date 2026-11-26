@@ -110,7 +110,8 @@ func (s *Service) Restore(ctx context.Context, name, passphrase, actor string) (
 	if err != nil {
 		return m, err
 	}
-	if _, err := s.Run(ctx, actor); err != nil {
+	// Nothing is pruned here: a restore must not cost a backup, least of all the one restored.
+	if _, err := s.backup(ctx, actor, false); err != nil {
 		return m, fmt.Errorf("the current state could not be backed up first, nothing was restored: %w", err)
 	}
 	restored := Restored{Backup: name, Actor: actor, CreatedAt: m.CreatedAt}
