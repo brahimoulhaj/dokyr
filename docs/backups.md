@@ -52,6 +52,10 @@ the panel, which takes a few seconds. Everything changed in the panel since the 
 was made is lost; apps and databases keep running, and those created since stay on the
 server without the panel knowing them.
 
+After a restore, the Backup page lists the containers the panel no longer knows, under
+"Containers the panel does not know": remove the ones you do not need (their volumes
+stay), or create the app or database again.
+
 A backup made by a newer version is refused, and so is a restore while a deployment is
 running. Backups in the bucket are not touched: newer ones stay listed after the restore.
 

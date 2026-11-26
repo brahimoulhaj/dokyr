@@ -91,6 +91,11 @@ var ErrBusy = errors.New("a panel backup is already running")
 // Run makes one backup now, uploads it and prunes old ones. The outcome is saved as the
 // status and recorded as an event; a failure also feeds the "backup.failed" alert.
 func (s *Service) Run(ctx context.Context, actor string) (Object, error) {
+	return s.backup(ctx, actor, true)
+}
+
+// backup is Run; without prune no older backup is removed, whatever the number kept.
+func (s *Service) backup(ctx context.Context, actor string, prune bool) (Object, error) {
 	if !s.mu.TryLock() {
 		return Object{}, ErrBusy
 	}
@@ -98,7 +103,7 @@ func (s *Service) Run(ctx context.Context, actor string) (Object, error) {
 	s.running.Store(true)
 	defer s.running.Store(false)
 	started := time.Now().UTC()
-	obj, err := s.run(ctx, started)
+	obj, err := s.run(ctx, started, prune)
 
 	status, _ := s.st.GetPanelBackupStatus(ctx)
 	status.LastRunAt = &started
@@ -121,7 +126,7 @@ func (s *Service) Run(ctx context.Context, actor string) (Object, error) {
 	return obj, err
 }
 
-func (s *Service) run(ctx context.Context, started time.Time) (Object, error) {
+func (s *Service) run(ctx context.Context, started time.Time, prune bool) (Object, error) {
 	cfg, err := s.st.GetPanelBackupConfig(ctx)
 	if err != nil {
 		return Object{}, err
@@ -162,9 +167,11 @@ func (s *Service) run(ctx context.Context, started time.Time) (Object, error) {
 	if err != nil {
 		return Object{}, fmt.Errorf("upload: %w", err)
 	}
-	if err := s.prune(ctx, objects, folder, cfg.Keep); err != nil {
-		// The backup itself is safe; old ones just linger until the next run.
-		s.log.Warn("panel backup retention", "error", err)
+	if prune {
+		if err := s.prune(ctx, objects, folder, cfg.Keep); err != nil {
+			// The backup itself is safe; old ones just linger until the next run.
+			s.log.Warn("panel backup retention", "error", err)
+		}
 	}
 	return Object{Key: key, Name: name, Size: size, LastModified: started}, nil
 }

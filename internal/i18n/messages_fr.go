@@ -346,6 +346,7 @@ func init() {
 		"use a non-reserved name starting with a lowercase letter, followed by lowercase letters, digits or underscores (maximum 48 characters)": "utilisez un nom non réservé commençant par une lettre minuscule, suivie de lettres minuscules, de chiffres ou de traits de soulignement (48 caractères au maximum)",
 		"concurrent must be between 1 and %d":                                         "concurrent doit être compris entre 1 et %d",
 		"only the owner can restore the panel":                                        "seul le propriétaire peut restaurer le panneau",
+		"the container could not be removed":                                          "le conteneur n’a pas pu être supprimé",
 		"enter the passphrase of this backup":                                         "saisissez la phrase secrète de cette sauvegarde",
 		"wrong passphrase, or not a panel backup":                                     "phrase secrète incorrecte, ou ce n’est pas une sauvegarde du panneau",
 		"the backup could not be restored: %s":                                        "la sauvegarde n’a pas pu être restaurée : %s",

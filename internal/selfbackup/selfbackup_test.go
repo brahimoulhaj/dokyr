@@ -265,7 +265,7 @@ func TestSchedule(t *testing.T) {
 func TestRestoreFromStorage(t *testing.T) {
 	svc, st, bucket, dir := setup(t)
 	ctx := context.Background()
-	if err := st.SetPanelBackupConfig(ctx, store.PanelBackupConfig{S3ConnectionID: "s3", Schedule: "0 3 * * *", Keep: 5, Passphrase: passphrase}); err != nil {
+	if err := st.SetPanelBackupConfig(ctx, store.PanelBackupConfig{S3ConnectionID: "s3", Schedule: "0 3 * * *", Keep: 1, Passphrase: passphrase}); err != nil {
 		t.Fatal(err)
 	}
 	old, err := svc.Run(ctx, "test")
@@ -329,6 +329,9 @@ func TestRestoreFromStorage(t *testing.T) {
 	}
 	if len(bucket.objects) != 2 {
 		t.Fatalf("the current state was not backed up before the restore: %d objects", len(bucket.objects))
+	}
+	if _, kept := bucket.objects[old.Key]; !kept {
+		t.Fatal("the restore pruned the backup it restored (one kept)")
 	}
 	if _, err := svc.Restore(ctx, old.Name, passphrase, "owner@example.com"); !errors.Is(err, ErrRestoring) {
 		t.Fatalf("second restore = %v", err)

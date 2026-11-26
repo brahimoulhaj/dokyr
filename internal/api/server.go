@@ -41,7 +41,8 @@ type Server struct {
 	dockerMetrics  DockerMetrics
 	buildDefaults  store.BuildLimits
 	restart        func() // restarts the panel; nil = it cannot restart itself
-	weakPasswords  bool   // development: the UI drops its minimum password lengths too
+	orphans        OrphanContainers
+	weakPasswords  bool // development: the UI drops its minimum password lengths too
 	registryCheck  RegistryChecker
 	s3Test         S3Tester
 	registry       BuiltinRegistry
@@ -140,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/onboarding", s.requireAuth(s.handleGetOnboarding))
 	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))
 
+	mux.HandleFunc("GET /api/orphans", s.requireAuth(adminOnly(s.handleListOrphans)))
+	mux.HandleFunc("DELETE /api/orphans/{id}", s.requireAuth(sessionOnly(adminOnly(s.handleRemoveOrphan))))
 	mux.HandleFunc("GET /api/updates", s.requireAuth(s.handleGetUpdates))
 	mux.HandleFunc("POST /api/updates/check", s.requireAuth(s.handleCheckUpdates))
 	mux.HandleFunc("POST /api/updates/apply", s.requireAuth(adminOnly(s.handleApplyUpdate)))

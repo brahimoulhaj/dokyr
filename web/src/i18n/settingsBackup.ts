@@ -78,6 +78,15 @@ export const en = {
   restoreManualRestart: 'Restored and staged. Restart the panel to finish.',
   restoreFailedToast: 'Restore failed',
   restoredToast: 'Panel restored',
+  orphansTitle: 'Containers the panel does not know',
+  orphansIntro: 'These containers belong to apps or databases that are not in the panel, usually after restoring a backup older than them. They keep running and using the server. Remove the ones you do not need; create the app or database again if you want one back.',
+  orphanContainer: 'Container',
+  orphanKind: (kind: string) => (kind === 'database' ? 'Database' : 'App'),
+  orphanState: 'State',
+  orphanRemove: 'Remove',
+  orphanRemoveTitle: 'Remove this container?',
+  orphanRemoveMessage: (name: string) => `${name} is stopped and removed. Its volumes stay on the server. This cannot be undone.`,
+  orphanRemoved: 'Container removed',
 }
 
 export const fr: typeof en = {
@@ -155,6 +164,15 @@ export const fr: typeof en = {
   restoreManualRestart: 'Restauré et prêt. Redémarrez le panneau pour terminer.',
   restoreFailedToast: 'Échec de la restauration',
   restoredToast: 'Panneau restauré',
+  orphansTitle: 'Conteneurs inconnus du panneau',
+  orphansIntro: 'Ces conteneurs appartiennent à des apps ou des bases absentes du panneau, en général après la restauration d’une sauvegarde plus ancienne qu’eux. Ils continuent de tourner et d’utiliser le serveur. Supprimez ceux dont vous n’avez pas besoin ; recréez l’app ou la base pour en retrouver une.',
+  orphanContainer: 'Conteneur',
+  orphanKind: (kind) => (kind === 'database' ? 'Base de données' : 'App'),
+  orphanState: 'État',
+  orphanRemove: 'Supprimer',
+  orphanRemoveTitle: 'Supprimer ce conteneur ?',
+  orphanRemoveMessage: (name) => `${name} est arrêté puis supprimé. Ses volumes restent sur le serveur. Action irréversible.`,
+  orphanRemoved: 'Conteneur supprimé',
 }
 
 export const ar: typeof en = {
@@ -232,6 +250,15 @@ export const ar: typeof en = {
   restoreManualRestart: 'تمت الاستعادة وهي جاهزة. أعد تشغيل اللوحة للإنهاء.',
   restoreFailedToast: 'فشلت الاستعادة',
   restoredToast: 'تمت استعادة اللوحة',
+  orphansTitle: 'حاويات لا تعرفها اللوحة',
+  orphansIntro: 'هذه الحاويات تخص تطبيقات أو قواعد بيانات غير موجودة في اللوحة، غالبًا بعد استعادة نسخة أقدم منها. تواصل العمل واستهلاك موارد الخادم. احذف ما لا تحتاجه؛ وأنشئ التطبيق أو القاعدة من جديد إن أردت استرجاع أحدها.',
+  orphanContainer: 'الحاوية',
+  orphanKind: (kind) => (kind === 'database' ? 'قاعدة بيانات' : 'تطبيق'),
+  orphanState: 'الحالة',
+  orphanRemove: 'حذف',
+  orphanRemoveTitle: 'حذف هذه الحاوية؟',
+  orphanRemoveMessage: (name) => `سيتم إيقاف ${name} وحذفها. تبقى وحدات تخزينها على الخادم. لا يمكن التراجع.`,
+  orphanRemoved: 'تم حذف الحاوية',
 }
 
 export const es: typeof en = {
@@ -309,4 +336,13 @@ export const es: typeof en = {
   restoreManualRestart: 'Restaurado y preparado. Reinicia el panel para terminar.',
   restoreFailedToast: 'La restauración falló',
   restoredToast: 'Panel restaurado',
+  orphansTitle: 'Contenedores que el panel no conoce',
+  orphansIntro: 'Estos contenedores pertenecen a apps o bases que no están en el panel, normalmente tras restaurar una copia más antigua que ellos. Siguen en marcha y usando el servidor. Elimina los que no necesites; crea de nuevo la app o la base si quieres recuperar una.',
+  orphanContainer: 'Contenedor',
+  orphanKind: (kind) => (kind === 'database' ? 'Base de datos' : 'App'),
+  orphanState: 'Estado',
+  orphanRemove: 'Eliminar',
+  orphanRemoveTitle: '¿Eliminar este contenedor?',
+  orphanRemoveMessage: (name) => `${name} se detiene y se elimina. Sus volúmenes quedan en el servidor. No se puede deshacer.`,
+  orphanRemoved: 'Contenedor eliminado',
 }

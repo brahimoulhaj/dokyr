@@ -380,6 +380,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	go panelBackups.Watch(schedulerCtx)
 	apiSrv.SetPanelBackups(panelBackups)
 	apiSrv.SetRestart(requestRestart)
+	apiSrv.SetOrphans(executor.Orphans{Ex: ex, Known: knownResource(st)})
 	apiSrv.SetDatabases(databases)
 	apiSrv.SetBuildDefaults(buildDefaults)
 	apiSrv.SetWeakPasswords(cfg.WeakPasswords)
@@ -480,17 +481,8 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 		log.Error("docker network", "network", ex.Network(), "error", err)
 		return
 	}
-	report, err := executor.Reconcile(ctx, ex, func(kind executor.Kind, id string) bool {
-		if kind == executor.KindApp {
-			ok, err := st.AppExists(ctx, id)
-			return ok && err == nil
-		}
-		if kind == executor.KindDatabase {
-			_, err := st.GetDBInstance(ctx, id)
-			return err == nil
-		}
-		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id) || objectstore.IsObjectStore(kind, id)
-	})
+	known := knownResource(st)
+	report, err := executor.Reconcile(ctx, ex, func(kind executor.Kind, id string) bool { return known(ctx, kind, id) })
 	if err != nil {
 		log.Error("docker reconcile", "error", err)
 		return
@@ -498,6 +490,23 @@ func prepareDocker(ctx context.Context, ex *executor.Docker, st *store.Store, lo
 	log.Info("docker ready", "network", ex.Network(), "adopted", len(report.Adopted), "orphans", len(report.Orphans))
 	for _, c := range report.Orphans {
 		log.Warn("orphan container", "name", c.Name, "id", c.ID[:min(12, len(c.ID))], "kind", c.Kind, "resource", c.ResourceID, "state", c.State)
+	}
+}
+
+// knownResource reports whether the database knows the resource a managed container
+// belongs to. A database that cannot answer counts as knowing it: a container is never
+// called an orphan, and so offered for removal, because of a failed query.
+func knownResource(st *store.Store) func(ctx context.Context, kind executor.Kind, id string) bool {
+	return func(ctx context.Context, kind executor.Kind, id string) bool {
+		switch kind {
+		case executor.KindApp:
+			ok, err := st.AppExists(ctx, id)
+			return ok || err != nil
+		case executor.KindDatabase:
+			_, err := st.GetDBInstance(ctx, id)
+			return err == nil || !errors.Is(err, store.ErrNotFound)
+		}
+		return proxy.IsProxy(kind, id) || registry.IsRegistry(kind, id) || objectstore.IsObjectStore(kind, id)
 	}
 }
 
