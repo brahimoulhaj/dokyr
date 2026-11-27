@@ -42,6 +42,20 @@ jobs:
       - name: Installer renders
         run: make installer VERSION=ci && sh -n bin/install.sh
 
+  # The tests that need a real Docker daemon: the executor, a real Caddy, a full deploy,
+  # the registry, the built-in storage, database instances, image builds. The script fails
+  # when one of them skips itself, so a missing image cannot pass for a green run.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Go tests against a real Docker daemon
+        run: make test-docker
+
   # The install script on a fresh VM (the runner): a locally built image, then what a
   # person finds afterwards — the setup link, the proxy on port 80, the host command, a
   # second run. See install/e2e.sh.
