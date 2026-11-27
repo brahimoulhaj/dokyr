@@ -8,7 +8,7 @@ IMAGE   ?= ghcr.io/brahimoulhaj/paas
 GOLANGCI_LINT ?= v2.15.0
 SQLC          ?= v1.31.1
 
-.PHONY: help deps web build cli test lint sqlc installer-e2e dev dev-down dev-import-data dev-api dev-web image installer clean
+.PHONY: help deps web build cli test test-docker lint sqlc installer-e2e dev dev-down dev-import-data dev-api dev-web image installer clean
 
 help:
 	@echo "make deps     - download Go modules and pnpm packages"
@@ -21,6 +21,7 @@ help:
 	@echo "make build    - build bin/$(SLUG) with the web app embedded"
 	@echo "make cli      - build bin/cli/$(SLUG), the remote CLI for a personal machine"
 	@echo "make test     - Go tests and web typecheck"
+	@echo "make test-docker - the Go tests that need a real Docker daemon (they skip themselves otherwise)"
 	@echo "make lint     - golangci-lint (Go) and eslint (web)"
 	@echo "make sqlc     - regenerate the typed queries (internal/store/sqlcgen) from internal/store/queries"
 	@echo "make image    - build the Docker image $(IMAGE):$(VERSION)"
@@ -46,6 +47,10 @@ test:
 	go vet ./...
 	go test ./...
 	cd web && pnpm run typecheck
+
+# The tests `go test -short` leaves out, with a check that none of them skipped itself.
+test-docker:
+	sh dev/real-tests.sh
 
 # The linters CI runs. golangci-lint is fetched and built at the pinned version on first use.
 lint:

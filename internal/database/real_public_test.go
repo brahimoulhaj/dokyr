@@ -131,8 +131,17 @@ func TestRealPublicPort(t *testing.T) {
 			} else {
 				tlsOK, verified, plain = my("--ssl", "--disable-ssl-verify-server-cert"), my("--ssl", "--ssl-ca=/certs/ca.pem", "--ssl-verify-server-cert"), my("--skip-ssl")
 			}
-			if err := connect(tlsOK...); err != nil {
-				t.Fatal("TLS connection failed:", err)
+			// SetPublicAccess returns once the gate container is started, not once it
+			// listens: the first connection may come too early (refused on Linux, cut
+			// during the handshake behind a port forwarder). Wait for the gate.
+			var tlsErr error
+			for deadline := time.Now().Add(45 * time.Second); ; time.Sleep(time.Second) {
+				if tlsErr = connect(tlsOK...); tlsErr == nil || time.Now().After(deadline) {
+					break
+				}
+			}
+			if tlsErr != nil {
+				t.Fatal("TLS connection failed:", tlsErr)
 			}
 			if err := connect(verified...); err != nil {
 				t.Fatal("verified TLS connection failed:", err)
